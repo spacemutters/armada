@@ -10,8 +10,10 @@ import {
   searchProducts,
   type CjListProduct,
 } from "@/connectors/cj/api";
+import { isFatalCjError } from "@/connectors/cj/client";
 import { mentionsBrand } from "@/lib/brands";
 import { withWorkspace } from "@/lib/db";
+import { UNCONFIRMED_SHIP_CENTS } from "@/lib/pricing";
 import type { CatalogItem } from "@/lib/types";
 
 // Bringing CJ products into a workspace's catalog. A search gives the basics fast; "checking" an
@@ -26,6 +28,8 @@ export interface CjAttributes {
     freeShipping?: boolean;
     checked?: boolean;
     checkedFor?: string;
+    /** A country CJ has no shipping route to for this item. */
+    noRouteTo?: string;
     freight?: { name: string; daysMin: number | null; daysMax: number | null };
     variants?: { vid: string; sku: string; key?: string; priceCents: number | null; image?: string }[];
     defaultVid?: string;
@@ -71,32 +75,54 @@ export async function importCjSearch(
   opts: { perPhrase?: number; maxPhrases?: number; countryCode?: string } = {},
 ): Promise<CatalogItem[]> {
   const seen = new Map<string, CjListProduct>();
+  let failure: unknown = null;
   for (const phrase of [...new Set(phrases.map((p) => p.trim()).filter(Boolean))].slice(0, opts.maxPhrases ?? 5)) {
-    for (const p of await searchProducts(workspaceId, { keyword: phrase, size: opts.perPhrase ?? 20, countryCode: opts.countryCode })) {
-      if (p?.id && p.nameEn && !seen.has(p.id)) seen.set(p.id, p);
+    // One phrase failing keeps what the others found; a refused key or used-up allowance stops the rest.
+    try {
+      for (const p of await searchProducts(workspaceId, { keyword: phrase, size: opts.perPhrase ?? 20, countryCode: opts.countryCode })) {
+        if (p?.id && p.nameEn && !seen.has(p.id)) seen.set(p.id, p);
+      }
+    } catch (e) {
+      failure = e;
+      if (isFatalCjError(e)) break;
     }
   }
-  if (!seen.size) return [];
-  return withWorkspace(workspaceId, async (tx) => {
-    const saved: CatalogItem[] = [];
-    for (const p of seen.values()) {
+  if (!seen.size) {
+    if (failure) throw failure;
+    return [];
+  }
+  const byId = await withWorkspace(workspaceId, async (tx) => {
+    const rows = new Map<string, CatalogItem>();
+    // Saved in id order, so two searches running at once can't lock each other's rows in opposite orders.
+    for (const p of [...seen.values()].sort((x, y) => (x.id < y.id ? -1 : 1))) {
       const r = rowFromListing(p);
+      // Once CJ has confirmed an item (checked), a later search only refreshes its stock: the
+      // confirmed cost, photos, description, category and brand check stay. A brand found by either
+      // look keeps the item flagged.
       const [row] = await tx<CatalogItem[]>`
         insert into armada.catalog_items
           (workspace_id, source, source_id, title, description, category, images, cost_cents, ship_cents, stock, branded, attributes)
         values (${workspaceId}, 'cj', ${r.sourceId}, ${r.title}, ${r.description}, ${r.category}, ${tx.json(r.images as never)},
-                ${r.costCents}, 0, ${r.stock}, ${r.branded}, ${tx.json(r.attributes as never)})
+                ${r.costCents}, ${UNCONFIRMED_SHIP_CENTS}, ${r.stock}, ${r.branded}, ${tx.json(r.attributes as never)})
         on conflict (workspace_id, source, source_id) do update set
-          title = excluded.title, category = excluded.category, cost_cents = excluded.cost_cents, stock = excluded.stock,
-          branded = excluded.branded, updated_at = now(),
+          stock = excluded.stock,
+          branded = armada.catalog_items.branded or excluded.branded,
+          updated_at = now(),
+          title = case when armada.catalog_items.attributes -> 'cj' ->> 'checked' = 'true' then armada.catalog_items.title else excluded.title end,
+          category = case when armada.catalog_items.attributes -> 'cj' ->> 'checked' = 'true' then armada.catalog_items.category else excluded.category end,
+          cost_cents = case when armada.catalog_items.attributes -> 'cj' ->> 'checked' = 'true' then armada.catalog_items.cost_cents else excluded.cost_cents end,
           description = case when armada.catalog_items.attributes -> 'cj' ->> 'checked' = 'true' then armada.catalog_items.description else excluded.description end,
           images = case when armada.catalog_items.attributes -> 'cj' ->> 'checked' = 'true' then armada.catalog_items.images else excluded.images end,
-          attributes = case when armada.catalog_items.attributes -> 'cj' ->> 'checked' = 'true' then armada.catalog_items.attributes else excluded.attributes end
+          attributes = case when armada.catalog_items.attributes -> 'cj' ->> 'checked' = 'true' then armada.catalog_items.attributes
+                            else jsonb_set(coalesce(armada.catalog_items.attributes, '{}'), '{cj}',
+                                           coalesce(armada.catalog_items.attributes -> 'cj', '{}') || (excluded.attributes -> 'cj')) end
         returning ${tx.unsafe(COLS)}`;
-      saved.push(row);
+      rows.set(r.sourceId, row);
     }
-    return saved;
+    return rows;
   });
+  // Back in CJ's order, most relevant first.
+  return [...seen.keys()].map((id) => byId.get(id)).filter((x): x is CatalogItem => Boolean(x));
 }
 
 /**
@@ -108,6 +134,8 @@ export async function checkCjItem(workspaceId: string, catalogItemId: string, co
   if (!item || item.source !== "cj") throw new Error("Not a CJ item");
   const attrs = (item.attributes as unknown as CjAttributes).cj ?? {};
   if (attrs.checked && attrs.checkedFor === country) return item;
+  // Already known to have no shipping route to this country: don't spend CJ calls asking again.
+  if (attrs.noRouteTo === country) return item;
 
   const d = await productDetail(workspaceId, item.sourceId);
   const variants = (d.variants ?? []).slice(0, 30).map((v) => ({
@@ -125,10 +153,13 @@ export async function checkCjItem(workspaceId: string, catalogItemId: string, co
     .map((url) => ({ url, alt: d.productNameEn || item.title }));
   const costCents = main?.priceCents ?? priceToCents(d.sellPrice) ?? item.costCents;
   const brand = mentionsBrand(`${d.productNameEn ?? ""} ${item.title}`);
+  // "Checked" means CJ confirmed a shipping price. With no route (or no variant to ask about), the
+  // item stays unconfirmed and keeps the cautious stand-in, so it's never priced as if shipping were free.
   const next: CjAttributes["cj"] = {
     ...attrs,
-    checked: true,
-    checkedFor: country,
+    checked: Boolean(freight),
+    checkedFor: freight ? country : undefined,
+    noRouteTo: freight ? undefined : country,
     freight: freight ? { name: freight.name, daysMin: freight.daysMin, daysMax: freight.daysMax } : undefined,
     variants,
     defaultVid: main?.vid,
@@ -148,7 +179,7 @@ export async function checkCjItem(workspaceId: string, catalogItemId: string, co
         category = ${d.categoryName?.split(/\s*[>/]\s*/).filter(Boolean).at(-1)?.trim() || item.category},
         images = ${tx.json(images as never)},
         cost_cents = ${costCents},
-        ship_cents = ${freight?.priceCents ?? 0},
+        ship_cents = ${freight?.priceCents ?? UNCONFIRMED_SHIP_CENTS},
         ship_days_min = ${freight?.daysMin ?? null},
         ship_days_max = ${freight?.daysMax ?? null},
         branded = ${Boolean(brand)},

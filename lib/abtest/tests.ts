@@ -65,10 +65,18 @@ export async function startHeadlineTest(workspaceId: string, shopId: string, mem
     if (!shop?.blueprint.hero) throw new TestProblem("This shop isn't ready yet.");
     const [open] = await tx<{ id: string }[]>`select id from armada.ab_tests where shop_id = ${shopId} and status in ('writing', 'choosing', 'running')`;
     if (open) return open.id;
+    // A double press can get here twice at once; the one-open-test index lets only one through, and
+    // the other simply finds it.
     const [test] = await tx<{ id: string }[]>`
       insert into armada.ab_tests (workspace_id, shop_id, original, created_by)
       values (${workspaceId}, ${shopId}, ${tx.json(shop.blueprint.hero as never)}, ${memberId})
+      on conflict (shop_id) where status in ('writing', 'choosing', 'running') do nothing
       returning id`;
+    if (!test) {
+      const [other] = await tx<{ id: string }[]>`select id from armada.ab_tests where shop_id = ${shopId} and status in ('writing', 'choosing', 'running')`;
+      if (other) return other.id;
+      throw new TestProblem("Couldn't start the test. Try again.");
+    }
     await askForVersions(tx, shop, test.id, shop.blueprint.hero, []);
     await tx`
       insert into armada.audit_log (workspace_id, member_id, action, detail)
@@ -186,6 +194,9 @@ export async function undoWinner(workspaceId: string, memberId: string, testId: 
     const [test] = await tx<AbTest[]>`
       select * from armada.ab_tests where id = ${testId} and status = 'finished' and winner = 'b' and replaced is not null and undone_at is null for update`;
     if (!test) return;
+    // Only undo if the shop still shows this test's winner; a later edit or test must not be overwritten.
+    const [shop] = await tx<ShopRow[]>`select * from armada.shops where id = ${test.shopId} for update`;
+    if (!shop || shop.blueprint.hero?.headline !== test.variant?.headline) return;
     await tx`
       update armada.shops set blueprint = jsonb_set(blueprint, '{hero}', ${tx.json(test.replaced as never)}), updated_at = now()
       where id = ${test.shopId}`;
@@ -234,33 +245,47 @@ export async function countsFor(workspaceId: string, testIds: string[]): Promise
 export interface LiveTest {
   id: string;
   split: number;
+  /** A, as it was when the test was made: a headline edit mid-test doesn't change what's compared. */
+  original: HeroCopy;
   variant: HeroCopy;
 }
 
 export async function runningTestForShop(shopId: string): Promise<LiveTest | null> {
   const rows = await asSystem(
-    (tx) => tx<{ id: string; split: number; variant: Candidate }[]>`
-      select id, split, variant from armada.ab_tests where shop_id = ${shopId} and status = 'running' and variant is not null limit 1`,
+    (tx) => tx<{ id: string; split: number; original: HeroCopy; variant: Candidate }[]>`
+      select id, split, original, variant from armada.ab_tests where shop_id = ${shopId} and status = 'running' and variant is not null limit 1`,
   );
-  return rows[0] ? { id: rows[0].id, split: rows[0].split, variant: rows[0].variant } : null;
+  return rows[0] ? { id: rows[0].id, split: rows[0].split, original: rows[0].original, variant: rows[0].variant } : null;
 }
 
 /**
  * Counts a storefront visitor. A view is counted once per visitor per test; an add to the bag only
  * counts for a visitor who saw the headline, and in the version they saw.
  */
-export async function recordVisit(slug: string, visitor: string, kind: "view" | "add", versionFor: (testId: string, split: number) => "a" | "b"): Promise<boolean> {
+/** Most "visitors" one internet address can add to one test; a household or office stays well under it. */
+export const VISITORS_PER_ADDRESS = 20;
+
+export async function recordVisit(
+  slug: string,
+  visitor: string,
+  kind: "view" | "add",
+  versionFor: (testId: string, split: number) => "a" | "b",
+  ipHash: string | null,
+): Promise<boolean> {
   return asSystem(async (tx) => {
     const [t] = await tx<{ id: string; workspaceId: string; split: number }[]>`
       select t.id, t.workspace_id, t.split from armada.ab_tests t join armada.shops s on s.id = t.shop_id
       where s.slug = ${slug} and t.status = 'running' limit 1`;
     if (!t) return false;
     if (kind === "view") {
-      await tx`
-        insert into armada.ab_events (test_id, workspace_id, visitor, kind, variant)
-        values (${t.id}, ${t.workspaceId}, ${visitor}, 'view', ${versionFor(t.id, t.split)})
+      // Someone minting visitor ids by the hundred from one address stops counting after the cap.
+      const inserted = await tx`
+        insert into armada.ab_events (test_id, workspace_id, visitor, kind, variant, ip_hash)
+        select ${t.id}, ${t.workspaceId}, ${visitor}, 'view', ${versionFor(t.id, t.split)}, ${ipHash}
+        where ${ipHash}::text is null
+           or (select count(*) from armada.ab_events where test_id = ${t.id} and ip_hash = ${ipHash} and kind = 'view') < ${VISITORS_PER_ADDRESS}
         on conflict do nothing`;
-      return true;
+      return inserted.count > 0;
     }
     const inserted = await tx`
       insert into armada.ab_events (test_id, workspace_id, visitor, kind, variant)

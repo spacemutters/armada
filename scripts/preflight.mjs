@@ -236,7 +236,9 @@ const checks = {
       if (!fn) problems.push("lib/abtest/tests.ts no longer has recordVisit");
       else {
         const inserts = [...fn.matchAll(/`[^`]*insert into armada\.ab_events[^`]*`/g)].map((q) => q[0]);
-        const views = inserts.filter((q) => /'view'/.test(q) && !/from armada\.ab_events/.test(q));
+        // The view insert names 'view' and never 'add' (it may still read ab_events, e.g. a per-address cap);
+        // the add insert copies an earlier view row and names both.
+        const views = inserts.filter((q) => /'view'/.test(q) && !/'add'/.test(q));
         if (!views.length || views.some((q) => !/\$\{\s*versionFor\s*\(/.test(q))) problems.push("recordVisit no longer stores the version versionFor chose for a view");
         const adds = inserts.filter((q) => /'add'/.test(q) || /\$\{\s*kind\s*\}/.test(q));
         if (!adds.length) problems.push("recordVisit no longer counts adds");
@@ -423,7 +425,10 @@ const PLANTS = {
   "ab-fair-count/add": (dir) => {
     // An add counts even for a visitor who never saw the headline.
     const f = path.join(dir, "lib", "abtest", "tests.ts");
-    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(" and kind = 'view'", ""));
+    const src = fs.readFileSync(f, "utf8");
+    const target = "and visitor = ${visitor} and kind = 'view'";
+    if (!src.includes(target)) throw new Error("the add-counting line moved; update this plant");
+    fs.writeFileSync(f, src.replace(target, "and visitor = ${visitor}"));
   },
   "ab-math/sure": (dir) => {
     const f = path.join(dir, "lib", "abtest", "stats.ts");

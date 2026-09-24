@@ -52,6 +52,11 @@ create table armada.ab_events (
 );
 create index ab_events_counts on armada.ab_events (test_id, variant, kind);
 
+-- Added after review (applied as armada_headline_tests_ip_cap): a keyed hash of the visitor's
+-- internet address, so one address can't count more than a handful of "visitors" in a test.
+alter table armada.ab_events add column ip_hash text;
+create index ab_events_ip on armada.ab_events (test_id, ip_hash) where ip_hash is not null;
+
 alter table armada.ab_tests enable row level security;
 create policy workspace_scope on armada.ab_tests
   using (workspace_id = armada.current_workspace() or armada.is_system())

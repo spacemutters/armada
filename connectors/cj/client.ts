@@ -143,16 +143,35 @@ const KEY_REFUSED = new Set([1600001, 1600003, 1600004, 1600005, 1600006, 160000
 interface Credential {
   secret: CjSecret;
   meta: CjMeta;
+  /** The row's updated_at when it was read, so a renewal can't overwrite a newer change. */
+  version: Date;
 }
 
 async function loadCredential(workspaceId: string): Promise<Credential> {
   const rows = await withWorkspace(
     workspaceId,
-    (tx) => tx<{ secret: Buffer; meta: CjMeta; status: string }[]>`
-      select secret, meta, status from armada.credentials where provider = 'cj' and label = ''`,
+    (tx) => tx<{ secret: Buffer; meta: CjMeta; status: string; updatedAt: Date }[]>`
+      select secret, meta, status, updated_at from armada.credentials where provider = 'cj' and label = ''`,
   );
   if (!rows[0] || rows[0].status === "disconnected") throw new CjNotConnected();
-  return { secret: open<CjSecret>(rows[0].secret), meta: rows[0].meta ?? {} };
+  return { secret: open<CjSecret>(rows[0].secret), meta: rows[0].meta ?? {}, version: rows[0].updatedAt };
+}
+
+/**
+ * Saves renewed tokens only onto the row they were renewed from. If the connection was removed or
+ * replaced (a different key) meanwhile, nothing is written and the current row is returned instead,
+ * so a renewal can never bring back a disconnected account or overwrite a new key.
+ */
+async function saveRenewed(workspaceId: string, from: Credential, secret: CjSecret): Promise<Credential> {
+  const updated = await withWorkspace(
+    workspaceId,
+    (tx) => tx<{ updatedAt: Date }[]>`
+      update armada.credentials set secret = ${seal(secret)}, updated_at = now()
+      where provider = 'cj' and label = '' and updated_at = ${from.version} and status <> 'disconnected'
+      returning updated_at`,
+  );
+  if (updated[0]) return { ...from, secret, version: updated[0].updatedAt };
+  return loadCredential(workspaceId);
 }
 
 async function saveCredential(workspaceId: string, secret: CjSecret, meta: CjMeta, status = "connected") {
@@ -216,16 +235,24 @@ export async function cj<T>(
   // being busy or slow just fails this call.
   const renew = async () => {
     try {
-      cred = { ...cred, secret: await refreshTokens(workspaceId, gap, cred.secret) };
+      const fresh = await refreshTokens(workspaceId, gap, cred.secret);
+      cred = await saveRenewed(workspaceId, cred, fresh);
     } catch (e) {
       if (e instanceof CjError && KEY_REFUSED.has(e.code)) {
         await noteProblem(workspaceId, "CJ stopped accepting the saved key. Connect CJ again with a fresh key.", "needs_attention");
       }
       throw e;
     }
-    await saveCredential(workspaceId, cred.secret, cred.meta);
   };
-  if (expiresWithin(cred.secret.accessTokenExpiry, 24 * 3600_000)) await renew();
+  // Renew a day early. If that early renewal fails (CJ busy or slow), the current token still works,
+  // so carry on with it rather than failing the call.
+  if (expiresWithin(cred.secret.accessTokenExpiry, 24 * 3600_000)) {
+    try {
+      await renew();
+    } catch (e) {
+      if (expiresWithin(cred.secret.accessTokenExpiry, 0) || isFatalCjError(e)) throw e;
+    }
+  }
 
   let renewed = false;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -294,6 +321,14 @@ export async function cjStatus(workspaceId: string): Promise<{ connected: boolea
   );
   const r = rows[0];
   return { connected: Boolean(r && r.status !== "disconnected"), status: r?.status ?? null, meta: r?.meta ?? {} };
+}
+
+/**
+ * True when every further call would be refused too (not connected, key refused, allowance used up),
+ * so a loop over many products should stop instead of spending the speed lane on them.
+ */
+export function isFatalCjError(e: unknown): boolean {
+  return e instanceof CjNotConnected || (e instanceof CjError && (KEY_REFUSED.has(e.code) || OUT_OF_POINTS.has(e.code)));
 }
 
 /** Plain words for a CJ refusal. */

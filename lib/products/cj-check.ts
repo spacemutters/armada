@@ -1,8 +1,10 @@
 import "server-only";
-import { CjNotConnected } from "@/connectors/cj/client";
+import { isFatalCjError } from "@/connectors/cj/client";
 import { checkCjItem } from "@/lib/catalog/cj";
 import { withWorkspace } from "@/lib/db";
 import { scoreCatalogItem } from "./score-item";
+
+const MAX_PER_RUN = 80;
 
 /**
  * Confirms CJ products after they're added: full photos, the real cost of the default variant, and
@@ -18,7 +20,9 @@ export async function checkProductsWithCj(workspaceId: string, productIds: strin
       where p.id in ${tx(productIds)} and c.source = 'cj'`,
   );
   let done = 0;
-  for (const r of rows) {
+  // About 2.5 seconds a product in CJ's speed lane; 80 fit well inside one 5-minute run. Any beyond
+  // that stay marked "not confirmed" (and costed with the cautious stand-in) until checked later.
+  for (const r of rows.slice(0, MAX_PER_RUN)) {
     try {
       const item = await checkCjItem(workspaceId, r.catalogItemId, country);
       const { score, parts } = scoreCatalogItem(item, "mid");
@@ -31,7 +35,7 @@ export async function checkProductsWithCj(workspaceId: string, productIds: strin
       );
       done++;
     } catch (e) {
-      if (e instanceof CjNotConnected) break;
+      if (isFatalCjError(e)) break;
       console.error("CJ check failed", r.catalogItemId, e);
     }
   }

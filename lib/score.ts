@@ -15,7 +15,7 @@ export interface ScoreInput {
   rating: number | null;
   branded: boolean;
   retailSource: boolean;
-  platform?: "shopify" | "ebay";
+  platform?: "shopify" | "ebay" | "facebook";
   practice?: boolean;
   fleetUnitsSold30d?: number | null;
   /** How many stores list this item through the supplier (CJ reports it). */

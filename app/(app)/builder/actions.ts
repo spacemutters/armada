@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { cjStatus } from "@/connectors/cj/client";
 import { requireSession } from "@/lib/auth/session";
+import { knownCountryCode } from "@/lib/countries";
 import { withWorkspace } from "@/lib/db";
 import { startShopBuild } from "@/lib/shops/pipeline";
 import type { ShopBrief } from "@/lib/shops/types";
@@ -41,6 +42,10 @@ export async function createShops(formData: FormData) {
   const f = parsed.data;
   // Real products only when CJ is actually connected; otherwise the practice catalog.
   const source = f.source === "cj" && (await cjStatus(session.workspaceId)).connected ? "cj" : "practice";
+  // Real shipping quotes need a country CJ understands; a guess would print the wrong delivery times.
+  if (source === "cj" && !knownCountryCode(f.country)) {
+    redirect(`/builder/new?error=${encodeURIComponent(`Armada doesn't know “${f.country}” yet. Use the country's full name, like United Kingdom or Germany.`)}&niche=${encodeURIComponent(f.niche)}`);
+  }
 
   const ids = await withWorkspace(session.workspaceId, async (tx) => {
     const made: string[] = [];

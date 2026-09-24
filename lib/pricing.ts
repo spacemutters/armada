@@ -12,6 +12,9 @@ export const MARKUP: Record<PriceFeel, number> = { budget: 2.2, mid: 2.8, premiu
 export const PLATFORM_FEES = {
   shopify: { pct: 0.029, fixedCents: 30 },
   ebay: { pct: 0.136, fixedCents: 40 },
+  // Meta's selling fee where Facebook/Instagram checkout applies (5% a shipment). Shops whose
+  // checkout sends buyers to a website pay that site's fees instead; 5% is the cautious figure.
+  facebook: { pct: 0.05, fixedCents: 0 },
 } as const;
 
 /** Share of the price assumed to go to ads when judging margin. */

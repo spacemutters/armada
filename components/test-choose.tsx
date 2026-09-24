@@ -66,7 +66,7 @@ export function TestChoose({
                   aria-label={`Use: ${c.headline}`}
                 />
               </span>
-              <span data-candidate-headline className="text-[16px] leading-snug font-semibold">
+              <span data-candidate-headline={c.headline} className="text-[16px] leading-snug font-semibold">
                 {c.headline}
               </span>
               <span className="text-[13px] text-muted">{c.idea}</span>

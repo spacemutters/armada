@@ -10,7 +10,7 @@ export interface Member {
   sessionVersion: number;
 }
 
-export type Platform = "shopify" | "ebay";
+export type Platform = "shopify" | "ebay" | "facebook";
 export type StoreMode = "practice" | "live";
 export type StoreStatus = "connected" | "disconnected" | "needs_attention" | "setting_up";
 

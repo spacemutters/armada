@@ -1,8 +1,8 @@
 import "server-only";
 import { z } from "zod";
-import { CjNotConnected, describeCjError } from "@/connectors/cj/client";
+import { describeCjError, isFatalCjError } from "@/connectors/cj/client";
 import { checkCjItem, importCjSearch } from "@/lib/catalog/cj";
-import { countryCode } from "@/lib/countries";
+import { knownCountryCode } from "@/lib/countries";
 import { asSystem, withWorkspace, type Tx } from "@/lib/db";
 import { enqueueJob, onJobFinished, type Deferred } from "@/lib/ai/jobs";
 import { fixPalette } from "@/lib/color";
@@ -332,6 +332,15 @@ async function afterPages(tx: Tx, shop: ShopRow, output: unknown) {
 
 // ---------- the CJ path: real products, real shipping ----------
 
+/**
+ * Locks the shop and confirms it's still being built, as the last step before a CJ step writes its
+ * result. A build that was stopped, finished or picked up elsewhere meanwhile is left alone.
+ */
+async function stillBuilding(tx: Tx, shopId: string): Promise<boolean> {
+  const [s] = await tx<{ status: string }[]>`select status from armada.shops where id = ${shopId} for update`;
+  return s?.status === "building";
+}
+
 async function loadBuildingShop(workspaceId: string, shopId: string): Promise<ShopRow | null> {
   const rows = await withWorkspace(workspaceId, (tx) => tx<ShopRow[]>`select * from armada.shops where id = ${shopId}`);
   return rows[0] && rows[0].status === "building" ? rows[0] : null;
@@ -352,6 +361,7 @@ async function cjCandidates(workspaceId: string, shopId: string) {
   }
   const candidates = items.filter((i) => !i.branded).slice(0, 60);
   await withWorkspace(workspaceId, async (tx) => {
+    if (!(await stillBuilding(tx, shop.id))) return;
     if (candidates.length < MIN_CJ_PRODUCTS) {
       await failShop(
         tx,
@@ -388,7 +398,11 @@ async function cjCheckChosen(workspaceId: string, shopId: string) {
   const shop = await loadBuildingShop(workspaceId, shopId);
   if (!shop) return;
   const bp = shop.blueprint;
-  const country = countryCode(shop.brief.country);
+  const country = knownCountryCode(shop.brief.country);
+  if (!country) {
+    await withWorkspace(workspaceId, (tx) => failShop(tx, shop, "products", `Armada doesn't know “${shop.brief.country}” as a country, so it can't get real shipping quotes. Build it again with the country's full name.`));
+    return;
+  }
   const refs = bp.products ?? [];
   const links = await withWorkspace(
     workspaceId,
@@ -406,13 +420,14 @@ async function cjCheckChosen(workspaceId: string, shopId: string) {
       if (item.shipDaysMax != null && !item.branded) checked.set(ref.productId, item);
     } catch (e) {
       lastError = e;
-      if (e instanceof CjNotConnected) break;
+      if (isFatalCjError(e)) break;
     }
     // Progress on screen, and a fresh timestamp so the stall check below leaves a live run alone.
     await withWorkspace(workspaceId, (tx) => setStep(tx, shopId, "products", "running", `Checked ${n + 1} of ${refs.length} products with CJ`));
   }
 
   await withWorkspace(workspaceId, async (tx) => {
+    if (!(await stillBuilding(tx, shop.id))) return;
     if (checked.size < MIN_CJ_PRODUCTS) {
       await failShop(
         tx,

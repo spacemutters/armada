@@ -145,6 +145,10 @@ for (const [label, A, B, want] of [
   ["a clearly better B wins", { visitors: 20000, adds: 600 }, { visitors: 20000, adds: 800 }, "b_better"],
   ["a clearly better A wins", { visitors: 20000, adds: 800 }, { visitors: 20000, adds: 600 }, "a_better"],
   ["a small unclear gap keeps going", { visitors: 1000, adds: 30 }, { visitors: 1000, adds: 33 }, "keep_going"],
+  // About 96% sure, but a tenth of the sample: watched again and again, that's how false winners happen.
+  ["an early 96% lead isn't named a winner", { visitors: 1000, adds: 30 }, { visitors: 1000, adds: 45 }, "keep_going"],
+  // Overwhelming evidence can be called early.
+  ["an overwhelming early lead is named", { visitors: 1000, adds: 20 }, { visitors: 1000, adds: 60 }, "b_better"],
   ["a small gap after enough visitors is no difference", { visitors: 20000, adds: 600 }, { visitors: 20000, adds: 605 }, "no_difference"],
 ]) {
   const r = readTest(A, B);

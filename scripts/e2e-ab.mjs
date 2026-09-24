@@ -288,7 +288,12 @@ try {
     "Write three new versions",
     () => /writing three other headlines/i.test(document.body.innerText) || document.querySelectorAll('input[name="pick"]').length >= 3,
   );
-  expect(writing && has(await text(), "Writing three other headlines"), "the page says it's writing three other headlines");
+  // The AI can finish before the first look (it did on the live site, in under the page's first
+  // refresh), so either the writing message or the finished versions count as the right state.
+  const writingNow = has(await text(), "Writing three other headlines");
+  const alreadyWritten = (await page.$$('input[name="pick"]')).length >= 3;
+  if (alreadyWritten && !writingNow) console.log("  (the versions were already written by the first look)");
+  expect(writing && (writingNow || alreadyWritten), "the page says it's writing three other headlines, or they're already written");
   await shot("03-writing");
   // The page refreshes itself while the AI writes; reload on our own schedule as well, and let a
   // reload that fails be retried rather than end the run.

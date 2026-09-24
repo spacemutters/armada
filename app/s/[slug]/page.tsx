@@ -30,11 +30,11 @@ async function heroFor(shopId: string, fallback: HeroCopy | undefined, asked: un
   const jar = await cookies();
   if (jar.has("armada_session")) {
     const v = asked === "b" ? "b" : asked === "a" ? "a" : null;
-    return { hero: v === "b" ? test.variant : fallback, count: false, previewing: v };
+    return { hero: v === "b" ? test.variant : test.original, count: false, previewing: v };
   }
   const visitor = await readVisitor(jar.get(VISITOR_COOKIE)?.value);
-  if (!visitor) return { hero: fallback, count: false, previewing: null };
-  return { hero: versionFor(visitor, test.id, test.split) === "b" ? test.variant : fallback, count: true, previewing: null };
+  if (!visitor) return { hero: test.original, count: false, previewing: null };
+  return { hero: versionFor(visitor, test.id, test.split) === "b" ? test.variant : test.original, count: true, previewing: null };
 }
 
 export default async function StorefrontHome({ params, searchParams }: PageProps<"/s/[slug]">) {

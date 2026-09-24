@@ -27,8 +27,14 @@ export interface Reading {
 
 /** Below this many visitors on either side, nothing is said about a leader. */
 export const MIN_VISITORS = 100;
-/** How sure the test must be before it names a winner. */
+/** How sure the test must be before it names a winner, once it has its full sample. */
 export const SURE = 0.95;
+/**
+ * Before the full sample, a winner needs overwhelming evidence. The owner looks at the numbers again
+ * and again, and calling it at 95% each time would name a "winner" between two identical headlines
+ * far more often than one time in twenty.
+ */
+export const EARLY_SURE = 0.995;
 
 // Standard normal cumulative distribution (Abramowitz-Stegun 7.1.26, error below 1.5e-7).
 export function normalCdf(z: number): number {
@@ -67,6 +73,7 @@ export function visitorsNeeded(baseRate: number): number {
 }
 
 const pct = (x: number) => `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`;
+const n = (x: number) => x.toLocaleString("en-US");
 
 export function readTest(a: Side, b: Side): Reading {
   const rate = (s: Side) => (s.visitors ? s.adds / s.visitors : 0);
@@ -84,12 +91,15 @@ export function readTest(a: Side, b: Side): Reading {
     verdict = "too_early";
     const more = MIN_VISITORS - Math.min(a.visitors, b.visitors);
     headline = `Too early to tell. Each version needs at least ${MIN_VISITORS} visitors before the numbers mean anything, about ${more} more.`;
-  } else if (chanceB >= SURE) {
+  } else if (chanceB >= (progress >= 1 ? SURE : EARLY_SURE)) {
     verdict = "b_better";
     headline = `The new version is winning: ${pct(rb)} of its visitors add something to their bag, against ${pct(ra)} for the original.`;
-  } else if (chanceB <= 1 - SURE) {
+  } else if (chanceB <= 1 - (progress >= 1 ? SURE : EARLY_SURE)) {
     verdict = "a_better";
     headline = `The original is doing better: ${pct(ra)} of its visitors add something to their bag, against ${pct(rb)} for the new version.`;
+  } else if (progress < 1 && (chanceB >= SURE || chanceB <= 1 - SURE)) {
+    verdict = "keep_going";
+    headline = `${chanceB >= SURE ? "The new version" : "The original"} is ahead, but it's early. Keep the test running to about ${n(neededEach)} visitors per version before trusting it.`;
   } else if (progress >= 1) {
     verdict = "no_difference";
     headline = "No real difference. Both versions do about as well, so keep whichever you prefer.";
