@@ -87,13 +87,36 @@ try {
   await page.goto(`${base}/products/list?${ids.map((i) => `ids=${i}`).join("&")}`, { waitUntil: "networkidle0" });
   await page.$$eval('input[name="stores"]', (els) => els.slice(0, 3).forEach((e) => (e.checked = true)));
   await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click('button[type="submit"]')]);
+  // The change page streams in after a short "Loading changes"; wait for the real content.
+  await page.waitForFunction(() => /Waiting for you|Applied|Nothing to change/i.test(document.body.innerText), { timeout: 30000 }).catch(() => {});
   await shot("10-change-preview");
-  const approve = await page.$$eval("button", (bs) => bs.findIndex((b) => b.textContent.includes("Approve")));
-  if (approve >= 0) {
-    await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Approve")).click())]);
+  // Approving is press-and-hold (a quick click deliberately does nothing), so hold it like a person.
+  const holdPress = async (label) => {
+    const handle = await page.evaluateHandle((l) => [...document.querySelectorAll("button")].find((b) => b.textContent.includes(l)) ?? null, label);
+    const el = handle.asElement();
+    if (!el) return false;
+    const box = await el.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await new Promise((r) => setTimeout(r, 1600));
+    await page.mouse.up();
+    return true;
+  };
+  const waitForText = (re, ms = 30000) => page.waitForFunction((s) => new RegExp(s, "i").test(document.body.innerText), { timeout: ms }, re.source).then(() => true, () => false);
+  if (await holdPress("Approve and apply")) {
+    const applied = await waitForText(/applied|done/);
+    console.log(applied ? "approved and applied" : "APPROVE DID NOT APPLY");
+    if (!applied) process.exitCode = 1;
     await shot("11-change-applied");
-    await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Undo")).click())]);
-    await shot("12-change-undone");
+    if (await holdPress("Undo")) {
+      const undone = await waitForText(/undone|put back|undid/);
+      console.log(undone ? "undone" : "UNDO DID NOT WORK");
+      if (!undone) process.exitCode = 1;
+      await shot("12-change-undone");
+    } else {
+      console.log("NO UNDO BUTTON after applying");
+      process.exitCode = 1;
+    }
   } else console.log("nothing to approve (everything was already listed or skipped)");
 
   step(`build a shop: “${shopIdea}”`);
