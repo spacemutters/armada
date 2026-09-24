@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { iconFor } from "@/components/product-art";
 import { formatMoney } from "@/lib/money";
 import { addToBag, onBagChange, readBag, writeBag, type BagLine } from "./cart-store";
+import { countVisit } from "./visit";
 
 function useBag(slug: string): BagLine[] {
   const [lines, setLines] = useState<BagLine[]>([]);
@@ -35,6 +36,7 @@ export function AddToBag({ slug, line }: { slug: string; line: Omit<BagLine, "qt
       className="sf-button w-full sm:w-auto"
       onClick={() => {
         addToBag(slug, line);
+        countVisit(slug, "add");
         setAdded(true);
         setTimeout(() => setAdded(false), 1600);
       }}

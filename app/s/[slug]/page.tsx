@@ -1,7 +1,12 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProductArt } from "@/components/product-art";
 import { ProductCard } from "@/components/storefront/product-card";
+import { CountView } from "@/components/storefront/visit";
+import type { HeroCopy } from "@/lib/abtest/prompt";
+import { runningTestForShop } from "@/lib/abtest/tests";
+import { readVisitor, versionFor, VISITOR_COOKIE } from "@/lib/abtest/visitor";
 import { loadStorefront, shopBase, storeItems } from "@/lib/shops/storefront";
 
 /** The first real paragraph of a markdown page, as plain text. */
@@ -14,12 +19,31 @@ function firstParagraph(md: string | undefined): string {
   return (para ?? "").replace(/\*\*|\*|__|_|\[|\]\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
 }
 
-export default async function StorefrontHome({ params }: PageProps<"/s/[slug]">) {
+/**
+ * The headline block this request sees. With a headline test running, a shopper sees the version
+ * their visitor id falls into and is counted. The shop's own team sees the original (or the version
+ * named in `?version=`) and is never counted.
+ */
+async function heroFor(shopId: string, fallback: HeroCopy | undefined, asked: unknown) {
+  const test = await runningTestForShop(shopId);
+  if (!test) return { hero: fallback, count: false, previewing: null };
+  const jar = await cookies();
+  if (jar.has("armada_session")) {
+    const v = asked === "b" ? "b" : asked === "a" ? "a" : null;
+    return { hero: v === "b" ? test.variant : fallback, count: false, previewing: v };
+  }
+  const visitor = await readVisitor(jar.get(VISITOR_COOKIE)?.value);
+  if (!visitor) return { hero: fallback, count: false, previewing: null };
+  return { hero: versionFor(visitor, test.id, test.split) === "b" ? test.variant : fallback, count: true, previewing: null };
+}
+
+export default async function StorefrontHome({ params, searchParams }: PageProps<"/s/[slug]">) {
   const { slug } = await params;
   const data = await loadStorefront(slug);
   if (!data) notFound();
   const { shop, products } = data;
   const bp = shop.blueprint;
+  const { hero, count, previewing } = await heroFor(shop.id, bp.hero, (await searchParams).version);
   const base = shopBase(slug);
   const items = storeItems(shop, products);
   const collections = (bp.collections ?? []).filter((c) => items.some((i) => i.collection === c.handle));
@@ -34,14 +58,15 @@ export default async function StorefrontHome({ params }: PageProps<"/s/[slug]">)
         <div className="sf-hero-copy flex flex-col gap-7">
           <p className="sf-label">{bp.brand?.tagline}</p>
           <h1 className="sf-display" style={{ fontSize: "var(--text-display)" }}>
-            {bp.hero?.headline}
+            {hero?.headline}
           </h1>
-          <p className="sf-lead sf-muted max-w-[36ch]">{bp.hero?.subhead}</p>
+          <p className="sf-lead sf-muted max-w-[36ch]">{hero?.subhead}</p>
           <div>
             <Link href={firstCollectionHref} className="sf-button">
-              {bp.hero?.cta || "Shop the range"}
+              {hero?.cta || "Shop the range"}
             </Link>
           </div>
+          {count ? <CountView slug={slug} /> : null}
         </div>
         {heroItem ? (
           <Link href={`${base}/products/${heroItem.handle}`} className="sf-hero-media sf-card block overflow-hidden rounded-[var(--s-radius)]">
@@ -157,10 +182,20 @@ export default async function StorefrontHome({ params }: PageProps<"/s/[slug]">)
             {bp.brand?.tagline}
           </p>
           <Link href={firstCollectionHref} className="sf-button">
-            {bp.hero?.cta || "Shop the range"}
+            {hero?.cta || "Shop the range"}
           </Link>
         </div>
       </section>
+
+      {previewing ? (
+        <p
+          role="status"
+          className="fixed bottom-4 left-1/2 z-30 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full px-4 py-2.5 text-center text-[13px]"
+          style={{ background: "var(--s-ink)", color: "var(--s-bg)" }}
+        >
+          Showing {previewing === "b" ? "the new version" : "the original"} of your headline. Your own visits aren&apos;t counted.
+        </p>
+      ) : null}
     </>
   );
 }

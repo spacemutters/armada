@@ -53,16 +53,25 @@ export class CjNotConnected extends Error {
   }
 }
 
-const BUSY = new Set([1600000, 1600200, 1600301, 402, 406, 429]);
+// Answers worth retrying after a pause: CJ busy, over the per-second limit, or read timed out.
+const BUSY = new Set([1600000, 1600200, 1600301]);
+// The account's API points are used up (CJ answers HTTP 429 with code 429, or 16900500). Points refill
+// through the day, so retrying straight away only burns time.
+const OUT_OF_POINTS = new Set([429, 16900500, 1600201]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+type QueryValue = string | number | undefined | null | (string | number)[];
 
 async function raw<T>(
   method: "GET" | "POST",
   path: string,
-  opts: { token?: string; query?: Record<string, string | number | undefined | null>; body?: unknown },
+  opts: { token?: string; query?: Record<string, QueryValue>; body?: unknown },
 ): Promise<Envelope<T>> {
   const url = new URL(BASE + path);
-  for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
+  // An array repeats the parameter (features=a&features=b), which is how CJ takes lists.
+  for (const [k, v] of Object.entries(opts.query ?? {})) {
+    for (const item of Array.isArray(v) ? v : [v]) if (item !== undefined && item !== null && item !== "") url.searchParams.append(k, String(item));
+  }
   const res = await fetch(url, {
     method,
     headers: { "content-type": "application/json", ...(opts.token ? { "CJ-Access-Token": opts.token } : {}) },
@@ -174,9 +183,14 @@ const expiresWithin = (iso: string | undefined, ms: number) => !iso || new Date(
 // 1100ms spacing with two builds running at once).
 const DEFAULT_GAP_MS = 1250;
 
+/** CJ's paid tiers top out at 6 calls a second. */
+const MAX_QPS = 6;
+
 function laneInterval(meta: CjMeta): number {
-  // An account's own setting can allow more calls a second.
-  return meta.qpsLimit && meta.qpsLimit > 1 ? Math.max(150, Math.ceil(1250 / meta.qpsLimit)) : DEFAULT_GAP_MS;
+  // An account's own setting can allow more calls a second, but only believe it within CJ's real
+  // tiers: /setting/get has been seen to report 100, which would get every call refused.
+  const qps = meta.qpsLimit;
+  return qps && qps > 1 && qps <= MAX_QPS ? Math.ceil(1250 / qps) : DEFAULT_GAP_MS;
 }
 
 /** Calls CJ as this workspace's connected account. */
@@ -184,8 +198,17 @@ export async function cj<T>(
   workspaceId: string,
   method: "GET" | "POST",
   path: string,
-  opts: { query?: Record<string, string | number | undefined | null>; body?: unknown } = {},
+  opts: {
+    query?: Record<string, QueryValue>;
+    body?: unknown;
+    /**
+     * False for calls that must never be sent twice (placing an order): a timeout is reported, not
+     * retried, because the first request may have gone through.
+     */
+    retryTimeouts?: boolean;
+  } = {},
 ): Promise<T> {
+  const { retryTimeouts = true, ...request } = opts;
   let cred = await loadCredential(workspaceId);
   const gap = laneInterval(cred.meta);
 
@@ -208,16 +231,16 @@ export async function cj<T>(
   for (let attempt = 0; attempt < 4; attempt++) {
     let env: Envelope<T>;
     try {
-      env = await laned<T>(workspaceId, gap, method, path, { token: cred.secret.accessToken, ...opts });
+      env = await laned<T>(workspaceId, gap, method, path, { token: cred.secret.accessToken, ...request });
     } catch (e) {
-      if (attempt < 3 && e instanceof Error && /timeout|abort|fetch failed/i.test(e.message)) {
+      if (retryTimeouts && attempt < 3 && e instanceof Error && /timeout|abort|fetch failed/i.test(e.message)) {
         await sleep(1000 * (attempt + 1));
         continue;
       }
       throw e;
     }
     if (env.result || env.code === 200) return env.data;
-    if (BUSY.has(env.code)) {
+    if (BUSY.has(env.code) && (retryTimeouts || env.code === 1600200)) {
       await sleep(1500 * (attempt + 1));
       continue;
     }
@@ -226,7 +249,9 @@ export async function cj<T>(
       await renew();
       continue;
     }
-    if (env.code === 1600201) await noteProblem(workspaceId, "CJ says this account's API quota is used up for now.", "connected");
+    if (OUT_OF_POINTS.has(env.code)) {
+      await noteProblem(workspaceId, "CJ's allowance for this account is used up for now. It refills through the day.", "connected");
+    }
     throw new CjError(env.code, env.message, env.requestId);
   }
   throw new CjError(1600200, "CJ is busy right now. Try again in a minute.");
@@ -276,7 +301,8 @@ export function describeCjError(e: unknown): string {
   if (e instanceof CjNotConnected) return "CJ isn't connected yet. Add your CJ key in Settings.";
   if (!(e instanceof CjError)) return "Couldn't reach CJ just now. Try again in a minute.";
   if ([1600001, 1600004, 1600005, 1600006, 1600008, 1601000].includes(e.code)) return "CJ didn't accept that key. Copy it again from CJ's API page and paste the whole thing.";
-  if (e.code === 1600201) return "CJ says this account's API quota is used up for now.";
+  if (OUT_OF_POINTS.has(e.code)) return "CJ's allowance for this account is used up for now. It refills through the day, so try again later.";
+  if (e.code === 1603003) return "CJ already has this order, so it wasn't placed twice.";
   if (BUSY.has(e.code)) return "CJ is busy right now. Try again in a minute.";
   return `CJ said: ${e.message}`;
 }

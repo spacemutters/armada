@@ -30,6 +30,21 @@ practice fleet that behaves like real stores without real money.
   CJ shop builds search CJ after the concept step and check every chosen product before pricing; that
   work runs after the response (`defer` → `after()`), and the helper's poll restarts any CJ build
   that has sat still for six minutes (`resumeStalledCjBuilds`).
+  Checked against CJ's docs on 2026-09-24 (copies in the session scratchpad `cjdocs/`): `qpsLimit` is
+  only believed up to CJ's top tier of 6/s; running out of API points (HTTP 429, code 429 or
+  16900500) is reported, not retried; searches ask for `enable_category`; shipping takes the higher of
+  price + taxes + clearance and the stated total. **Open risk:** CJ allows 3 accounts per outgoing IP,
+  and Vercel's outgoing IPs are shared. Fine for one account; before many customers connect CJ,
+  route CJ calls through a fixed IP.
+- **Headline tests (A/B)**: `/builder/<shop>/test`. The AI writes three versions of the home-page
+  headline (`lib/abtest/prompt.ts`, job `ab.variants`), the owner picks and edits one, and the
+  storefront splits visitors by a signed cookie minted in `proxy.ts` (`lib/abtest/visitor.ts`;
+  bots and the shop's own team are never counted). Views and adds to the bag go to `/api/ab`; the
+  version is always worked out on the server. `lib/abtest/stats.ts` reads the result (exact chance B
+  is better, sample size for a 20% difference, a winner only at 95%). Making B the winner writes it
+  into the shop and can be undone. "Practice visitors" are made-up shoppers stored as practice and
+  labelled everywhere. Checks: `ab-fair-count` and `ab-math` in preflight
+  (`scripts/check-abtest-math.mjs` compares the math with a simulation and textbook figures).
 
 ## Everyday commands
 
@@ -37,6 +52,7 @@ practice fleet that behaves like real stores without real money.
 npm run dev                                   # local copy (needs .env.local)
 node scripts/preflight.mjs                    # build checks; --live adds database checks; --selftest proves each check fires
 node --env-file=.env.local scripts/e2e.mjs https://armada-pi.vercel.app   # full browser run with a virtual passkey
+node --env-file=.env.local scripts/e2e-ab.mjs https://armada-pi.vercel.app   # headline test end to end (builds a practice shop; delete "AB test fleet" after)
 node --env-file=.env.local scripts/make-invite.mjs https://armada-pi.vercel.app   # a first-owner setup link
 vercel deploy --prod --yes --scope spacemutters-projects                   # deploy (run preflight first)
 ```

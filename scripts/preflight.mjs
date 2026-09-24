@@ -4,6 +4,7 @@
 //   node scripts/preflight.mjs            static checks (run before every deploy)
 //   node scripts/preflight.mjs --live     also the database checks, inside transactions that roll back
 //   node scripts/preflight.mjs --selftest break each check on purpose and confirm it fails
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -186,7 +187,123 @@ const checks = {
       return fails.length ? fails.join("; ") : null;
     },
   },
+  "ab-fair-count": {
+    what: "Headline tests count only real shoppers: never the shop's team, never a version the browser claims, and an add only after a view",
+    run(root) {
+      const routeFile = path.join(root, "app", "api", "ab", "route.ts");
+      const testsFile = path.join(root, "lib", "abtest", "tests.ts");
+      if (!fs.existsSync(routeFile)) return "app/api/ab/route.ts is missing";
+      if (!fs.existsSync(testsFile)) return "lib/abtest/tests.ts is missing";
+      const route = stripComments(fs.readFileSync(routeFile, "utf8"));
+      const problems = [];
+
+      // (i) A request carrying the team's sign-in cookie returns before anything is counted.
+      const recordCall = route.match(/\brecordVisit\s*\(/);
+      let teamSkipped = false;
+      for (const m of route.matchAll(/\bif\s*\(/g)) {
+        const cond = balanced(route, m.index + m[0].length - 1);
+        if (!cond) continue;
+        const use = cond.inner.match(/([\w$]+)\s*\(\s*(["'`][^"'`]*armada_session[^"'`]*["'`]|SESSION_COOKIE)/);
+        if (!use || negated(cond.inner, use.index)) continue;
+        if (!/^(\{\s*)?return\b/.test(route.slice(cond.end).trimStart())) continue;
+        if (recordCall && m.index > recordCall.index) continue;
+        teamSkipped = true;
+      }
+      if (!teamSkipped) problems.push("app/api/ab/route.ts no longer returns early for the shop's own team (the armada_session cookie)");
+
+      // (ii) The version comes from versionFor, worked out on the server.
+      if (!recordCall) problems.push("app/api/ab/route.ts no longer calls recordVisit");
+      else {
+        const args = balanced(route, recordCall.index + recordCall[0].length - 1)?.inner ?? "";
+        const helpers = [...route.matchAll(/(?:const|let|var)\s+([\w$]+)\s*=[^;]*\bversionFor\s*\(/g)].map((h) => h[1]);
+        const fromVersionFor = /\bversionFor\s*\(/.test(route) && (/\bversionFor\b/.test(args) || helpers.some((h) => new RegExp(`\\b${h.replace(/\$/g, "\\$")}\\b`).test(args)));
+        if (!fromVersionFor) problems.push("app/api/ab/route.ts no longer decides the version with versionFor");
+      }
+
+      // (iii) Nothing the browser sends can pick the version.
+      const fromRequest = [
+        /\.\s*(variant|version)\b/, // body.variant, body?.version
+        /\[\s*["'`](variant|version)["'`]\s*\]/, // body["variant"]
+        /\{[^{}]*\b(variant|version)\b[^{}]*\}\s*=[^=>]/, // const { variant } = body
+        /\.get\(\s*["'`][^"'`]*(variant|version)/i, // searchParams / formData / cookie .get("variant")
+      ];
+      const hit = fromRequest.map((re) => route.match(re)).find(Boolean);
+      if (hit) problems.push(`app/api/ab/route.ts reads a version from the request (“${hit[0].trim()}”)`);
+
+      // An add only counts for a visitor who already has a view row, in the version they saw.
+      const tests = stripComments(fs.readFileSync(testsFile, "utf8"));
+      const fn = tests.match(/export async function recordVisit\b[\s\S]*?\n}/)?.[0];
+      if (!fn) problems.push("lib/abtest/tests.ts no longer has recordVisit");
+      else {
+        const inserts = [...fn.matchAll(/`[^`]*insert into armada\.ab_events[^`]*`/g)].map((q) => q[0]);
+        const views = inserts.filter((q) => /'view'/.test(q) && !/from armada\.ab_events/.test(q));
+        if (!views.length || views.some((q) => !/\$\{\s*versionFor\s*\(/.test(q))) problems.push("recordVisit no longer stores the version versionFor chose for a view");
+        const adds = inserts.filter((q) => /'add'/.test(q) || /\$\{\s*kind\s*\}/.test(q));
+        if (!adds.length) problems.push("recordVisit no longer counts adds");
+        for (const q of adds) {
+          const shape = q.match(/insert into armada\.ab_events\s*\([^)]*\)\s*select\s+([\s\S]*?)\s+from armada\.ab_events\s+where\s+([\s\S]*?)(?:\bon conflict\b|`$)/);
+          const ok =
+            shape &&
+            /\bvariant\b/.test(shape[1]) &&
+            !/\$\{/.test(shape[1]) &&
+            /\bkind\s*=\s*'view'/.test(shape[2]) &&
+            /\bvisitor\s*=\s*\$\{\s*visitor\s*\}/.test(shape[2]) &&
+            /\btest_id\s*=\s*\$\{/.test(shape[2]);
+          if (!ok) {
+            problems.push("recordVisit counts an add without that visitor's earlier view in the same test, or not in the version the view recorded");
+            break;
+          }
+        }
+      }
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
+  "ab-math": {
+    what: "Headline-test math matches independent answers: normal table, simulation, textbook sample size, fair split, signed visitor ids",
+    run(root) {
+      const script = path.join(root, "scripts", "check-abtest-math.mjs");
+      if (!fs.existsSync(script)) return "scripts/check-abtest-math.mjs is missing";
+      const r = spawnSync(process.execPath, ["--no-warnings", script], { cwd: root, encoding: "utf8", timeout: 120_000 });
+      if (r.error) return `the math check couldn't run: ${r.error.message}`;
+      if (r.status === 0) return null;
+      const fails = (r.stdout ?? "").split(/\r?\n/).filter((l) => l.startsWith("FAIL "));
+      if (!fails.length) return `the math check stopped (exit ${r.status}): ${((r.stderr ?? "").trim().split(/\r?\n/)[0] || "no output")}`;
+      return fails[0].slice(5) + (fails.length > 1 ? ` (+${fails.length - 1} more)` : "");
+    },
+  },
 };
+
+// ---------- source-reading helpers for the headline-test checks ----------
+// Drops comments so words inside them don't count. Leaves "https://" in strings alone.
+function stripComments(s) {
+  return s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+}
+// The text inside the parentheses that open at `open`, and the index just past the closing one.
+function balanced(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === "(") depth++;
+    else if (text[i] === ")" && --depth === 0) return { inner: text.slice(open + 1, i), end: i + 1 };
+  }
+  return null;
+}
+// Whether the call starting at `at` (e.g. `has(` in `!jar.has(...)`) is negated with a single `!`.
+function negated(text, at) {
+  let i = at - 1;
+  while (i >= 0) {
+    if (/[\w$.?\s]/.test(text[i])) i--;
+    else if (text[i] === ")") {
+      for (let d = 0; i >= 0; i--) {
+        if (text[i] === ")") d++;
+        else if (text[i] === "(" && --d === 0) {
+          i--;
+          break;
+        }
+      }
+    } else break;
+  }
+  return text[i] === "!" && text[i - 1] !== "!";
+}
 
 // Database checks, run inside transactions that always roll back.
 const liveChecks = {
@@ -287,6 +404,43 @@ const PLANTS = {
     const f = path.join(dir, "app", "globals.css");
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("--muted: #5a6472;", "--muted: #b8bec7;"));
   },
+  // A name like "ab-fair-count/team" is one of several plants for the check before the slash.
+  "ab-fair-count/team": (dir) => {
+    // The shop's own team browsing their storefront gets counted again.
+    const f = path.join(dir, "app", "api", "ab", "route.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(/^.*armada_session.*\r?\n/m, ""));
+  },
+  "ab-fair-count/body": (dir) => {
+    // The browser gets to say which version it saw.
+    const f = path.join(dir, "app", "api", "ab", "route.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("(testId, split) => versionFor(visitor, testId, split)", '(testId, split) => (body.variant === "b" ? "b" : versionFor(visitor, testId, split))'));
+  },
+  "ab-fair-count/split": (dir) => {
+    // The version is a coin toss per request instead of fixed per visitor.
+    const f = path.join(dir, "app", "api", "ab", "route.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("(testId, split) => versionFor(visitor, testId, split)", '() => (Math.random() < 0.5 ? "a" : "b")'));
+  },
+  "ab-fair-count/add": (dir) => {
+    // An add counts even for a visitor who never saw the headline.
+    const f = path.join(dir, "lib", "abtest", "tests.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(" and kind = 'view'", ""));
+  },
+  "ab-math/sure": (dir) => {
+    const f = path.join(dir, "lib", "abtest", "stats.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("export const SURE = 0.95;", "export const SURE = 0.5;"));
+  },
+  "ab-math/cdf": (dir) => {
+    const f = path.join(dir, "lib", "abtest", "stats.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("Math.abs(z) / Math.SQRT2", "Math.abs(z)"));
+  },
+  "ab-math/split": (dir) => {
+    const f = path.join(dir, "lib", "abtest", "visitor.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("h % 100 < splitB", "h % 100 <= splitB"));
+  },
+  "ab-math/signature": (dir) => {
+    const f = path.join(dir, "lib", "abtest", "visitor.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("(await signature(id)) === sig ? id : null", "id"));
+  },
 };
 
 function copyTree(src, dst) {
@@ -304,19 +458,26 @@ function copyTree(src, dst) {
 if (args.has("--selftest")) {
   let missed = 0;
   for (const [name, plant] of Object.entries(PLANTS)) {
+    const check = checks[name.split("/")[0]];
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "armada-selftest-"));
     try {
       copyTree(ROOT, dir);
-      if (checks[name].run(dir)) throw new Error("the clean copy already fails");
+      const before = check.run(dir);
+      if (before) {
+        // A check that fails on the untouched code can't prove anything about its plant.
+        console.log(`BROKEN ${name.padEnd(20)} the clean copy already fails: ${before}`);
+        missed++;
+        continue;
+      }
       plant(dir);
-      const problem = checks[name].run(dir);
-      console.log(`${problem ? "caught" : "MISSED"} ${name.padEnd(18)} ${problem ?? "the planted break went unnoticed"}`);
+      const problem = check.run(dir);
+      console.log(`${problem ? "caught" : "MISSED"} ${name.padEnd(20)} ${problem ?? "the planted break went unnoticed"}`);
       if (!problem) missed++;
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }
-  console.log(missed ? `\n${missed} check(s) failed to catch their planted break` : "\nevery check caught its planted break");
+  console.log(missed ? `\n${missed} planted break(s) not caught (MISSED, or BROKEN because the clean copy already fails)` : "\nevery check caught its planted break");
   process.exit(missed ? 1 : 0);
 } else {
   const failed = await runAll(ROOT, { live: args.has("--live") });

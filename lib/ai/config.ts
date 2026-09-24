@@ -4,6 +4,7 @@ export const AI_MODELS = {
   "shop.concept": "sonnet",
   "shop.products": "sonnet",
   "shop.pages": "sonnet",
+  "ab.variants": "sonnet",
   default: "sonnet",
 } as const;
 

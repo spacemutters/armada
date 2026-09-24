@@ -4,6 +4,7 @@ import { buildAgain, putInPracticeStore } from "./actions";
 import { iconFor, ProductArt } from "@/components/product-art";
 import { ShopProgress } from "@/components/shop-progress";
 import { Button, ButtonLink, Card, PageHeader, ScoreBadge, Section, StatusPill } from "@/components/ui";
+import { testsForShop } from "@/lib/abtest/tests";
 import { helperStatus } from "@/lib/ai/jobs";
 import { requireSession } from "@/lib/auth/session";
 import { contrast } from "@/lib/color";
@@ -55,7 +56,11 @@ export default async function ShopPage({ params }: PageProps<"/builder/[id]">) {
     );
   }
 
-  const products = await getShopProducts(session.workspaceId, (bp.products ?? []).map((p) => p.productId));
+  const [products, tests] = await Promise.all([
+    getShopProducts(session.workspaceId, (bp.products ?? []).map((p) => p.productId)),
+    testsForShop(session.workspaceId, shop.id),
+  ]);
+  const openTest = tests.find((t) => ["writing", "choosing", "running"].includes(t.status));
   const byId = new Map(products.map((p) => [p.id, p]));
   const palette = bp.theme!.palette;
   const fonts = bp.theme!.fonts;
@@ -92,6 +97,22 @@ export default async function ShopPage({ params }: PageProps<"/builder/[id]">) {
           {(bp.products ?? []).length} products · {(bp.collections ?? []).length} collections · built from “{shop.niche}”
         </span>
       </div>
+
+      <Card className="mb-6 flex flex-wrap items-center gap-4 p-5">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[15px] font-semibold">Headline test</h2>
+          <p className="mt-1 max-w-2xl text-[13px] text-muted">
+            {openTest?.status === "running"
+              ? `Testing “${openTest.variant?.headline}” against your current headline.`
+              : openTest
+                ? "New versions of your headline are being written or waiting for you to choose."
+                : "The AI writes new versions of your home-page headline, and half your visitors see one. Armada tells you which gets more people to add to their bag."}
+          </p>
+        </div>
+        <ButtonLink href={`/builder/${shop.id}/test`} variant={openTest ? "primary" : "secondary"}>
+          {openTest ? "See the test" : "Test your headline"}
+        </ButtonLink>
+      </Card>
 
       {practiceCount > 0 ? (
         <p className="mb-6 max-w-3xl rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">

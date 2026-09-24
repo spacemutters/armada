@@ -114,6 +114,9 @@ try {
   await page.goto(`${base}/products?tab=find&q=pot`, { waitUntil: "networkidle0", timeout: 90000 });
   const busyNow = (await (await fetch(`${mock}/__stats`)).json()).busySent;
   expect((await cjResults()) > 0 && busyNow - before.busySent === 2, "a CJ search still works when CJ is busy twice in a row");
+  await fetch(`${mock}/__points?n=1`);
+  await page.goto(`${base}/products?tab=find&q=lamp`, { waitUntil: "networkidle0", timeout: 90000 });
+  expect((await text()).includes("allowance for this account is used up"), "running out of CJ's daily allowance says so plainly, without retrying");
   await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
   const settingsNow = await text();
   expect(settingsNow.includes("Connected as Mock Test Shop") && !settingsNow.includes("Needs you"), "the connection still reads as connected, not needing attention");
@@ -224,7 +227,9 @@ try {
   step("CJ's speed limit");
   const stats = await (await fetch(`${mock}/__stats`)).json();
   console.log("  mock CJ:", JSON.stringify(stats));
-  expect(stats.tooFast === 0, `no call broke CJ's one-a-second limit (${stats.tooFast} of ${stats.calls} did)`);
+  expect(stats.tooFast === 0, `no call broke CJ's one-a-second limit (${stats.tooFast} of ${stats.calls} did), even though CJ reported a limit of 100 a second`);
+  expect(stats.searchesWithoutCategory === 0, `every search asked CJ for category names (${stats.searchesWithoutCategory} didn't)`);
+  expect(stats.pointsOutSent === 1, `the out-of-allowance answer wasn't retried (${stats.pointsOutSent} sent)`);
 } catch (e) {
   console.error("E2E FAILED:", e.message);
   await shot("99-failure").catch(() => {});

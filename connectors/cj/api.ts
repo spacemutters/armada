@@ -26,7 +26,7 @@ export interface CjVariant {
   variantNameEn?: string;
   variantImage?: string;
   variantKey?: string;
-  variantSellPrice?: number;
+  variantSellPrice?: number | string;
   variantWeight?: number;
 }
 
@@ -35,11 +35,14 @@ export interface CjProductDetail {
   productNameEn: string;
   productSku: string;
   bigImage?: string;
-  productImageSet?: string[];
-  productWeight?: number;
+  // The docs say string[], but CJ's own examples also show JSON text; listOf() takes either.
+  productImageSet?: string[] | string;
+  productWeight?: number | string;
   categoryName?: string;
   materialNameEnSet?: string[];
   packingNameEnSet?: string[];
+  materialNameEn?: string;
+  packingNameEn?: string;
   productKeyEn?: string;
   description?: string;
   sellPrice?: string;
@@ -84,6 +87,33 @@ export function plainText(html: string | undefined, max = 1500): string {
     .slice(0, max);
 }
 
+/** A list CJ may send as an array, JSON text ("[\"a\",\"b\"]") or comma-separated text. Blanks dropped. */
+export function listOf(value: string[] | string | undefined | null): string[] {
+  if (!value) return [];
+  let items: unknown[] = [];
+  if (Array.isArray(value)) items = value;
+  else {
+    const text = value.trim();
+    try {
+      const parsed = JSON.parse(text);
+      items = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      items = text.split(",");
+    }
+  }
+  return items.map((s) => String(s ?? "").trim()).filter(Boolean);
+}
+
+/** A number CJ may send as text or a range ("1500.0", "120-180"): the highest value. */
+export function numberOf(value: number | string | undefined | null): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const nums = String(value ?? "")
+    .split(/[-~]/)
+    .map((s) => Number.parseFloat(s))
+    .filter((n) => Number.isFinite(n));
+  return nums.length ? Math.max(...nums) : null;
+}
+
 export function parseDays(aging: string | undefined): { min: number | null; max: number | null } {
   const nums = (aging ?? "").match(/\d+/g)?.map(Number) ?? [];
   if (!nums.length) return { min: null, max: null };
@@ -95,8 +125,15 @@ export async function searchProducts(
   workspaceId: string,
   opts: { keyword: string; page?: number; size?: number; countryCode?: string },
 ): Promise<CjListProduct[]> {
+  // Category names only come back when asked for with enable_category.
   const data = await cj<{ content?: ({ productList?: CjListProduct[] } | CjListProduct)[] }>(workspaceId, "GET", "/product/listV2", {
-    query: { keyWord: opts.keyword, page: opts.page ?? 1, size: opts.size ?? 20, countryCode: opts.countryCode, features: "enable_description" },
+    query: {
+      keyWord: opts.keyword,
+      page: opts.page ?? 1,
+      size: Math.min(100, opts.size ?? 20),
+      countryCode: opts.countryCode,
+      features: ["enable_description", "enable_category"],
+    },
   });
   const content = data?.content ?? [];
   return content.flatMap((c) => ("productList" in c && Array.isArray(c.productList) ? c.productList : "id" in c ? [c as CjListProduct] : []));
@@ -108,13 +145,19 @@ export async function productDetail(workspaceId: string, pid: string): Promise<C
 
 /** Shipping options for one unit of a variant. Cheapest first. */
 export async function freightOptions(workspaceId: string, vid: string, to: string, from = "CN"): Promise<FreightOption[]> {
-  const data = await cj<{ logisticName: string; logisticPrice: number; logisticAging: string }[]>(workspaceId, "POST", "/logistic/freightCalculate", {
+  const data = await cj<
+    { logisticName: string; logisticPrice: number; logisticAging: string; totalPostageFee?: number; taxesFee?: number; clearanceOperationFee?: number }[]
+  >(workspaceId, "POST", "/logistic/freightCalculate", {
     body: { startCountryCode: from, endCountryCode: to, products: [{ quantity: 1, vid }] },
   });
+  const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   return (data ?? [])
     .map((o) => {
       const d = parseDays(o.logisticAging);
-      return { name: o.logisticName, priceCents: Math.round(Number(o.logisticPrice) * 100), daysMin: d.min, daysMax: d.max };
+      // CJ also lists taxes, customs clearance and a total. Whether the total already includes the
+      // taxes isn't documented, so take whichever is higher: shipping is never understated.
+      const cost = Math.max(num(o.logisticPrice) + num(o.taxesFee) + num(o.clearanceOperationFee), num(o.totalPostageFee));
+      return { name: o.logisticName, priceCents: Math.round(cost * 100), daysMin: d.min, daysMax: d.max };
     })
     .filter((o) => Number.isFinite(o.priceCents))
     .sort((a, b) => a.priceCents - b.priceCents);
@@ -147,8 +190,15 @@ export interface CjOrderInput {
  * Places an order with CJ, paid from the CJ balance. `orderNumber` must be unique per sale, which
  * CJ also enforces, so a repeat can't create a second order. Sandbox orders cost nothing.
  */
-export async function createOrder(workspaceId: string, o: CjOrderInput): Promise<{ orderId: string; orderStatus?: string; actualPayment?: number }> {
+export async function createOrder(
+  workspaceId: string,
+  o: CjOrderInput,
+): Promise<{ orderId: string; orderStatus?: string; actualPayment?: number | string; interceptOrderReasons?: unknown[]; logisticsMiss?: boolean }> {
+  // Never re-sent after a timeout: the first attempt may have placed (and paid for) the order.
+  // The caller looks the order up by orderNumber instead, and treats intercept reasons or a
+  // missing shipping method as not placed.
   return cj(workspaceId, "POST", "/shopping/order/createOrderV2", {
+    retryTimeouts: false,
     body: {
       orderNumber: o.orderNumber,
       shippingCountryCode: o.shippingCountryCode,
@@ -175,6 +225,6 @@ export async function trackInfo(workspaceId: string, trackingNumbers: string[]) 
     workspaceId,
     "GET",
     "/logistic/trackInfo",
-    { query: { trackNumber: trackingNumbers.join(",") } },
+    { query: { trackNumber: trackingNumbers } },
   );
 }

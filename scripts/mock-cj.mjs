@@ -18,9 +18,10 @@ console.log(`mock CJ: ${catalog.length} sample products loaded`);
 // access or refresh token → the API key (account) it belongs to
 const tokens = new Map();
 const refreshTokens = new Map();
-const stats = { calls: 0, tooFast: 0, busySent: 0, byPath: {}, gaps: [] };
+const stats = { calls: 0, tooFast: 0, busySent: 0, pointsOutSent: 0, searchesWithoutCategory: 0, byPath: {}, gaps: [] };
 const lastCall = new Map();
 let busyLeft = 0;
+let pointsOutLeft = 0;
 
 const ok = (data) => ({ code: 200, result: true, message: "Success", data, requestId: crypto.randomUUID() });
 const fail = (code, message) => ({ code, result: false, message, data: null, requestId: crypto.randomUUID() });
@@ -107,9 +108,9 @@ function tokenData(account) {
   const refresh = `mock-refresh-${crypto.randomBytes(12).toString("hex")}`;
   tokens.set(access, account);
   refreshTokens.set(refresh, account);
-  const in15 = new Date(Date.now() + 15 * 86400_000).toISOString();
+  // CJ's tokens last 180 days, both kinds.
   const in180 = new Date(Date.now() + 180 * 86400_000).toISOString();
-  return { openId: 1234567, accessToken: access, accessTokenExpiryDate: in15, refreshToken: refresh, refreshTokenExpiryDate: in180, createDate: new Date().toISOString() };
+  return { openId: 1234567, accessToken: access, accessTokenExpiryDate: in180, refreshToken: refresh, refreshTokenExpiryDate: in180, createDate: new Date().toISOString() };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -128,6 +129,11 @@ const server = http.createServer(async (req, res) => {
     busyLeft = Number(url.searchParams.get("n") || 1);
     return send({ busyLeft });
   }
+  // Out of API points for the next n calls: CJ answers HTTP 429 with code 429.
+  if (url.pathname === "/__points") {
+    pointsOutLeft = Number(url.searchParams.get("n") || 1);
+    return send({ pointsOutLeft });
+  }
   if (!url.pathname.startsWith(PREFIX)) return send(fail(404, "Not found"), 404);
   const path = url.pathname.slice(PREFIX.length);
   let body = {};
@@ -137,7 +143,7 @@ const server = http.createServer(async (req, res) => {
     try {
       body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
     } catch {
-      return send(fail(1600100, "Param error"));
+      return send(fail(1600300, "Param error"));
     }
   }
 
@@ -164,6 +170,11 @@ const server = http.createServer(async (req, res) => {
     stats.busySent++;
     return send(fail(1600200, "Too Many Requests, QPS limit is 1 time/1second"));
   }
+  if (pointsOutLeft > 0 && !path.startsWith("/authentication/")) {
+    pointsOutLeft--;
+    stats.pointsOutSent++;
+    return send(fail(429, "Insufficient API points"), 429);
+  }
 
   if (path === "/authentication/getAccessToken") {
     if (!String(body.apiKey ?? "").startsWith(GOOD_KEY_PREFIX)) return send(fail(1600005, "apiKey is wrong"));
@@ -176,17 +187,23 @@ const server = http.createServer(async (req, res) => {
   if (!tokens.has(req.headers["cj-access-token"])) return send(fail(1600001, "Invalid API key or access token"));
 
   if (path === "/setting/get") {
-    return send(ok({ openId: 1234567, openName: "Mock Test Shop", openEmail: "test@example.com", setting: { qpsLimit: 1, quotaLimits: [] }, isSandbox: true }));
+    // qpsLimit 100 is what CJ's own documentation example shows; Armada must not believe it.
+    return send(ok({ openId: 1234567, openName: "Mock Test Shop", openEmail: "test@example.com", setting: { qpsLimit: 100, quotaLimits: [] }, isSandbox: true }));
   }
   if (path === "/product/listV2") {
     const size = Math.min(100, Number(url.searchParams.get("size") || 20));
-    const list = search(url.searchParams.get("keyWord"), size);
+    // Category names come back only when asked for with features=enable_category, as on CJ.
+    const withCategory = url.searchParams.getAll("features").includes("enable_category");
+    if (!withCategory) stats.searchesWithoutCategory++;
+    const list = search(url.searchParams.get("keyWord"), size).map((p) =>
+      withCategory ? p : { ...p, threeCategoryName: undefined, oneCategoryName: undefined },
+    );
     console.log(`  search "${url.searchParams.get("keyWord")}": ${list.length}`);
     return send(ok({ pageSize: size, pageNumber: 1, totalRecords: list.length, totalPages: 1, content: [{ productList: list, relatedCategoryList: [], keyWord: url.searchParams.get("keyWord") }] }));
   }
   if (path === "/product/query") {
     const d = detail(url.searchParams.get("pid"));
-    return send(d ? ok(d) : fail(1600100, "product not found"));
+    return send(d ? ok(d) : fail(1602001, "Product not found"));
   }
   if (path === "/logistic/freightCalculate") {
     return send(ok(freight(body.products?.[0]?.vid)));

@@ -1,5 +1,15 @@
 import "server-only";
-import { freightOptions, pickFreight, plainText, priceToCents, productDetail, searchProducts, type CjListProduct } from "@/connectors/cj/api";
+import {
+  freightOptions,
+  listOf,
+  numberOf,
+  pickFreight,
+  plainText,
+  priceToCents,
+  productDetail,
+  searchProducts,
+  type CjListProduct,
+} from "@/connectors/cj/api";
 import { mentionsBrand } from "@/lib/brands";
 import { withWorkspace } from "@/lib/db";
 import type { CatalogItem } from "@/lib/types";
@@ -104,13 +114,13 @@ export async function checkCjItem(workspaceId: string, catalogItemId: string, co
     vid: v.vid,
     sku: v.variantSku,
     key: v.variantKey,
-    priceCents: typeof v.variantSellPrice === "number" ? Math.round(v.variantSellPrice * 100) : null,
+    priceCents: priceToCents(v.variantSellPrice),
     image: v.variantImage,
   }));
   const main = variants[0];
   const freight = main ? pickFreight(await freightOptions(workspaceId, main.vid, country)) : null;
 
-  const images = [...new Set([d.bigImage, ...(d.productImageSet ?? []), item.images[0]?.url].filter((u): u is string => Boolean(u)))]
+  const images = [...new Set([d.bigImage, ...listOf(d.productImageSet), item.images[0]?.url].filter((u): u is string => Boolean(u && /^https?:\/\//.test(u))))]
     .slice(0, 6)
     .map((url) => ({ url, alt: d.productNameEn || item.title }));
   const costCents = main?.priceCents ?? priceToCents(d.sellPrice) ?? item.costCents;
@@ -122,9 +132,9 @@ export async function checkCjItem(workspaceId: string, catalogItemId: string, co
     freight: freight ? { name: freight.name, daysMin: freight.daysMin, daysMax: freight.daysMax } : undefined,
     variants,
     defaultVid: main?.vid,
-    materials: d.materialNameEnSet,
-    packing: d.packingNameEnSet,
-    weightGrams: d.productWeight,
+    materials: d.materialNameEnSet?.length ? listOf(d.materialNameEnSet) : listOf(d.materialNameEn),
+    packing: d.packingNameEnSet?.length ? listOf(d.packingNameEnSet) : listOf(d.packingNameEn),
+    weightGrams: numberOf(d.productWeight) ?? undefined,
     suggestedPrice: d.suggestSellPrice,
     ...(brand ? { brand } : {}),
   };
@@ -135,7 +145,7 @@ export async function checkCjItem(workspaceId: string, catalogItemId: string, co
       update armada.catalog_items set
         title = ${(d.productNameEn || item.title).slice(0, 200)},
         description = ${plainText(d.description, 2500) || item.description},
-        category = ${d.categoryName?.split(">").at(-1)?.trim() || item.category},
+        category = ${d.categoryName?.split(/\s*[>/]\s*/).filter(Boolean).at(-1)?.trim() || item.category},
         images = ${tx.json(images as never)},
         cost_cents = ${costCents},
         ship_cents = ${freight?.priceCents ?? 0},
