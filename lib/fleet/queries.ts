@@ -154,10 +154,12 @@ export async function storeDetail(workspaceId: string, id: string) {
       select s.*, g.name as "group" from armada.stores s left join armada.store_groups g on g.id = s.group_id where s.id = ${id}`;
     if (!store) return null;
     const listings = await tx<
-      { id: string; title: string; priceCents: number; status: string; score: number | null; costCents: number; shipCents: number; images: { url: string }[]; productId: string; productStatus: string }[]
+      { id: string; title: string; priceCents: number; status: string; score: number | null; costCents: number; shipCents: number; images: { url: string }[]; productId: string; productStatus: string; art: { icon?: string } | null }[]
     >`
-      select l.id, p.title, l.price_cents, l.status, p.score, p.cost_cents, p.ship_cents, p.images, p.id as product_id, p.status as product_status
+      select l.id, p.title, l.price_cents, l.status, p.score, p.cost_cents, p.ship_cents, p.images, p.id as product_id, p.status as product_status,
+             c.attributes -> 'art' as art
       from armada.listings l join armada.products p on p.id = l.product_id
+      left join armada.catalog_items c on c.id = p.catalog_item_id
       where l.store_id = ${id} order by l.status, p.title`;
     const orders = await tx<{ id: string; externalId: string; placedAt: Date; totalCents: number; status: string; problem: string | null; items: number }[]>`
       select o.id, o.external_id, o.placed_at, o.total_cents, o.status, o.problem,

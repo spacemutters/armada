@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ProductArt } from "@/components/product-art";
 import { Card, PageHeader, ScoreBadge, Section, Stat, StatusPill, type Tone } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
 import { storeDetail } from "@/lib/fleet/queries";
@@ -83,11 +84,8 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
             <ul className="flex flex-col divide-y divide-line">
               {listings.map((l) => (
                 <li key={l.id} className="flex items-center gap-3 py-2.5">
-                  <span className="size-10 shrink-0 overflow-hidden rounded-lg bg-sunken">
-                    {l.images?.[0]?.url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={l.images[0].url} alt="" className="h-full w-full object-cover" />
-                    ) : null}
+                  <span className="size-10 shrink-0 overflow-hidden rounded-lg bg-sunken" style={{ "--art-bg": "var(--sunken)", "--art-fg": "var(--muted)" } as React.CSSProperties}>
+                    <ProductArt images={l.images ?? []} icon={l.art?.icon} title={l.title} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{l.title}</span>
