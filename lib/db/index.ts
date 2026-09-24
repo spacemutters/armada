@@ -15,7 +15,11 @@ function sql(): postgres.Sql {
     prepare: false, // the transaction pooler can't keep prepared statements
     max: 5,
     idle_timeout: 20,
+    max_lifetime: 5 * 60, // recycle connections so a dead one never lingers
     connect_timeout: 15,
+    keep_alive: 30,
+    // Queries that hang are cancelled after 25 seconds by a role setting on armada_app
+    // (statement_timeout), which works through the pooler where startup settings don't.
     // Local only: this PC's resolver stalls on the pooler name, so dev can dial its address directly.
     host: process.env.DATABASE_HOSTADDR || undefined,
     ssl: { ca: SUPABASE_CA, servername: hostname, rejectUnauthorized: true },

@@ -59,11 +59,14 @@ function findClaude() {
   return found.at(-1)?.exe ?? null;
 }
 
+// Every request gives up after 30 seconds, so a laptop waking from sleep (with dead connections)
+// never leaves the helper stuck waiting.
 async function post(route, body) {
   const res = await fetch(`${ARMADA_URL}${route}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
   });
   return res;
 }

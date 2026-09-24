@@ -13,9 +13,13 @@ interface State {
   helperOnline: boolean;
 }
 
-function elapsed(from?: string, to?: string): string {
+function elapsed(from: string | undefined, to: string | undefined, now: number | null): string {
   if (!from) return "";
-  const s = Math.max(0, Math.round(((to ? new Date(to) : new Date()).getTime() - new Date(from).getTime()) / 1000));
+  // Before the page is live in the browser there is no "now", so a running step shows no clock.
+  // That keeps the server's first render and the browser's identical.
+  const end = to ? new Date(to).getTime() : now;
+  if (end == null) return "";
+  const s = Math.max(0, Math.round((end - new Date(from).getTime()) / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
@@ -23,18 +27,19 @@ function elapsed(from?: string, to?: string): string {
 export function ShopProgress({ shopId, initial }: { shopId: string; initial: State }) {
   const router = useRouter();
   const [state, setState] = useState(initial);
-  const [, tick] = useState(0);
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
+    setNow(Date.now());
     if (state.status !== "building") return;
     const poll = setInterval(async () => {
-      const res = await fetch(`/api/shops/${shopId}`, { cache: "no-store" });
-      if (!res.ok) return;
+      const res = await fetch(`/api/shops/${shopId}`, { cache: "no-store" }).catch(() => null);
+      if (!res?.ok) return;
       const next: State = await res.json();
       setState(next);
       if (next.status !== "building") router.refresh();
     }, 2000);
-    const clock = setInterval(() => tick((n) => n + 1), 1000);
+    const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       clearInterval(poll);
       clearInterval(clock);
@@ -69,7 +74,13 @@ export function ShopProgress({ shopId, initial }: { shopId: string; initial: Sta
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className={cx("font-medium", step.state === "waiting" && "text-muted")}>{step.label}</span>
                 <span className="tabular text-[13px] text-muted">
-                  {step.state === "running" ? `working · ${elapsed(step.startedAt)}` : step.state === "done" ? elapsed(step.startedAt, step.finishedAt) : step.state === "failed" ? "stopped" : "next"}
+                  {step.state === "running"
+                    ? `working${now ? ` · ${elapsed(step.startedAt, undefined, now)}` : ""}`
+                    : step.state === "done"
+                      ? elapsed(step.startedAt, step.finishedAt, now)
+                      : step.state === "failed"
+                        ? "stopped"
+                        : "next"}
                 </span>
               </div>
               {step.note ? <p className="mt-0.5 text-[13px] text-muted">{step.note}</p> : null}

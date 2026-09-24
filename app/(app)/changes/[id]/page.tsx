@@ -39,7 +39,8 @@ export default async function ChangePage({ params }: PageProps<"/changes/[id]">)
     if (!cs) return null;
     const items = await tx<Item[]>`
       select i.id, s.name as store_name,
-             coalesce(p.title, (select p2.title from armada.products p2 where p2.id::text = i.after ->> 'productId')) as product_title,
+             coalesce(p.title, (select p2.title from armada.products p2
+                                where p2.id::text = coalesce(i.after ->> 'productId', i.before ->> 'productId'))) as product_title,
              i.before, i.after, i.status, i.error
       from armada.change_items i
       left join armada.stores s on s.id = i.store_id
@@ -82,7 +83,7 @@ export default async function ChangePage({ params }: PageProps<"/changes/[id]">)
         </Card>
       ) : null}
 
-      {cs.status === "done" || cs.status === "partial" ? (
+      {(cs.status === "done" || cs.status === "partial") && cs.kind !== "undo" ? (
         <Card className="mb-4 flex flex-wrap items-center gap-3 p-5">
           <p className="mr-auto text-[14px] text-muted">Every change here saved what was there before, so it can be put back.</p>
           <form action={undo.bind(null, cs.id)}>

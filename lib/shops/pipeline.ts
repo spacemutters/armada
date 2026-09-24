@@ -174,7 +174,9 @@ async function afterConcept(tx: Tx, shop: ShopRow, output: unknown) {
     shop.id,
     "products",
     "running",
-    candidates.length ? `${candidates.length} supplier matches to choose from` : "No close supplier matches, so this practice shop gets practice items",
+    candidates.length
+      ? `${candidates.length} supplier ${candidates.length === 1 ? "match" : "matches"} to choose from`
+      : "No close supplier matches, so this practice shop gets practice items",
   );
   await enqueueJob(tx, {
     workspaceId: shop.workspaceId,

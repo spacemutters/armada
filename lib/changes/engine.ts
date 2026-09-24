@@ -243,9 +243,10 @@ export async function undoChange(tx: Tx, changeSetId: string, memberId: string):
   let done = 0;
   for (const it of items) {
     if (!it.targetId) continue;
-    const current = await tx<{ priceCents: number; status: string }[]>`select price_cents, status from armada.listings where id = ${it.targetId}`;
+    const current = await tx<{ priceCents: number; status: string; productId: string }[]>`
+      select price_cents, status, product_id from armada.listings where id = ${it.targetId}`;
     if (!current[0]) continue;
-    const now = { priceCents: current[0].priceCents, status: current[0].status };
+    const now = { priceCents: current[0].priceCents, status: current[0].status, productId: current[0].productId };
     if (it.before === null) {
       // It didn't exist before: take it down.
       await tx`delete from armada.listings where id = ${it.targetId}`;
@@ -258,7 +259,7 @@ export async function undoChange(tx: Tx, changeSetId: string, memberId: string):
     await tx`
       insert into armada.change_items (workspace_id, change_set_id, store_id, target_type, target_id, before, after, status, finished_at, undoable)
       values (${cs.workspaceId}, ${undo.id}, ${it.storeId}, 'listing', ${it.before === null ? null : it.targetId},
-              ${tx.json(now as never)}, ${tx.json((it.before ?? { removed: true }) as never)}, 'done', now(), false)`;
+              ${tx.json(now as never)}, ${tx.json({ ...(it.before ?? { removed: true }), productId: now.productId } as never)}, 'done', now(), false)`;
     done++;
   }
   await tx`update armada.change_sets set status = 'done', finished_at = now(), counts = ${tx.json({ done, failed: 0 } as never)} where id = ${undo.id}`;
