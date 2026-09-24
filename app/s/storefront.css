@@ -1,0 +1,265 @@
+/*
+  The storefront every AI-built shop renders through. Each shop supplies its own palette, fonts and
+  radius as CSS variables on .sf; nothing here hardcodes a brand color. Rules from the house design
+  standard: tinted paper and ink (never pure white or black), one radius, hairlines over shadows,
+  display type big with negative tracking, one signature moment (the hero photo settling in).
+*/
+
+.sf {
+  --s-line: color-mix(in srgb, var(--s-ink) 11%, transparent);
+  --s-line-strong: color-mix(in srgb, var(--s-ink) 22%, transparent);
+  --s-gutter: clamp(1rem, 5vw, 2.5rem);
+  --s-section: clamp(4rem, 10vw, 9rem);
+  --text-display: clamp(2.6rem, 1rem + 6vw, 7rem);
+  --text-h1: clamp(2rem, 3.6vw, 3.25rem);
+  --text-h2: clamp(1.45rem, 2.2vw, 1.9rem);
+  --text-lead: clamp(1.125rem, 1.35vw, 1.4rem);
+  background: var(--s-bg);
+  color: var(--s-ink);
+  font-family: var(--s-body);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.sf ::selection {
+  background: color-mix(in srgb, var(--s-accent) 22%, transparent);
+}
+
+.sf-wrap {
+  width: 100%;
+  max-width: 1360px;
+  margin-inline: auto;
+  padding-inline: var(--s-gutter);
+}
+
+.sf-section {
+  padding-block: var(--s-section);
+}
+
+.sf-display {
+  font-family: var(--s-display);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 0.98;
+  text-wrap: balance;
+}
+
+.sf-heading {
+  font-family: var(--s-display);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.sf-muted {
+  color: var(--s-muted);
+}
+
+.sf-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--s-muted);
+}
+
+.sf-lead {
+  font-size: var(--text-lead);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.sf p {
+  text-wrap: pretty;
+}
+
+.sf-line {
+  border-color: var(--s-line);
+}
+
+.sf-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0 1.5rem;
+  border-radius: var(--s-radius);
+  background: var(--s-accent);
+  color: var(--s-accent-ink);
+  font-weight: 500;
+  font-size: 1rem;
+  transition: transform 160ms cubic-bezier(0.4, 0, 0.2, 1), opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sf-button:hover {
+  opacity: 0.9;
+}
+
+.sf-button:active {
+  transform: scale(0.97);
+}
+
+.sf-button[aria-disabled="true"],
+.sf-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sf-button-ghost {
+  background: transparent;
+  color: var(--s-ink);
+  box-shadow: inset 0 0 0 1px var(--s-line-strong);
+}
+
+.sf-link {
+  color: var(--s-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--s-line-strong);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 300ms;
+}
+
+.sf-link:hover {
+  text-decoration-color: var(--s-ink);
+}
+
+.sf-card-media {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--s-radius);
+  background: var(--s-surface);
+  aspect-ratio: 4 / 5;
+  --art-bg: var(--s-surface);
+  --art-fg: var(--s-accent);
+}
+
+/* Supplier photos usually sit on white; multiply lets the shop's own surface show through instead. */
+.sf-card-media img {
+  mix-blend-mode: multiply;
+  object-fit: contain;
+  padding: 8%;
+  transition: transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sf-card:hover .sf-card-media img {
+  transform: scale(1.04);
+}
+
+.sf-prose {
+  max-width: 65ch;
+}
+
+.sf-prose h2,
+.sf-prose h3,
+.sf-prose h4 {
+  font-family: var(--s-display);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  margin: 2em 0 0.6em;
+}
+
+.sf-prose h2 {
+  font-size: var(--text-h2);
+}
+
+.sf-prose h3 {
+  font-size: 1.25rem;
+}
+
+.sf-prose p,
+.sf-prose ul,
+.sf-prose ol {
+  margin: 0.9em 0;
+}
+
+.sf-prose ul {
+  list-style: disc;
+  padding-left: 1.2em;
+}
+
+.sf-prose ol {
+  list-style: decimal;
+  padding-left: 1.2em;
+}
+
+.sf-prose li {
+  margin: 0.3em 0;
+}
+
+.sf-prose a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.sf-prose strong {
+  font-weight: 600;
+}
+
+.sf details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.sf details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sf details[open] .sf-plus {
+  transform: rotate(45deg);
+}
+
+.sf-plus {
+  transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The one signature moment: the hero photo settles in as the headline rises. Once, on load. */
+@keyframes sf-settle {
+  from {
+    transform: scale(1.12);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes sf-rise {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sf-hero-media > * {
+  animation: sf-settle 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sf-hero-copy > * {
+  animation: sf-rise 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sf-hero-copy > *:nth-child(2) {
+  animation-delay: 90ms;
+}
+
+.sf-hero-copy > *:nth-child(3) {
+  animation-delay: 180ms;
+}
+
+.sf-hero-copy > *:nth-child(4) {
+  animation-delay: 270ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-hero-media > *,
+  .sf-hero-copy > * {
+    animation: none;
+  }
+}
