@@ -1,5 +1,6 @@
 import { createShops } from "../actions";
 import { Button, Card, Field, inputClass, PageHeader } from "@/components/ui";
+import { cjStatus } from "@/connectors/cj/client";
 import { requireSession } from "@/lib/auth/session";
 
 export const metadata = { title: "New shop" };
@@ -7,8 +8,9 @@ export const metadata = { title: "New shop" };
 const IDEAS = ["Dog walking gear for city apartments", "Minimalist desk setup for gamers", "Home workout gear for small spaces", "Calm bedroom and sleep goods"];
 
 export default async function NewShopPage({ searchParams }: PageProps<"/builder/new">) {
-  await requireSession();
+  const session = await requireSession();
   const { error, niche } = await searchParams;
+  const cj = await cjStatus(session.workspaceId);
   return (
     <>
       <PageHeader
@@ -65,6 +67,15 @@ export default async function NewShopPage({ searchParams }: PageProps<"/builder/
               </select>
             </Field>
           </div>
+          <Field
+            label="Products from"
+            hint={cj.connected ? "CJ gives real products, photos, costs and shipping times." : "Connect CJ in Settings to build shops from real supplier products."}
+          >
+            <select name="source" defaultValue={cj.connected ? "cj" : "practice"} className={inputClass}>
+              {cj.connected ? <option value="cj">CJ Dropshipping (real products)</option> : null}
+              <option value="practice">Practice catalog</option>
+            </select>
+          </Field>
           <Field label="Look and feel" hint="Optional, a few words.">
             <input name="look" maxLength={160} className={inputClass} placeholder="Calm, natural materials, lots of white space" />
           </Field>

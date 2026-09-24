@@ -18,6 +18,10 @@ export interface ScoreInput {
   platform?: "shopify" | "ebay";
   practice?: boolean;
   fleetUnitsSold30d?: number | null;
+  /** How many stores list this item through the supplier (CJ reports it). */
+  supplierListings?: number | null;
+  /** `shipCents` is a stand-in until the supplier confirms it. */
+  shipEstimated?: boolean;
 }
 
 const clamp = (n: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, n));
@@ -28,8 +32,10 @@ export function scoreProduct(i: ScoreInput): { score: number; parts: ScoreParts 
   const marginShare = i.priceCents > 0 ? profit / i.priceCents : 0;
   const margin = {
     value: clamp((marginShare - 0.1) / 0.3),
-    measured: !i.practice,
-    note: `${Math.round(marginShare * 100)}% left after supplier cost, shipping, fees and a starting ad cost`,
+    measured: !i.practice && !i.shipEstimated,
+    note: i.shipEstimated
+      ? `About ${Math.round(marginShare * 100)}% left, with shipping estimated until the supplier confirms it`
+      : `${Math.round(marginShare * 100)}% left after supplier cost, shipping, fees and a starting ad cost`,
   };
 
   const demand =
@@ -39,11 +45,17 @@ export function scoreProduct(i: ScoreInput): { score: number; parts: ScoreParts 
           measured: true,
           note: `${i.fleetUnitsSold30d} sold across your stores in the last 30 days`,
         }
-      : {
-          value: i.rating != null ? clamp((i.rating - 3.5) / 1.5) : 0.5,
-          measured: false,
-          note: "Estimated from the supplier's rating. Live demand needs eBay's market data.",
-        };
+      : i.supplierListings != null
+        ? {
+            value: clamp(Math.log10(1 + i.supplierListings) / 3),
+            measured: true,
+            note: `${i.supplierListings} stores already sell this through the supplier`,
+          }
+        : {
+            value: i.rating != null ? clamp((i.rating - 3.5) / 1.5) : 0.5,
+            measured: false,
+            note: "Estimated from the supplier's rating. Live demand needs eBay's market data.",
+          };
 
   const competition = { value: 0.5, measured: false, note: "Not checked yet. Needs eBay's market data." };
 
@@ -54,7 +66,7 @@ export function scoreProduct(i: ScoreInput): { score: number; parts: ScoreParts 
           measured: !i.practice,
           note: `Arrives in up to ${i.shipDaysMax} days`,
         }
-      : { value: 0.4, measured: false, note: "The supplier gave no shipping time" };
+      : { value: 0.4, measured: false, note: i.shipEstimated ? "Shipping time not confirmed yet" : "The supplier gave no shipping time" };
 
   const reliability =
     i.stock != null
@@ -95,7 +107,7 @@ function reasonsFor(p: ScoreParts): string[] {
     ["margin", p.margin.value, "strong margin", "thin margin"],
     ["shipping", p.shipping.value, "fast shipping", "slow shipping"],
     ["reliability", p.reliability.value, "deep stock", "low stock"],
-    ["demand", p.demand.value, "well rated", "weak rating"],
+    ["demand", p.demand.value, "in demand", "unproven demand"],
   ];
   // The two parts furthest from neutral, described in plain words.
   return words

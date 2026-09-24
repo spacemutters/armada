@@ -112,7 +112,7 @@ export function BagView({ slug }: { slug: string }) {
           Checkout
         </button>
         <p className="sf-muted text-[14px]">
-          This is a practice shop built with Armada, so checkout is switched off. Once the shop is published to a real Shopify store, checkout runs
+          This is a preview built with Armada, so checkout is switched off. Once the shop is published to a real Shopify store, checkout runs
           there.
         </p>
       </aside>

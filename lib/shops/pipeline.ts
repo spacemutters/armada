@@ -1,11 +1,13 @@
 import "server-only";
 import { z } from "zod";
-import type { Tx } from "@/lib/db";
-import { enqueueJob, onJobFinished } from "@/lib/ai/jobs";
+import { CjNotConnected, describeCjError } from "@/connectors/cj/client";
+import { checkCjItem, importCjSearch } from "@/lib/catalog/cj";
+import { countryCode } from "@/lib/countries";
+import { asSystem, withWorkspace, type Tx } from "@/lib/db";
+import { enqueueJob, onJobFinished, type Deferred } from "@/lib/ai/jobs";
 import { fixPalette } from "@/lib/color";
 import { searchCatalog } from "@/lib/catalog/search";
-import { retailPrice } from "@/lib/pricing";
-import { scoreProduct } from "@/lib/score";
+import { scoreCatalogItem } from "@/lib/products/score-item";
 import { clip, randomSlug, slugify, uniqueHandle } from "@/lib/text";
 import type { AiJob, CatalogItem } from "@/lib/types";
 import { SYSTEM, conceptPrompt, conceptSchema, pagesPrompt, pagesSchema, productsPrompt, productsSchema } from "./prompts";
@@ -25,6 +27,10 @@ const TIMEOUTS: Record<StepKey, number> = { concept: 180_000, products: 360_000,
 
 const HANDLING_DAYS = 2;
 const RETURN_DAYS = 30;
+/** Fewer real products than this and it isn't a shop yet; the build stops and says why. */
+const MIN_CJ_PRODUCTS = 4;
+
+const nProducts = (n: number) => `${n} ${n === 1 ? "product" : "products"}`;
 
 export async function startShopBuild(tx: Tx, workspaceId: string, brief: ShopBrief): Promise<{ id: string; slug: string }> {
   const slug = randomSlug(10);
@@ -130,7 +136,7 @@ async function failShop(tx: Tx, shop: ShopRow, step: StepKey, message: string) {
   await tx`update armada.shops set status = 'failed', error = ${message}, updated_at = now() where id = ${shop.id}`;
 }
 
-async function afterConcept(tx: Tx, shop: ShopRow, output: unknown) {
+async function afterConcept(tx: Tx, shop: ShopRow, output: unknown, defer: (work: Deferred) => void) {
   const c = Concept.parse(output);
   const { palette, changed } = fixPalette(c.palette);
   const used = new Set<string>();
@@ -158,6 +164,16 @@ async function afterConcept(tx: Tx, shop: ShopRow, output: unknown) {
   };
 
   const phrases = [...c.searchTerms, ...c.collections.flatMap((col) => col.keywords), shop.niche];
+
+  if (shop.brief.source === "cj") {
+    // Real products: search CJ after this answer is saved, in the account's speed lane.
+    await saveBlueprint(tx, shop.id, blueprint);
+    await setStep(tx, shop.id, "concept", "done");
+    await setStep(tx, shop.id, "products", "running", "Searching CJ's catalog");
+    defer(() => cjCandidates(shop.workspaceId, shop.id));
+    return;
+  }
+
   const candidates = await searchCatalog(tx, { source: shop.brief.source, phrases, limit: 60 });
   blueprint.candidateCount = candidates.length;
   const allowImagined = shop.brief.source === "practice";
@@ -191,7 +207,7 @@ async function afterConcept(tx: Tx, shop: ShopRow, output: unknown) {
   });
 }
 
-async function afterProducts(tx: Tx, shop: ShopRow, output: unknown) {
+async function afterProducts(tx: Tx, shop: ShopRow, output: unknown, defer: (work: Deferred) => void) {
   const out = Products.parse(output);
   const blueprint = shop.blueprint;
   const brief = shop.brief;
@@ -244,24 +260,13 @@ async function afterProducts(tx: Tx, shop: ShopRow, output: unknown) {
   const handles = new Set<string>();
   const products: NonNullable<Blueprint["products"]> = [];
   for (const { item, copy, imagined } of chosen.slice(0, brief.productCount)) {
-    const priceCents = retailPrice(item.costCents, item.shipCents, brief.priceFeel);
-    const { score, parts } = scoreProduct({
-      priceCents,
-      costCents: item.costCents,
-      shipCents: item.shipCents,
-      shipDaysMax: item.shipDaysMax,
-      stock: item.stock,
-      rating: item.rating != null ? Number(item.rating) : null,
-      branded: item.branded,
-      retailSource: item.retailSource,
-      practice: item.source === "practice",
-    });
+    const { priceCents, shipCents, score, parts } = scoreCatalogItem(item, brief.priceFeel);
     const [product] = await tx<{ id: string }[]>`
       insert into armada.products
         (workspace_id, catalog_item_id, title, description, bullets, images, category, cost_cents, ship_cents,
          seo_title, seo_description, score, score_parts)
       values (${shop.workspaceId}, ${item.id}, ${copy.title}, ${copy.description}, ${tx.json(copy.bullets as never)},
-              ${tx.json(item.images as never)}, ${item.category}, ${item.costCents}, ${item.shipCents},
+              ${tx.json(item.images as never)}, ${item.category}, ${item.costCents}, ${shipCents},
               ${"seoTitle" in copy ? copy.seoTitle : copy.title}, ${"seoDescription" in copy ? copy.seoDescription : null},
               ${score}, ${tx.json(parts as never)})
       returning id`;
@@ -270,10 +275,29 @@ async function afterProducts(tx: Tx, shop: ShopRow, output: unknown) {
     products.push({ productId: product.id, handle: uniqueHandle(copy.title, handles), collection: col?.handle ?? "", priceCents, imagined });
   }
 
-  const mins = chosen.map((c) => c.item.shipDaysMin).filter((n): n is number => n != null);
-  const maxs = chosen.map((c) => c.item.shipDaysMax).filter((n): n is number => n != null);
   blueprint.products = products;
   blueprint.collections = collections.filter((c) => c.productIds.length > 0);
+
+  if (brief.source === "cj") {
+    if (products.length < MIN_CJ_PRODUCTS) {
+      await saveBlueprint(tx, shop.id, blueprint);
+      await failShop(
+        tx,
+        shop,
+        "products",
+        `Only ${nProducts(products.length)} from CJ fit this shop, and a shop needs at least ${MIN_CJ_PRODUCTS}. Try a broader idea.`,
+      );
+      return;
+    }
+    // Prices wait until CJ confirms each product's real cost and shipping.
+    await saveBlueprint(tx, shop.id, blueprint);
+    await setStep(tx, shop.id, "products", "running", `${nProducts(products.length)} written. Checking real shipping costs and times with CJ`);
+    defer(() => cjCheckChosen(shop.workspaceId, shop.id));
+    return;
+  }
+
+  const mins = chosen.map((c) => c.item.shipDaysMin).filter((n): n is number => n != null);
+  const maxs = chosen.map((c) => c.item.shipDaysMax).filter((n): n is number => n != null);
   blueprint.facts = {
     country: brief.country,
     deliveryMin: mins.length ? Math.min(...mins) : 7,
@@ -282,7 +306,7 @@ async function afterProducts(tx: Tx, shop: ShopRow, output: unknown) {
     returnDays: RETURN_DAYS,
   };
   await saveBlueprint(tx, shop.id, blueprint);
-  await setStep(tx, shop.id, "products", "done", `${products.length} products written`);
+  await setStep(tx, shop.id, "products", "done", `${nProducts(products.length)} written`);
   await setStep(tx, shop.id, "pages", "running");
   await enqueueJob(tx, {
     workspaceId: shop.workspaceId,
@@ -306,7 +330,171 @@ async function afterPages(tx: Tx, shop: ShopRow, output: unknown) {
   await setStep(tx, shop.id, "pages", "done");
 }
 
-onJobFinished("shop", async (tx: Tx, job: AiJob) => {
+// ---------- the CJ path: real products, real shipping ----------
+
+async function loadBuildingShop(workspaceId: string, shopId: string): Promise<ShopRow | null> {
+  const rows = await withWorkspace(workspaceId, (tx) => tx<ShopRow[]>`select * from armada.shops where id = ${shopId}`);
+  return rows[0] && rows[0].status === "building" ? rows[0] : null;
+}
+
+/** Searches CJ with the AI's search terms, then hands the real candidates to the AI to choose from. */
+async function cjCandidates(workspaceId: string, shopId: string) {
+  const shop = await loadBuildingShop(workspaceId, shopId);
+  if (!shop) return;
+  const bp = shop.blueprint;
+  const phrases = [...(bp.searchTerms ?? []), ...(bp.collections ?? []).flatMap((c) => c.keywords)];
+  let items: CatalogItem[];
+  try {
+    items = await importCjSearch(workspaceId, phrases, { maxPhrases: 6, perPhrase: 20 });
+  } catch (e) {
+    await withWorkspace(workspaceId, (tx) => failShop(tx, shop, "products", describeCjError(e)));
+    return;
+  }
+  const candidates = items.filter((i) => !i.branded).slice(0, 60);
+  await withWorkspace(workspaceId, async (tx) => {
+    if (candidates.length < MIN_CJ_PRODUCTS) {
+      await failShop(
+        tx,
+        shop,
+        "products",
+        candidates.length
+          ? `CJ only had ${nProducts(candidates.length)} for this idea, and a shop needs at least ${MIN_CJ_PRODUCTS}. Try a broader idea, in plainer words.`
+          : "CJ had nothing for this idea. Try describing what the shop sells in plainer words.",
+      );
+      return;
+    }
+    await saveBlueprint(tx, shop.id, { ...bp, candidateCount: candidates.length });
+    await setStep(tx, shop.id, "products", "running", `${nProducts(candidates.length)} from CJ to choose from`);
+    await enqueueJob(tx, {
+      workspaceId,
+      kind: "shop.products",
+      input: {
+        system: SYSTEM,
+        prompt: productsPrompt(shop.brief, bp, candidates, false),
+        schema: productsSchema(false) as never,
+        timeoutMs: TIMEOUTS.products,
+      },
+      parent: { type: "shop", id: shop.id },
+    });
+  });
+}
+
+/**
+ * Checks every chosen product with CJ (photos, variants, real shipping to the shop's country),
+ * then sets prices from the confirmed costs and writes delivery facts for the pages step.
+ * A product CJ can't price is left out rather than guessed.
+ */
+async function cjCheckChosen(workspaceId: string, shopId: string) {
+  const shop = await loadBuildingShop(workspaceId, shopId);
+  if (!shop) return;
+  const bp = shop.blueprint;
+  const country = countryCode(shop.brief.country);
+  const refs = bp.products ?? [];
+  const links = await withWorkspace(
+    workspaceId,
+    (tx) => tx<{ id: string; catalogItemId: string }[]>`select id, catalog_item_id from armada.products where id in ${tx(refs.map((r) => r.productId))}`,
+  );
+  const catalogFor = new Map(links.map((l) => [l.id, l.catalogItemId]));
+
+  const checked = new Map<string, CatalogItem>();
+  let lastError: unknown = null;
+  for (const [n, ref] of refs.entries()) {
+    const catalogId = catalogFor.get(ref.productId);
+    if (!catalogId) continue;
+    try {
+      const item = await checkCjItem(workspaceId, catalogId, country);
+      if (item.shipDaysMax != null && !item.branded) checked.set(ref.productId, item);
+    } catch (e) {
+      lastError = e;
+      if (e instanceof CjNotConnected) break;
+    }
+    // Progress on screen, and a fresh timestamp so the stall check below leaves a live run alone.
+    await withWorkspace(workspaceId, (tx) => setStep(tx, shopId, "products", "running", `Checked ${n + 1} of ${refs.length} products with CJ`));
+  }
+
+  await withWorkspace(workspaceId, async (tx) => {
+    if (checked.size < MIN_CJ_PRODUCTS) {
+      await failShop(
+        tx,
+        shop,
+        "products",
+        lastError
+          ? describeCjError(lastError)
+          : `CJ could confirm shipping for only ${nProducts(checked.size)}, and a shop needs at least ${MIN_CJ_PRODUCTS}. Try the build again, or a broader idea.`,
+      );
+      return;
+    }
+    const kept: NonNullable<Blueprint["products"]> = [];
+    for (const ref of refs) {
+      const item = checked.get(ref.productId);
+      if (!item) continue;
+      const { priceCents, score, parts } = scoreCatalogItem(item, shop.brief.priceFeel);
+      await tx`
+        update armada.products set cost_cents = ${item.costCents}, ship_cents = ${item.shipCents}, images = ${tx.json(item.images as never)},
+          category = ${item.category}, score = ${score}, score_parts = ${tx.json(parts as never)}, updated_at = now()
+        where id = ${ref.productId}`;
+      kept.push({ ...ref, priceCents });
+    }
+    const keptIds = new Set(kept.map((k) => k.productId));
+    const items = [...checked.values()];
+    const next: Blueprint = {
+      ...bp,
+      products: kept,
+      collections: (bp.collections ?? [])
+        .map((c) => ({ ...c, productIds: c.productIds.filter((id) => keptIds.has(id)) }))
+        .filter((c) => c.productIds.length > 0),
+      facts: {
+        country: shop.brief.country,
+        deliveryMin: Math.min(...items.map((i) => i.shipDaysMin ?? i.shipDaysMax ?? 7)),
+        deliveryMax: Math.max(...items.map((i) => i.shipDaysMax ?? 15)),
+        handlingDays: HANDLING_DAYS,
+        returnDays: RETURN_DAYS,
+      },
+    };
+    await saveBlueprint(tx, shop.id, next);
+    const dropped = refs.length - kept.length;
+    await setStep(
+      tx,
+      shop.id,
+      "products",
+      "done",
+      `${nProducts(kept.length)} with shipping confirmed by CJ${dropped ? `. ${dropped} left out because CJ couldn't confirm ${dropped === 1 ? "it" : "them"}` : ""}`,
+    );
+    await setStep(tx, shop.id, "pages", "running");
+    await enqueueJob(tx, {
+      workspaceId,
+      kind: "shop.pages",
+      input: { system: SYSTEM, prompt: pagesPrompt(next), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
+      parent: { type: "shop", id: shop.id },
+    });
+  });
+}
+
+/**
+ * The CJ steps run after a response, so a server cut-off can stop one halfway. Any CJ build whose
+ * products step has sat still for six minutes with no AI job pending is picked up again. Both steps
+ * are safe to repeat: checked products are remembered and the search only refreshes the catalog.
+ * Called from the AI helper's poll, which runs every few seconds while the helper is on.
+ */
+export async function resumeStalledCjBuilds(): Promise<void> {
+  const stalled = await asSystem(
+    (tx) => tx<{ id: string; workspaceId: string; hasProducts: boolean }[]>`
+      update armada.shops s set updated_at = now()
+      where s.status = 'building' and s.brief ->> 'source' = 'cj' and s.updated_at < now() - interval '6 minutes'
+        and exists (select 1 from jsonb_array_elements(s.progress) p where p ->> 'key' = 'products' and p ->> 'state' = 'running')
+        and not exists (select 1 from armada.ai_jobs j where j.parent_type = 'shop' and j.parent_id = s.id and j.status in ('queued', 'running'))
+      returning s.id, s.workspace_id, (s.blueprint ? 'products') as has_products`,
+  );
+  for (const s of stalled) {
+    try {
+      await (s.hasProducts ? cjCheckChosen(s.workspaceId, s.id) : cjCandidates(s.workspaceId, s.id));
+    } catch (e) {
+      console.error("resuming CJ build failed", s.id, e);
+    }
+  }
+}
+
+onJobFinished("shop", async (tx: Tx, job: AiJob, defer) => {
   if (job.parentType !== "shop" || !job.parentId) return;
   const [shop] = await tx<ShopRow[]>`select * from armada.shops where id = ${job.parentId}`;
   if (!shop || shop.status !== "building") return;
@@ -316,8 +504,8 @@ onJobFinished("shop", async (tx: Tx, job: AiJob) => {
     return;
   }
   try {
-    if (step === "concept") await afterConcept(tx, shop, job.output);
-    else if (step === "products") await afterProducts(tx, shop, job.output);
+    if (step === "concept") await afterConcept(tx, shop, job.output, defer);
+    else if (step === "products") await afterProducts(tx, shop, job.output, defer);
     else if (step === "pages") await afterPages(tx, shop, job.output);
   } catch (e) {
     console.error("shop step failed", step, shop.id, e);

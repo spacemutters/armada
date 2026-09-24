@@ -101,7 +101,11 @@ export default async function StorefrontLayout({ children, params }: LayoutProps
           <span>
             © {new Date().getFullYear()} {brand}
           </span>
-          <span>A practice shop built with Armada. Checkout is off.</span>
+          <span>
+            {data.shop.brief.source === "cj"
+              ? "A preview built with Armada. Checkout turns on when it's published to Shopify."
+              : "A practice shop built with Armada. Checkout is off."}
+          </span>
         </div>
       </footer>
     </div>

@@ -1,7 +1,11 @@
+import { after } from "next/server";
 import { z } from "zod";
 import { completeJob } from "@/lib/ai/jobs";
 import { helperIdFrom, isHelper } from "@/lib/ai/helper-auth";
 import "@/lib/ai/handlers";
+
+// Follow-up work (such as checking supplier shipping for a new shop) runs after the answer is sent.
+export const maxDuration = 300;
 
 const Body = z.object({
   helperId: z.string(),
@@ -19,10 +23,21 @@ export async function POST(request: Request) {
   if (!parsed.success || !helperId) return new Response(null, { status: 400 });
 
   const d = parsed.data;
-  await completeJob(
+  const deferred = await completeJob(
     helperId,
     d.jobId,
     d.ok ? { ok: true, output: d.output, usage: d.usage } : { ok: false, error: d.error ?? "The AI helper reported an error.", usage: d.usage },
   );
+  if (deferred.length) {
+    after(async () => {
+      for (const work of deferred) {
+        try {
+          await work();
+        } catch (e) {
+          console.error("follow-up work failed", e);
+        }
+      }
+    });
+  }
   return Response.json({ ok: true });
 }

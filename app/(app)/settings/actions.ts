@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { connectCj, describeCjError, disconnectCj } from "@/connectors/cj/client";
 import { requireSession } from "@/lib/auth/session";
 import { createInvite } from "@/lib/auth/invites";
 import { asSystem, withWorkspace } from "@/lib/db";
@@ -26,6 +27,33 @@ export async function makeTeamInvite(formData: FormData) {
   const role = (["manager", "assistant", "viewer"] as Role[]).includes(formData.get("role") as Role) ? (formData.get("role") as Role) : "assistant";
   const token = await asSystem((tx) => createInvite(tx, { workspaceId: session.workspaceId, role, hours: 72 }));
   redirect(`/settings?link=${encodeURIComponent(token)}&for=team#team`);
+}
+
+export async function connectCjAction(formData: FormData) {
+  const session = await requireSession();
+  if (session.role !== "owner" && session.role !== "manager") redirect("/settings#connections");
+  const apiKey = String(formData.get("apiKey") ?? "").trim();
+  if (apiKey.length < 10 || apiKey.length > 300) redirect(`/settings?cj=${encodeURIComponent("Paste the whole CJ API key.")}#connections`);
+  let error: string | null = null;
+  try {
+    const meta = await connectCj(session.workspaceId, apiKey);
+    await withWorkspace(
+      session.workspaceId,
+      (tx) => tx`
+        insert into armada.audit_log (workspace_id, member_id, action, detail)
+        values (${session.workspaceId}, ${session.memberId}, 'cj.connected', ${tx.json({ account: meta.account ?? null } as never)})`,
+    );
+  } catch (e) {
+    error = describeCjError(e);
+  }
+  redirect(error ? `/settings?cj=${encodeURIComponent(error)}#connections` : "/settings?cj=ok#connections");
+}
+
+export async function disconnectCjAction() {
+  const session = await requireSession();
+  if (session.role !== "owner") redirect("/settings#connections");
+  await disconnectCj(session.workspaceId);
+  redirect("/settings#connections");
 }
 
 export async function removePasskey(passkeyId: string) {

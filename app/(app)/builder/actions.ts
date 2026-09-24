@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { cjStatus } from "@/connectors/cj/client";
 import { requireSession } from "@/lib/auth/session";
 import { withWorkspace } from "@/lib/db";
 import { startShopBuild } from "@/lib/shops/pipeline";
@@ -30,6 +31,7 @@ const Form = z.object({
   productCount: z.coerce.number().int().min(4).max(24).default(12),
   look: z.string().trim().max(160).default(""),
   count: z.coerce.number().int().min(1).max(10).default(1),
+  source: z.enum(["cj", "practice"]).default("practice"),
 });
 
 export async function createShops(formData: FormData) {
@@ -37,6 +39,8 @@ export async function createShops(formData: FormData) {
   const parsed = Form.safeParse(Object.fromEntries(formData));
   if (!parsed.success) redirect(`/builder/new?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Check the form.")}`);
   const f = parsed.data;
+  // Real products only when CJ is actually connected; otherwise the practice catalog.
+  const source = f.source === "cj" && (await cjStatus(session.workspaceId)).connected ? "cj" : "practice";
 
   const ids = await withWorkspace(session.workspaceId, async (tx) => {
     const made: string[] = [];
@@ -49,7 +53,7 @@ export async function createShops(formData: FormData) {
         priceFeel: f.priceFeel,
         productCount: f.productCount,
         look,
-        source: "practice",
+        source,
       };
       const { id } = await startShopBuild(tx, session.workspaceId, brief);
       made.push(id);

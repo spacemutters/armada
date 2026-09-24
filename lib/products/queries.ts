@@ -1,8 +1,8 @@
 import "server-only";
+import { importCjSearch } from "@/lib/catalog/cj";
 import { searchCatalog } from "@/lib/catalog/search";
 import { withWorkspace } from "@/lib/db";
-import { retailPrice } from "@/lib/pricing";
-import { scoreProduct } from "@/lib/score";
+import { scoreCatalogItem } from "@/lib/products/score-item";
 import type { CatalogImage, ScoreParts } from "@/lib/types";
 
 export interface ProductRow {
@@ -19,6 +19,8 @@ export interface ProductRow {
   hiddenListings: number;
   typicalPriceCents: number | null;
   unitsSold30: number;
+  /** A CJ product whose shipping CJ hasn't confirmed yet. */
+  unconfirmed: boolean;
 }
 
 export async function listProducts(workspaceId: string): Promise<ProductRow[]> {
@@ -26,6 +28,8 @@ export async function listProducts(workspaceId: string): Promise<ProductRow[]> {
     workspaceId,
     (tx) => tx<ProductRow[]>`
       select p.id, p.title, p.category, p.images, p.cost_cents, p.ship_cents, p.score, p.score_parts, p.status,
+             coalesce((select c.source = 'cj' and coalesce(c.attributes -> 'cj' ->> 'checked', 'false') <> 'true'
+                       from armada.catalog_items c where c.id = p.catalog_item_id), false) as unconfirmed,
              count(l.id) filter (where l.status = 'active')::int as active_listings,
              count(l.id) filter (where l.status = 'hidden')::int as hidden_listings,
              (percentile_disc(0.5) within group (order by l.price_cents))::int as typical_price_cents,
@@ -52,46 +56,42 @@ export interface FoundItem {
   reasons: string[];
   alreadyAdded: boolean;
   practice: boolean;
+  /** CJ search results carry no shipping until the product is checked. */
+  shippingKnown: boolean;
 }
 
-export async function findProducts(workspaceId: string, q: string): Promise<FoundItem[]> {
+export async function findProducts(workspaceId: string, q: string, source: "practice" | "cj" = "practice"): Promise<FoundItem[]> {
   const phrases = q
     .split(/[,;]+/)
     .map((s) => s.trim())
     .filter(Boolean);
   if (!phrases.length) return [];
+  // CJ is searched live (one call per phrase, in the account's speed lane) and saved to the catalog.
+  const cjItems = source === "cj" ? await importCjSearch(workspaceId, phrases, { maxPhrases: 3, perPhrase: 24 }) : null;
   return withWorkspace(workspaceId, async (tx) => {
-    const items = await searchCatalog(tx, { source: "practice", phrases, limit: 48 });
+    const items = cjItems ?? (await searchCatalog(tx, { source: "practice", phrases, limit: 48 }));
     const added = new Set(
       (await tx<{ catalogItemId: string }[]>`select catalog_item_id from armada.products where catalog_item_id is not null`).map((r) => r.catalogItemId),
     );
-    return items.map((item) => {
-      const suggestedPriceCents = retailPrice(item.costCents, item.shipCents, "mid");
-      const { score, parts } = scoreProduct({
-        priceCents: suggestedPriceCents,
-        costCents: item.costCents,
-        shipCents: item.shipCents,
-        shipDaysMax: item.shipDaysMax,
-        stock: item.stock,
-        rating: item.rating != null ? Number(item.rating) : null,
-        branded: item.branded,
-        retailSource: item.retailSource,
-        practice: item.source === "practice",
-      });
-      return {
-        id: item.id,
-        title: item.title,
-        category: item.category,
-        images: item.images,
-        costCents: item.costCents,
-        shipCents: item.shipCents,
-        shipDaysMax: item.shipDaysMax,
-        suggestedPriceCents,
-        score,
-        reasons: parts.reasons,
-        alreadyAdded: added.has(item.id),
-        practice: item.source === "practice",
-      };
-    });
+    return items
+      .map((item) => {
+        const s = scoreCatalogItem(item, "mid");
+        return {
+          id: item.id,
+          title: item.title,
+          category: item.category,
+          images: item.images,
+          costCents: item.costCents,
+          shipCents: s.shipCents,
+          shipDaysMax: item.shipDaysMax,
+          suggestedPriceCents: s.priceCents,
+          score: s.score,
+          reasons: s.parts.reasons,
+          alreadyAdded: added.has(item.id),
+          practice: item.source === "practice",
+          shippingKnown: !s.shipEstimated,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
   });
 }

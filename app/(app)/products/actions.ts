@@ -1,11 +1,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { planListing, planReprice, savePreview } from "@/lib/changes/engine";
 import { withWorkspace } from "@/lib/db";
-import { retailPrice } from "@/lib/pricing";
-import { scoreProduct } from "@/lib/score";
+import { checkProductsWithCj } from "@/lib/products/cj-check";
+import { scoreCatalogItem } from "@/lib/products/score-item";
 import type { CatalogItem } from "@/lib/types";
 
 const uuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
@@ -14,30 +15,24 @@ export async function addToProducts(formData: FormData) {
   const session = await requireSession();
   const ids = formData.getAll("catalogIds").filter(uuid).slice(0, 100);
   if (!ids.length) redirect("/products?tab=find");
-  const added = await withWorkspace(session.workspaceId, async (tx) => {
+  const { added, fromCj } = await withWorkspace(session.workspaceId, async (tx) => {
     const items = await tx<CatalogItem[]>`
       select c.* from armada.catalog_items c
       where c.id in ${tx(ids)} and not exists (select 1 from armada.products p where p.catalog_item_id = c.id)`;
+    const fromCj: string[] = [];
     for (const item of items) {
-      const price = retailPrice(item.costCents, item.shipCents, "mid");
-      const { score, parts } = scoreProduct({
-        priceCents: price,
-        costCents: item.costCents,
-        shipCents: item.shipCents,
-        shipDaysMax: item.shipDaysMax,
-        stock: item.stock,
-        rating: item.rating != null ? Number(item.rating) : null,
-        branded: item.branded,
-        retailSource: item.retailSource,
-        practice: item.source === "practice",
-      });
-      await tx`
+      const { shipCents, score, parts } = scoreCatalogItem(item, "mid");
+      const [p] = await tx<{ id: string }[]>`
         insert into armada.products (workspace_id, catalog_item_id, title, description, images, category, cost_cents, ship_cents, seo_title, score, score_parts)
         values (${session.workspaceId}, ${item.id}, ${item.title}, ${item.description}, ${tx.json(item.images as never)}, ${item.category},
-                ${item.costCents}, ${item.shipCents}, ${item.title}, ${score}, ${tx.json(parts as never)})`;
+                ${item.costCents}, ${shipCents}, ${item.title}, ${score}, ${tx.json(parts as never)})
+        returning id`;
+      if (item.source === "cj") fromCj.push(p.id);
     }
-    return items.length;
+    return { added: items.length, fromCj };
   });
+  // CJ products get their real photos, cost and shipping confirmed once the page has moved on.
+  if (fromCj.length) after(() => checkProductsWithCj(session.workspaceId, fromCj).then(() => undefined));
   redirect(`/products?added=${added}`);
 }
 

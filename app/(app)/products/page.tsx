@@ -2,11 +2,15 @@ import Link from "next/link";
 import { addToProducts } from "./actions";
 import { ProductArt } from "@/components/product-art";
 import { Button, Card, EmptyState, inputClass, PageHeader, ScoreBadge } from "@/components/ui";
+import { cjStatus, describeCjError } from "@/connectors/cj/client";
 import { requireSession } from "@/lib/auth/session";
 import { formatMoney } from "@/lib/money";
-import { findProducts, listProducts } from "@/lib/products/queries";
+import { findProducts, listProducts, type FoundItem } from "@/lib/products/queries";
 
 export const metadata = { title: "Products" };
+
+// Adding CJ products checks each one with CJ after the page moves on (about two seconds each).
+export const maxDuration = 300;
 
 export default async function ProductsPage({ searchParams }: PageProps<"/products">) {
   const session = await requireSession();
@@ -34,7 +38,18 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
   );
 
   if (tab === "find") {
-    const results = q ? await findProducts(session.workspaceId, q) : [];
+    const cj = await cjStatus(session.workspaceId);
+    const from = cj.connected && sp.from !== "practice" ? "cj" : "practice";
+    let results: FoundItem[] = [];
+    let problem: string | null = null;
+    if (q) {
+      try {
+        results = await findProducts(session.workspaceId, q, from);
+      } catch (e) {
+        problem = describeCjError(e);
+      }
+    }
+    const otherHref = `/products?tab=find${from === "cj" ? "&from=practice" : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
     return (
       <>
         <PageHeader
@@ -44,14 +59,41 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
         <div className="flex">{tabs}</div>
         <form className="mb-6 flex max-w-2xl gap-2" action="/products">
           <input type="hidden" name="tab" value="find" />
+          {from === "practice" && cj.connected ? <input type="hidden" name="from" value="practice" /> : null}
           <input name="q" defaultValue={q} className={inputClass} placeholder="Try: kitchen knife, water bottle, lamp" aria-label="Search products" />
           <Button type="submit">Search</Button>
         </form>
         <p className="mb-4 max-w-3xl text-[13px] text-muted">
-          This is the practice catalog: real sample products with simulated costs and stock. Connecting your CJ Dropshipping account swaps in the real
-          catalog with real costs, stock and delivery times.
+          {from === "cj" ? (
+            <>
+              Searching CJ Dropshipping&apos;s real catalog. Shipping is estimated in these results. When you add a product, Armada checks its real
+              shipping cost and time with CJ.{" "}
+              <Link href={otherHref} className="text-accent hover:underline">
+                Search the practice catalog instead
+              </Link>
+            </>
+          ) : cj.connected ? (
+            <>
+              Searching the practice catalog.{" "}
+              <Link href={otherHref} className="text-accent hover:underline">
+                Search CJ instead
+              </Link>
+            </>
+          ) : (
+            <>
+              This is the practice catalog: real sample products with simulated costs and stock.{" "}
+              <Link href="/settings#connections" className="text-accent hover:underline">
+                Connect CJ Dropshipping
+              </Link>{" "}
+              to search the real catalog with real costs, stock and delivery times.
+            </>
+          )}
         </p>
-        {!q ? null : results.length === 0 ? (
+        {problem ? (
+          <p role="alert" className="mb-4 rounded-xl bg-sunken px-4 py-3 text-[14px] text-negative">
+            {problem}
+          </p>
+        ) : !q ? null : results.length === 0 ? (
           <EmptyState title="Nothing matched" body="Try plainer words, like “bottle” instead of “hydration solution”." />
         ) : (
           <form action={addToProducts}>
@@ -68,8 +110,10 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
                     </div>
                     <ScoreBadge score={r.score} />
                     <div className="tabular text-[12px] text-muted">
-                      Costs {formatMoney(r.costCents + r.shipCents)} delivered · sells around {formatMoney(r.suggestedPriceCents)}
+                      {r.shippingKnown ? "Costs" : "Costs about"} {formatMoney(r.costCents + r.shipCents)} delivered · sells around{" "}
+                      {formatMoney(r.suggestedPriceCents)}
                       {r.shipDaysMax ? ` · up to ${r.shipDaysMax} days` : ""}
+                      {r.shippingKnown ? "" : " · shipping estimated"}
                     </div>
                     <div className="text-[12px] text-muted">{r.alreadyAdded ? "Already in your products" : r.reasons.join(", ")}</div>
                   </label>
@@ -137,6 +181,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
                           <span className="block text-[12px] text-muted">
                             {p.category}
                             {p.status === "paused" ? " · paused, supplier out of stock" : ""}
+                            {p.unconfirmed ? " · shipping not confirmed by CJ yet" : ""}
                           </span>
                         </span>
                       </div>

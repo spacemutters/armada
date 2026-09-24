@@ -17,6 +17,12 @@ export const PLATFORM_FEES = {
 /** Share of the price assumed to go to ads when judging margin. */
 export const STARTING_AD_SHARE = 0.15;
 
+/**
+ * Stand-in shipping cost for a supplier product whose shipping hasn't been confirmed yet. On the
+ * high side of small-parcel rates from China, so an unconfirmed product never looks better than it is.
+ */
+export const UNCONFIRMED_SHIP_CENTS = 550;
+
 export function retailPrice(costCents: number, shipCents: number, feel: PriceFeel): number {
   const raw = (costCents + shipCents) * MARKUP[feel];
   return charm(Math.max(raw, 500), feel);

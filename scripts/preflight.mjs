@@ -91,6 +91,43 @@ const checks = {
       return bad.length ? `secrets in: ${bad.map((p) => (p.includes(path.sep) ? rel(root, p) : p)).join(", ")}` : null;
     },
   },
+  "cj-lane": {
+    what: "Every request to CJ waits for the account's next slot (CJ allows about one a second)",
+    run(root) {
+      const dir = path.join(root, "connectors", "cj");
+      const files = walk(dir).filter((p) => /\.ts$/.test(p));
+      const problems = [];
+      for (const f of files) {
+        const text = fs.readFileSync(f, "utf8");
+        const name = rel(root, f);
+        const fetches = (text.match(/\bfetch\(/g) ?? []).length;
+        if (name !== "connectors/cj/client.ts" && fetches) problems.push(`${name} calls CJ without going through client.ts`);
+        if (name !== "connectors/cj/client.ts") continue;
+        if (fetches !== 1) problems.push(`client.ts has ${fetches} places that send requests; only raw() should`);
+        // raw() is defined once and called once, inside laned(), right after waiting for a slot.
+        const calls = [...text.matchAll(/(?<!function )\braw(<[^>]*>)?\(/g)];
+        if (calls.length !== 1) problems.push(`raw() is called in ${calls.length} places; only laned() may call it`);
+        const laned = text.match(/async function laned[\s\S]*?\n}/)?.[0] ?? "";
+        if (!/await waitForSlot\([^)]*\);\s*return raw/.test(laned)) problems.push("laned() no longer waits for a slot before sending");
+      }
+      if (!files.length) problems.push("connectors/cj is missing");
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
+  "sealed-keys": {
+    what: "Connection keys are stored encrypted, never as readable text",
+    run(root) {
+      const bad = [];
+      for (const p of sourceFiles(root)) {
+        const text = fs.readFileSync(p, "utf8");
+        for (const m of text.matchAll(/insert into armada\.credentials[\s\S]*?values\s*\(([\s\S]*?)\)\s*(on conflict|returning|`)/g)) {
+          if (!/\$\{seal\(/.test(m[1])) bad.push(rel(root, p));
+        }
+        if (/update armada\.credentials[\s\S]{0,200}set[^`]*\bsecret\s*=\s*\$\{(?!seal\()/.test(text)) bad.push(rel(root, p));
+      }
+      return bad.length ? `credentials saved without encryption in: ${[...new Set(bad)].join(", ")}` : null;
+    },
+  },
   "plain-words": {
     what: "Main screens use plain words; technical terms live under Settings > Advanced",
     run(root) {
@@ -233,6 +270,15 @@ const PLANTS = {
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("ebaySeller.has(key)", "false"));
   },
   "locked-keys": (dir) => fs.writeFileSync(path.join(dir, "lib", "planted.ts"), `export const k = "shpat_0123456789abcdef0123456789abcdef";\n`),
+  "cj-lane": (dir) => {
+    const f = path.join(dir, "connectors", "cj", "client.ts");
+    // A token call that skips the lane, the bug this check exists for.
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('const env = await laned<TokenData>(workspaceId, gapMs, "POST", "/authentication/getAccessToken"', 'const env = await raw<TokenData>("POST", "/authentication/getAccessToken"'));
+  },
+  "sealed-keys": (dir) => {
+    const f = path.join(dir, "connectors", "cj", "client.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("${seal(secret)}", "${JSON.stringify(secret)}"));
+  },
   "plain-words": (dir) => {
     const f = path.join(dir, "app", "(app)", "ads", "page.tsx");
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("One stop button", "One OAuth token button"));

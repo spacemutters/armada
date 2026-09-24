@@ -38,7 +38,12 @@ export async function claimJob(helperId: string): Promise<AiJob | null> {
   });
 }
 
-export type JobHandler = (tx: Tx, job: AiJob) => Promise<void>;
+/**
+ * A follow-up step. `defer` schedules slow work (like supplier calls) to run after the result is
+ * saved, outside the database transaction, so nothing holds a connection while it waits.
+ */
+export type Deferred = () => Promise<void>;
+export type JobHandler = (tx: Tx, job: AiJob, defer: (work: Deferred) => void) => Promise<void>;
 const handlers = new Map<string, JobHandler>();
 
 /** Registers what happens after a job of this kind finishes or finally fails. */
@@ -59,7 +64,8 @@ export async function completeJob(
   helperId: string,
   jobId: string,
   result: { ok: true; output: unknown; usage?: unknown } | { ok: false; error: string; usage?: unknown },
-): Promise<void> {
+): Promise<Deferred[]> {
+  const deferred: Deferred[] = [];
   await asSystem(async (tx) => {
     const [job] = await tx<AiJob[]>`select * from armada.ai_jobs where id = ${jobId} for update`;
     if (!job || job.status !== "running" || job.claimedBy !== helperId) return;
@@ -84,9 +90,10 @@ export async function completeJob(
     if (handler) {
       // The follow-up step runs as the job's workspace only, not with system reach.
       await tx`select set_config('armada.workspace_id', ${finished.workspaceId}, true), set_config('armada.system', '', true)`;
-      await handler(tx, finished);
+      await handler(tx, finished, (work) => deferred.push(work));
     }
   });
+  return deferred;
 }
 
 export async function recordHeartbeat(helperId: string, info: Record<string, unknown>): Promise<void> {

@@ -20,6 +20,16 @@ practice fleet that behaves like real stores without real money.
   models are chosen in `lib/ai/config.ts`. Each finished step starts the next (`lib/shops/pipeline.ts`).
 - **Sign-in**: passkeys only. One-time setup links (`scripts/make-invite.mjs`) create the first owner;
   Settings makes links for more devices and teammates.
+- **CJ Dropshipping**: connected in Settings with the account's API key, which is exchanged for tokens
+  and stored sealed with AES-256-GCM (`lib/crypto.ts`, key in `ENCRYPTION_KEY`). Every request goes
+  through `connectors/cj/client.ts`, which waits for the account's slot in a database-backed speed
+  lane (`lib/lanes.ts`, 1.25 s apart because CJ allows about one call a second), renews tokens, and
+  retries only CJ's busy answers. Search is live; "checking" an item (`lib/catalog/cj.ts`) fetches full
+  photos, variants and the real shipping price and days. Unchecked items are costed with a cautious
+  shipping stand-in (`UNCONFIRMED_SHIP_CENTS`) and their score says the margin is estimated.
+  CJ shop builds search CJ after the concept step and check every chosen product before pricing; that
+  work runs after the response (`defer` → `after()`), and the helper's poll restarts any CJ build
+  that has sat still for six minutes (`resumeStalledCjBuilds`).
 
 ## Everyday commands
 
@@ -30,6 +40,14 @@ node --env-file=.env.local scripts/e2e.mjs https://armada-pi.vercel.app   # full
 node --env-file=.env.local scripts/make-invite.mjs https://armada-pi.vercel.app   # a first-owner setup link
 vercel deploy --prod --yes --scope spacemutters-projects                   # deploy (run preflight first)
 ```
+
+Testing CJ without a real key: `node scripts/mock-cj.mjs` runs a stand-in CJ (DummyJSON products,
+CJ's answer shapes, a per-account one-call-a-second limit, and switches for expired access and busy
+answers). Run a production build with `CJ_BASE_URL=http://127.0.0.1:4599/api2.0/v1 npx next start`,
+point a helper at it (`ARMADA_URL=http://localhost:3000`, after stopping the live helper so it
+doesn't take the test jobs), then `node --env-file=.env.local scripts/e2e-cj.mjs http://localhost:3000 --count 2`.
+Delete the "CJ test fleet" workspaces afterwards. (`npm run dev` answers 404 on some routes on this
+machine; test against `next start`.)
 
 AI helper: `helper/start-helper.cmd` starts it in a small minimized window; `helper/stop-helper.cmd` stops it.
 Start it through Explorer (`Start-Process explorer.exe -ArgumentList ...start-helper.cmd`) so it runs outside
@@ -44,5 +62,7 @@ the Claude app's container and survives the session. Its settings are in `helper
 
 ## Not built yet
 
-Real Shopify, eBay and CJ connections (they need Davis's partner, developer and supplier accounts),
-ads, the plain-language command box, and the practice fleet's live clock. See the plan's build stages.
+Real Shopify and eBay connections (they need Davis's partner and developer accounts), automatic CJ
+ordering from real sales (the calls exist in `connectors/cj/api.ts`; they need a real store's orders),
+ads, the plain-language command box, and the practice fleet's live clock. The CJ connection has been
+tested end to end against the stand-in only, until Davis adds his key.
