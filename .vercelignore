@@ -1,0 +1,7 @@
+.env*
+.shots
+helper/.env
+helper/helper.log
+helper/helper.lock
+.next
+node_modules

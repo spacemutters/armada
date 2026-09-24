@@ -46,3 +46,5 @@ helper/helper.log
 helper/helper.lock
 .db-verifier.tmp
 .shots/
+.vercel
+.env*

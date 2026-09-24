@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Armada
 
-## Getting Started
+Run hundreds of Shopify stores and eBay accounts from one screen: an AI shop builder, a product
+catalog with 1–100 scores, listing across stores with preview and undo, one orders inbox, and a
+practice fleet that behaves like real stores without real money.
 
-First, run the development server:
+- Live: https://armada-pi.vercel.app (the bare project alias; the per-deployment URLs sit behind Vercel login)
+- Plan: https://claude.ai/code/artifact/663c5d19-8ce7-4979-818a-b1be82742e01 (plain-language plan plus a "For the build" tab)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## How it fits together
+
+- **Web app**: Next.js 16 on Vercel (`spacemutters-projects/armada`), region iad1.
+- **Database**: the `armada` schema inside the Supabase project `alpr-network` (`ltrzsicklomwnqpedpxr`).
+  The app logs in as `armada_app`, which is not the table owner, so row-level security scopes every
+  query to one workspace (`lib/db`: `withWorkspace`, `asSystem`). The TLS certificate is pinned
+  (`lib/db/supabase-ca.ts`). Migrations are in `supabase/migrations/`.
+- **AI**: jobs queue in `armada.ai_jobs`. The helper on Davis's computer (`helper/armada-helper.mjs`)
+  claims them and runs the local Claude command-line tool on his own login, with every tool switched off,
+  so the AI can only return text. Prompts and schemas live server-side (`lib/shops/prompts.ts`);
+  models are chosen in `lib/ai/config.ts`. Each finished step starts the next (`lib/shops/pipeline.ts`).
+- **Sign-in**: passkeys only. One-time setup links (`scripts/make-invite.mjs`) create the first owner;
+  Settings makes links for more devices and teammates.
+
+## Everyday commands
+
+```
+npm run dev                                   # local copy (needs .env.local)
+node scripts/preflight.mjs                    # build checks; --live adds database checks; --selftest proves each check fires
+node --env-file=.env.local scripts/e2e.mjs https://armada-pi.vercel.app   # full browser run with a virtual passkey
+node --env-file=.env.local scripts/make-invite.mjs https://armada-pi.vercel.app   # a first-owner setup link
+vercel deploy --prod --yes --scope spacemutters-projects                   # deploy (run preflight first)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+AI helper: `helper/start-helper.cmd` starts it in a small minimized window; `helper/stop-helper.cmd` stops it.
+Start it through Explorer (`Start-Process explorer.exe -ArgumentList ...start-helper.cmd`) so it runs outside
+the Claude app's container and survives the session. Its settings are in `helper/.env` (not committed).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Local-only notes
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- This PC's DNS stalls on `aws-0-us-east-1.pooler.supabase.com`; `.env.local` sets `DATABASE_HOSTADDR`
+  to one of its addresses so local runs dial it directly. Vercel resolves it normally.
+- `vercel link` overwrites `.env.local`. Back it up first (`.env.local.backup`).
+- `scripts/push-env.mjs NAME...` copies server settings into Vercel without printing them.
 
-## Learn More
+## Not built yet
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Real Shopify, eBay and CJ connections (they need Davis's partner, developer and supplier accounts),
+ads, the plain-language command box, and the practice fleet's live clock. See the plan's build stages.
