@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
-import { connectCjAction, disconnectCjAction, makeDeviceLink, makeTeamInvite, removePasskey, renameWorkspace } from "./actions";
-import { Button, inputClass, PageHeader, Section, StatusPill } from "@/components/ui";
+import { connectCjAction, disconnectCjAction, makeDeviceLink, makeTeamInvite, removePasskey, renameWorkspace, setPasswordAction } from "./actions";
+import { Button, Field, inputClass, PageHeader, Section, StatusPill } from "@/components/ui";
 import { cjStatus } from "@/connectors/cj/client";
 import { helperStatus } from "@/lib/ai/jobs";
 import { requireSession } from "@/lib/auth/session";
@@ -18,6 +18,19 @@ const CONNECTIONS = [
   { name: "TikTok ads", needs: "A TikTok developer profile and app (sign-up 2)." },
 ];
 
+// What the Password form's result codes (from setPasswordAction) say to the member.
+const PASSWORD_MESSAGES: Record<string, string> = {
+  reload: "Something went wrong. Reload the page and try again.",
+  email: "Enter the email address you'll sign in with.",
+  short: "Use at least 12 characters. A short sentence is easy to remember.",
+  long: "Use 256 characters or fewer.",
+  mismatch: "The two new passwords don't match. Type them again.",
+  current: "Enter your current password.",
+  wrong: "Your current password isn't right.",
+  locked: "Too many wrong tries. Wait 15 minutes and try again.",
+  taken: "That email can't be used here. Try a different one.",
+};
+
 export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
   const session = await requireSession();
   const sp = await searchParams;
@@ -28,7 +41,9 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         select id, device_label, created_at, last_used_at from armada.passkeys where member_id = ${session.memberId} order by created_at`;
       const members = await tx<{ id: string; displayName: string; role: string }[]>`
         select id, display_name, role from armada.members order by created_at`;
-      return { passkeys, members };
+      const [me] = await tx<{ email: string | null; hasPassword: boolean; passwordChangedAt: Date | null }[]>`
+        select email, password_hash is not null as has_password, password_changed_at from armada.members where id = ${session.memberId}`;
+      return { passkeys, members, me };
     }),
     headers(),
     cjStatus(session.workspaceId),
@@ -156,6 +171,59 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
               <span className="mt-1 block font-mono break-all select-all">{link}</span>
             </p>
           ) : null}
+        </Section>
+
+        <Section title="Password" className="scroll-mt-6">
+          <div id="password" className="flex flex-col gap-4">
+            <p className="max-w-xl text-[14px] text-muted">
+              {data.me?.email ? (
+                <>
+                  Your sign-in email is <span className="font-medium text-ink">{data.me.email}</span>.{" "}
+                  {data.me.hasPassword
+                    ? `You can sign in with it and your password. Password last changed ${timeAgo(data.me.passwordChangedAt)}.`
+                    : "Set a password to sign in with it when your passkey isn't handy."}
+                </>
+              ) : (
+                "Add your email and a password so you can sign in without your passkey."
+              )}
+            </p>
+            <form action={setPasswordAction} className="flex max-w-md flex-col gap-4">
+              {data.me?.email ? (
+                // Lets password managers save the new password under the right email.
+                <input type="email" name="username" autoComplete="username" value={data.me.email} readOnly hidden />
+              ) : (
+                <Field label="Email">
+                  <input name="email" type="email" autoComplete="username" inputMode="email" autoCapitalize="none" spellCheck={false} required maxLength={254} className={`${inputClass} min-h-11`} />
+                </Field>
+              )}
+              {data.me?.hasPassword ? (
+                <Field label="Current password">
+                  <input name="currentPassword" type="password" autoComplete="current-password" required maxLength={256} className={`${inputClass} min-h-11`} />
+                </Field>
+              ) : null}
+              <Field label="New password" hint="At least 12 characters. A short sentence is easy to remember and hard to guess.">
+                <input name="newPassword" type="password" autoComplete="new-password" required minLength={12} maxLength={256} className={`${inputClass} min-h-11`} />
+              </Field>
+              <Field label="New password again">
+                <input name="confirmPassword" type="password" autoComplete="new-password" required minLength={12} maxLength={256} className={`${inputClass} min-h-11`} />
+              </Field>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="submit" variant="secondary" className="min-h-11">
+                  {data.me?.hasPassword ? "Change password" : "Set password"}
+                </Button>
+                {data.me?.hasPassword ? <span className="text-[13px] text-muted">This signs you out on your other devices.</span> : null}
+              </div>
+            </form>
+            {sp.pw === "ok" ? (
+              <p role="status" className="text-[13px] text-positive">
+                Password saved.
+              </p>
+            ) : typeof sp.pw === "string" && Object.hasOwn(PASSWORD_MESSAGES, sp.pw) ? (
+              <p role="alert" className="text-[13px] text-negative">
+                {PASSWORD_MESSAGES[sp.pw]}
+              </p>
+            ) : null}
+          </div>
         </Section>
 
         <Section title="Team" className="scroll-mt-6">
