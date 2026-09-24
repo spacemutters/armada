@@ -123,6 +123,8 @@ export interface AiJobInput {
   prompt: string;
   schema: Record<string, unknown>;
   model: string;
+  /** Which AI tool runs the job; set by enqueueJob from lib/ai/config.ts. Missing means claude. */
+  engine?: "claude" | "codex";
   effort?: "low" | "medium" | "high";
   timeoutMs?: number;
 }

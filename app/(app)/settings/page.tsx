@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { connectCjAction, disconnectCjAction, makeDeviceLink, makeTeamInvite, removePasskey, renameWorkspace, setPasswordAction } from "./actions";
+import { PasswordInput } from "@/components/password-input";
 import { Button, Field, inputClass, PageHeader, Section, StatusPill } from "@/components/ui";
 import { cjStatus } from "@/connectors/cj/client";
 import { helperStatus } from "@/lib/ai/jobs";
@@ -198,14 +199,14 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
               )}
               {data.me?.hasPassword ? (
                 <Field label="Current password">
-                  <input name="currentPassword" type="password" autoComplete="current-password" required maxLength={256} className={`${inputClass} min-h-11`} />
+                  <PasswordInput name="currentPassword" autoComplete="current-password" required maxLength={256} className="min-h-11" />
                 </Field>
               ) : null}
               <Field label="New password" hint="At least 12 characters. A short sentence is easy to remember and hard to guess.">
-                <input name="newPassword" type="password" autoComplete="new-password" required minLength={12} maxLength={256} className={`${inputClass} min-h-11`} />
+                <PasswordInput name="newPassword" autoComplete="new-password" required minLength={12} maxLength={256} className="min-h-11" />
               </Field>
               <Field label="New password again">
-                <input name="confirmPassword" type="password" autoComplete="new-password" required minLength={12} maxLength={256} className={`${inputClass} min-h-11`} />
+                <PasswordInput name="confirmPassword" autoComplete="new-password" required minLength={12} maxLength={256} className="min-h-11" />
               </Field>
               <div className="flex flex-wrap items-center gap-3">
                 <Button type="submit" variant="secondary" className="min-h-11">

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { PasswordInput } from "./password-input";
 import { Button, inputClass } from "./ui";
 
 /** The second way in: email and password. Passkeys stay the main way. */
@@ -57,15 +58,9 @@ export function PasswordSignIn() {
         <label htmlFor="sign-in-password" className="text-[14px] font-medium">
           Password
         </label>
-        <input
-          id="sign-in-password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          maxLength={256}
-          className={`${inputClass} mt-1.5 min-h-11`}
-        />
+        <div className="mt-1.5">
+          <PasswordInput id="sign-in-password" name="password" autoComplete="current-password" required maxLength={256} className="min-h-11" />
+        </div>
       </div>
       <Button type="submit" variant="secondary" disabled={busy} className="min-h-11 w-full">
         {busy ? "Signing in…" : "Sign in with password"}

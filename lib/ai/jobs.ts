@@ -1,7 +1,7 @@
 import "server-only";
 import { asSystem, type Tx } from "@/lib/db";
 import type { AiJob, AiJobInput } from "@/lib/types";
-import { HELPER_ONLINE_SECONDS, JOB_MAX_ATTEMPTS, JOB_STALE_MINUTES, modelFor } from "./config";
+import { HELPER_ONLINE_SECONDS, JOB_MAX_ATTEMPTS, JOB_STALE_MINUTES, engineFor, modelFor } from "./config";
 
 export async function enqueueJob(
   tx: Tx,
@@ -12,7 +12,8 @@ export async function enqueueJob(
     parent?: { type: string; id: string };
   },
 ): Promise<string> {
-  const input: AiJobInput = { ...job.input, model: job.input.model ?? modelFor(job.kind) };
+  // The engine always comes from lib/ai/config.ts (AI_ENGINES), so routing lives in one place.
+  const input: AiJobInput = { ...job.input, engine: engineFor(job.kind), model: job.input.model ?? modelFor(job.kind) };
   const [row] = await tx<{ id: string }[]>`
     insert into armada.ai_jobs (workspace_id, kind, input, parent_type, parent_id)
     values (${job.workspaceId}, ${job.kind}, ${tx.json(input as never)}, ${job.parent?.type ?? null}, ${job.parent?.id ?? null})

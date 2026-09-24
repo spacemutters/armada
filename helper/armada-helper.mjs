@@ -1,14 +1,15 @@
 // Armada AI helper.
-// Runs Armada's AI jobs on this computer through the Claude command-line tool, on the owner's
-// own Claude login. It asks Armada for work, runs each job with every tool switched off (the AI
-// can only write text back, never touch files or run commands), and sends the answer back.
-import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+// Runs Armada's AI jobs on this computer through the owner's own command-line AI tools: the Claude
+// tool on his Claude login, and OpenAI's Codex tool on his ChatGPT login (each job says which, see
+// engines.mjs). It asks Armada for work, runs each job with every tool switched off (the AI can only
+// write text back, never touch files or run commands), and sends the answer back.
+import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { engineOf, findClaude, findCodex, runJob } from "./engines.mjs";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const config = loadConfig(path.join(here, ".env"));
 const ARMADA_URL = (process.env.ARMADA_URL || config.ARMADA_URL || "").replace(/\/$/, "");
@@ -40,25 +41,6 @@ function log(message) {
   } catch {}
 }
 
-/** Finds the newest Claude command-line tool, inside or outside the desktop app's private folder. */
-function findClaude() {
-  if (process.env.CLAUDE_EXE || config.CLAUDE_EXE) return process.env.CLAUDE_EXE || config.CLAUDE_EXE;
-  const roots = [
-    path.join(os.homedir(), "AppData", "Roaming", "Claude", "claude-code"),
-    path.join(os.homedir(), "AppData", "Local", "Packages", "Claude_pzs8sxrjxfjjc", "LocalCache", "Roaming", "Claude", "claude-code"),
-  ];
-  const found = [];
-  for (const root of roots) {
-    if (!existsSync(root)) continue;
-    for (const v of readdirSync(root)) {
-      const exe = path.join(root, v, "claude.exe");
-      if (existsSync(exe)) found.push({ v, exe });
-    }
-  }
-  found.sort((a, b) => a.v.localeCompare(b.v, undefined, { numeric: true }));
-  return found.at(-1)?.exe ?? null;
-}
-
 // Every request gives up after 30 seconds, so a laptop waking from sleep (with dead connections)
 // never leaves the helper stuck waiting.
 async function post(route, body) {
@@ -71,68 +53,17 @@ async function post(route, body) {
   return res;
 }
 
-/** Runs one job through the Claude tool with tools, settings and connectors all switched off. */
-function runClaude(exe, input) {
-  return new Promise((resolve) => {
-    const args = [
-      "-p",
-      "--output-format", "json",
-      "--model", input.model || "sonnet",
-      "--system-prompt", input.system,
-      "--tools", "",
-      "--setting-sources", "",
-      "--strict-mcp-config",
-      "--no-session-persistence",
-      "--json-schema", JSON.stringify(input.schema),
-    ];
-    if (input.effort) args.push("--effort", input.effort);
-    // Strip anything that would tie this run to another Claude session on the machine.
-    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(ANTHROPIC_|CLAUDE_|CLAUDECODE)/.test(k)));
-    const started = Date.now();
-    const child = spawn(exe, args, { env, windowsHide: true, cwd: os.tmpdir() });
-    let out = "";
-    let err = "";
-    const timeout = setTimeout(() => {
-      child.kill();
-      resolve({ ok: false, error: "The AI took too long to answer." });
-    }, input.timeoutMs || 240000);
-    child.stdout.on("data", (d) => (out += d));
-    child.stderr.on("data", (d) => (err += d));
-    child.on("error", (e) => {
-      clearTimeout(timeout);
-      resolve({ ok: false, error: `Couldn't start the Claude tool: ${e.message}` });
-    });
-    child.on("close", () => {
-      clearTimeout(timeout);
-      const ms = Date.now() - started;
-      let parsed;
-      try {
-        parsed = JSON.parse(out);
-      } catch {
-        return resolve({ ok: false, error: `The Claude tool gave no usable answer. ${err.slice(0, 300)}`.trim() });
-      }
-      const usage = {
-        ms,
-        inputTokens: parsed.usage?.input_tokens ?? null,
-        outputTokens: parsed.usage?.output_tokens ?? null,
-        cacheReadTokens: parsed.usage?.cache_read_input_tokens ?? null,
-        cacheWriteTokens: parsed.usage?.cache_creation_input_tokens ?? null,
-      };
-      if (parsed.is_error || parsed.structured_output == null) {
-        const reason = parsed.result || parsed.subtype || "no structured answer";
-        return resolve({ ok: false, error: `The AI couldn't finish: ${String(reason).slice(0, 500)}`, usage });
-      }
-      resolve({ ok: true, output: parsed.structured_output, usage });
-    });
-    child.stdin.end(input.prompt);
-  });
+/** Each engine's tool. Codex is looked up again for every job: its folder changes when it updates. */
+function toolsNow(claudeExe) {
+  return { claude: claudeExe, codex: findCodex(config) };
 }
 
-async function work(exe, job) {
+async function work(claudeExe, job) {
   running++;
-  log(`start ${job.kind} ${job.id}`);
+  const engine = engineOf(job.input);
+  log(`start ${job.kind} ${job.id}${engine === "claude" ? "" : ` on ${engine}`}`);
   try {
-    const result = await runClaude(exe, job.input);
+    const result = await runJob(toolsNow(claudeExe), job.input);
     log(`${result.ok ? "done" : "failed"} ${job.kind} ${job.id} in ${Math.round((result.usage?.ms ?? 0) / 1000)}s${result.ok ? "" : ` (${result.error})`}`);
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
@@ -172,12 +103,16 @@ async function main() {
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
 
-  const exe = findClaude();
+  const exe = findClaude(config);
   if (!exe) {
     log("Couldn't find the Claude command-line tool on this computer.");
     process.exit(1);
   }
-  log(`Armada AI helper ${VERSION} on ${helperId}, using ${exe}, serving ${ARMADA_URL}`);
+  const codexExe = findCodex(config);
+  log(
+    `Armada AI helper ${VERSION} on ${helperId}, engines: claude (${exe}), ` +
+      `codex (${codexExe ?? "not found: ad and social jobs will fail until Codex is installed"}), serving ${ARMADA_URL}`,
+  );
 
   setInterval(() => {
     post("/api/helper/heartbeat", { helperId, version: VERSION, busy: running > 0, running }).catch(() => {});
