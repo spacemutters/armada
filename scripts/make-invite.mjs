@@ -1,11 +1,14 @@
 // Prints a one-time setup link. With no workspace it makes a first-owner link that creates a new
-// fleet; the person who opens it makes a passkey and becomes the owner.
-// usage: node --env-file=.env.local scripts/make-invite.mjs https://armada.example [hours]
+// fleet; the person who opens it makes a passkey and becomes the owner. With --admin, the person
+// instead picks their own email and password on the page and becomes the platform admin.
+// usage: node --env-file=.env.local scripts/make-invite.mjs https://armada.example [hours] [--admin]
 import crypto from "node:crypto";
 import postgres from "postgres";
 
-const base = (process.argv[2] || "http://localhost:3000").replace(/\/$/, "");
-const hours = Number(process.argv[3] || 72);
+const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const admin = process.argv.includes("--admin");
+const base = (positional[0] || "http://localhost:3000").replace(/\/$/, "");
+const hours = Number(positional[1] || 72);
 const { SUPABASE_CA } = await import("../lib/db/supabase-ca.ts");
 const url = process.env.DATABASE_URL;
 const sql = postgres(url, {
@@ -20,8 +23,8 @@ const hash = crypto.createHash("sha256").update(token).digest("hex");
 try {
   await sql.begin(async (tx) => {
     await tx`select set_config('armada.system', 'on', true)`;
-    await tx`insert into armada.invites (workspace_id, member_id, role, token_hash, expires_at)
-             values (null, null, 'owner', ${hash}, now() + make_interval(hours => ${hours}))`;
+    await tx`insert into armada.invites (workspace_id, member_id, role, admin, token_hash, expires_at)
+             values (null, null, 'owner', ${admin}, ${hash}, now() + make_interval(hours => ${hours}))`;
   });
   console.log(`${base}/setup/${token}`);
 } finally {

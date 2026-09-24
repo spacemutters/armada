@@ -16,6 +16,8 @@ export interface Invite {
   workspaceId: string | null;
   memberId: string | null;
   role: Role;
+  /** Makes the platform admin, who picks their own email and password on the setup page. */
+  admin: boolean;
   expiresAt: Date;
   usedAt: Date | null;
 }
@@ -23,7 +25,7 @@ export interface Invite {
 /** An unused, unexpired invite for this token, or null. Must run in system mode. */
 export async function findOpenInvite(tx: Tx, token: string): Promise<Invite | null> {
   const rows = await tx<Invite[]>`
-    select id, workspace_id, member_id, role, expires_at, used_at
+    select id, workspace_id, member_id, role, admin, expires_at, used_at
     from armada.invites
     where token_hash = ${hashToken(token)} and used_at is null and expires_at > now()`;
   return rows[0] ?? null;
@@ -32,12 +34,12 @@ export async function findOpenInvite(tx: Tx, token: string): Promise<Invite | nu
 /** Creates a one-time link token. Must run in system mode. */
 export async function createInvite(
   tx: Tx,
-  opts: { workspaceId?: string; memberId?: string; role?: Role; hours?: number },
+  opts: { workspaceId?: string; memberId?: string; role?: Role; hours?: number; admin?: boolean },
 ): Promise<string> {
   const token = newToken();
   await tx`
-    insert into armada.invites (workspace_id, member_id, role, token_hash, expires_at)
-    values (${opts.workspaceId ?? null}, ${opts.memberId ?? null}, ${opts.role ?? "owner"},
+    insert into armada.invites (workspace_id, member_id, role, admin, token_hash, expires_at)
+    values (${opts.workspaceId ?? null}, ${opts.memberId ?? null}, ${opts.role ?? "owner"}, ${opts.admin ?? false},
             ${hashToken(token)}, now() + make_interval(hours => ${opts.hours ?? 72}))`;
   return token;
 }

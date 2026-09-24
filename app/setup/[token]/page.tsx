@@ -1,3 +1,4 @@
+import { AdminSetup } from "@/components/admin-setup";
 import { AuthFrame } from "@/components/auth-frame";
 import { PasskeySetup } from "@/components/passkey-setup";
 import { asSystem } from "@/lib/db";
@@ -15,6 +16,17 @@ export default async function SetupPage({ params }: PageProps<"/setup/[token]">)
         <a href="/welcome" className="text-accent underline underline-offset-2">
           Go to sign in
         </a>
+      </AuthFrame>
+    );
+  }
+
+  if (invite.admin) {
+    return (
+      <AuthFrame
+        title="Make your admin account"
+        body="Choose the email and password you'll sign in with. You'll be the owner of a new fleet and can see everything on the admin page."
+      >
+        <AdminSetup token={token} />
       </AuthFrame>
     );
   }
