@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { ShimmerText } from "@/components/fx/shimmer-text";
+import { ThinkingOrb } from "@/components/fx/thinking-orb";
 import { ProductArt } from "@/components/product-art";
 import { ButtonLink, EmptyState, PageHeader, StatusPill, type Tone } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
@@ -32,6 +34,7 @@ export default async function BuilderPage() {
       />
       {shops.length === 0 ? (
         <EmptyState
+          mark={<ThinkingOrb state="idle" size={32} decorative />}
           title="No shops yet"
           body="Type an idea like “calm bedroom and sleep goods”. The first shop takes about three minutes, and you can watch it being built."
           action={<ButtonLink href="/builder/new">Build your first shop</ButtonLink>}
@@ -59,7 +62,9 @@ export default async function BuilderPage() {
                   <div className="flex flex-col gap-2 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="truncate text-[16px] font-semibold">{bp.brand?.name ?? "Naming the brand…"}</div>
+                        <div className="truncate text-[16px] font-semibold">
+                          {bp.brand?.name ?? (s.status === "building" ? <ShimmerText>Naming the brand…</ShimmerText> : "No name yet")}
+                        </div>
                         <div className="truncate text-[13px] text-muted">{bp.brand?.tagline ?? s.niche}</div>
                       </div>
                       <StatusPill tone={status.tone}>{status.label}</StatusPill>

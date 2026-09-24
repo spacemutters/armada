@@ -1,0 +1,431 @@
+/*
+  Styles for components/fx. Colours come only from Armada's tokens in app/globals.css, so every effect
+  follows the system light/dark setting. Motion is calm and quick (150-450 ms, no visible overshoot),
+  uses transform and opacity where it can, and stops under prefers-reduced-motion (the global rule in
+  globals.css also cuts every CSS animation and transition to nothing).
+*/
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------------- BorderBeam: the still ring shown instead of the light under reduced motion ---------------- */
+.beam {
+  isolation: isolate;
+}
+.beamStill {
+  outline: 1.5px solid color-mix(in srgb, var(--ink) 38%, transparent);
+  outline-offset: -1px;
+}
+
+/* ---------------- ShimmerText: a highlight sweeps across words that are still being worked on ---------------- */
+.shimmer {
+  --fx-shimmer-base: var(--muted);
+  --fx-shimmer-peak: var(--ink);
+  background: linear-gradient(90deg, var(--fx-shimmer-base) 0% 38%, var(--fx-shimmer-peak) 50%, var(--fx-shimmer-base) 62% 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: fx-shimmer 2.2s linear infinite;
+}
+/* On a coloured surface (a primary button): the words' own colour, dimmed no further than 80%. */
+.shimmerCurrent {
+  --fx-shimmer-base: color-mix(in srgb, currentColor 80%, transparent);
+  --fx-shimmer-peak: currentColor;
+}
+@keyframes fx-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    background: none;
+    color: inherit;
+    -webkit-text-fill-color: currentColor;
+    animation: none;
+  }
+}
+
+/* ---------------- StatusText: the old words slide up and out, the new ones rise in ---------------- */
+.status {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  vertical-align: bottom;
+}
+.statusTrack {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: bottom;
+  transition: width 280ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.statusText {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  transition:
+    transform 280ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 280ms ease;
+}
+@starting-style {
+  .statusEnter {
+    opacity: 0;
+    transform: translateY(70%);
+  }
+}
+.statusWrap {
+  display: flex;
+}
+.statusWrap .statusTrack {
+  display: block;
+  overflow: visible;
+  white-space: normal;
+}
+.statusWrap .statusText {
+  display: block;
+  overflow: visible;
+  text-overflow: clip;
+}
+.statusLeaving {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  transform: translateY(-70%);
+}
+
+/* ---------------- RollingNumber: each digit is a column that rolls to its new value ---------------- */
+.roll {
+  position: relative;
+  display: inline-flex;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rollVis {
+  display: inline-flex;
+  user-select: none;
+}
+.rollCol,
+.rollCh {
+  display: inline-block;
+  height: 1lh;
+  overflow: hidden;
+  max-width: 1.2em;
+  transition:
+    max-width 600ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.rollCh {
+  white-space: pre;
+}
+.rollStrip {
+  display: block;
+  transform: translateY(calc(var(--fx-digit, 0) * -10%));
+  transition: transform 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: var(--fx-delay, 0ms);
+}
+.rollStrip > span {
+  display: block;
+  height: 1lh;
+  text-align: center;
+}
+.rollLeave {
+  max-width: 0;
+  opacity: 0;
+}
+@starting-style {
+  .rollEnter {
+    max-width: 0;
+    opacity: 0;
+  }
+  .rollIn .rollStrip {
+    transform: translateY(0);
+  }
+}
+
+/* ---------------- Tick: a check mark that draws itself ---------------- */
+.tick {
+  display: inline-block;
+  flex: none;
+  overflow: visible;
+}
+.tickRing,
+.tickMark {
+  fill: none;
+  stroke: currentColor;
+}
+.tickFilled .tickRing {
+  fill: currentColor;
+}
+.tickFilled .tickMark {
+  stroke: var(--raised);
+}
+.tickDraw .tickRing {
+  stroke-dasharray: 1;
+  animation: fx-draw 230ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.tickFilled.tickDraw .tickRing {
+  stroke-dasharray: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: fx-pop 230ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.tickDraw .tickMark {
+  stroke-dasharray: 1;
+  animation: fx-draw 190ms cubic-bezier(0.3, 0, 0.2, 1) 300ms both;
+}
+@keyframes fx-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes fx-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ---------------- ProgressBar ---------------- */
+.prog {
+  display: block;
+}
+.progBar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.progFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--ink);
+  overflow: hidden;
+}
+.progFill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--raised) 55%, transparent) 50%, transparent 100%);
+}
+.prog[data-state="running"] .progFill::after {
+  opacity: 1;
+  animation: fx-sheen 1.6s ease-in-out infinite;
+}
+.prog[data-state="slow"] .progFill {
+  animation: fx-wait 1.8s ease-in-out infinite;
+}
+.prog[data-state="failed"] .progFill {
+  background: repeating-linear-gradient(135deg, var(--negative) 0 4px, transparent 4px 8px);
+}
+@keyframes fx-sheen {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes fx-wait {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progFill,
+  .progFill::after {
+    animation: none !important;
+  }
+  .prog[data-state="running"] .progFill::after {
+    opacity: 0;
+  }
+}
+
+/* ---------------- HoldButton: press and hold; the fill sweeps across as you hold ---------------- */
+.hold {
+  --fx-p: 0;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.holdOn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: inherit;
+  border-radius: inherit;
+  background: var(--accent);
+  color: var(--accent-ink);
+  clip-path: inset(0 calc((1 - var(--fx-p)) * 100%) 0 0);
+  pointer-events: none;
+}
+.hold[data-state="done"] .holdOn {
+  clip-path: none;
+}
+
+/* ---------------- UndoToast ---------------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  z-index: 40;
+  width: min(440px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  touch-action: pan-y;
+}
+@media (min-width: 768px) {
+  .toast {
+    bottom: 1.5rem;
+  }
+}
+.toastCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 0.16),
+    0 2px 6px rgb(0 0 0 / 0.06);
+}
+.toastRing {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  transform: rotate(-90deg);
+}
+.toastRing circle {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+.toastTrack {
+  opacity: 0.18;
+}
+.toastFill {
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+}
+
+/* ---------------- Expand: height eases open, the content fades in just after ---------------- */
+.disc {
+  overflow: hidden;
+  transition: height 280ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.disc[data-state="closed"] {
+  height: 0;
+  visibility: hidden;
+}
+.disc > * {
+  transition:
+    opacity 280ms ease,
+    transform 280ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.disc[data-state="opening"] > * {
+  transition-delay: 70ms;
+}
+.disc[data-state="closed"] > *,
+.disc[data-state="closing"] > * {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.discChev {
+  display: inline-block;
+  flex: none;
+  transition: transform 280ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+[aria-expanded="true"] > .discChev,
+[aria-expanded="true"] .discChev {
+  transform: rotate(90deg);
+}
+
+/* ---------------- DecodeText ---------------- */
+.dcWord {
+  white-space: nowrap;
+}
+.dcCh {
+  display: inline-block;
+  text-align: center;
+  white-space: pre;
+  opacity: 0.45;
+  transition: opacity 160ms ease;
+}
+.dcSet {
+  opacity: 1;
+}
+
+/* ---------------- Glide: a highlight that slides to the chosen tab ---------------- */
+/* The container must be positioned (relative, fixed, sticky); the classes where it is used say which. */
+.glide {
+  isolation: isolate;
+}
+/* Its shape and colour come from the classes where it is used. */
+.glideInd {
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.glide[data-ready] > .glideInd[data-on] {
+  opacity: 1;
+}
+/* Before the highlight has measured itself (and without scripts), the chosen tab paints its own. */
+.glide:not([data-ready]) [data-glide-on] {
+  background: var(--sunken);
+}
+
+/* ---------------- Loading: appear only if loading takes a moment, so quick pages never flash ---------------- */
+.lateIn {
+  animation: fx-late-in 300ms ease 350ms backwards;
+}
+@keyframes fx-late-in {
+  from {
+    opacity: 0;
+  }
+}

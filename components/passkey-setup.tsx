@@ -3,6 +3,9 @@
 import { startRegistration } from "@simplewebauthn/browser";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { BorderBeam } from "./fx/border-beam";
+import { ShimmerText } from "./fx/shimmer-text";
+import { ThinkingOrb } from "./fx/thinking-orb";
 import { Button, Field, inputClass } from "./ui";
 
 function guessDevice(): string {
@@ -63,9 +66,20 @@ export function PasskeySetup({ token, firstOwner, addingDevice }: { token: strin
           <input className={inputClass} value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} maxLength={60} placeholder="My fleet" />
         </Field>
       ) : null}
-      <Button type="submit" disabled={busy} className="min-h-11 w-full">
-        {busy ? "Waiting for your device…" : addingDevice ? "Add this device" : "Create your passkey"}
-      </Button>
+      <BorderBeam active={busy} className="w-full">
+        <Button type="submit" disabled={busy} aria-busy={busy || undefined} className="min-h-11 w-full" style={busy ? { opacity: 1, cursor: "progress" } : undefined}>
+          {busy ? (
+            <>
+              <ThinkingOrb state="connecting" size={16} decorative ink="inverse" />
+              <ShimmerText tone="current">Waiting for your device…</ShimmerText>
+            </>
+          ) : addingDevice ? (
+            "Add this device"
+          ) : (
+            "Create your passkey"
+          )}
+        </Button>
+      </BorderBeam>
       {error ? (
         <p role="alert" className="text-[13px] text-negative">
           {error}

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { sendToSupplier } from "./actions";
-import { Button, Card, EmptyState, PageHeader, StatusPill, type Tone } from "@/components/ui";
+import { SegmentedNav } from "@/components/fx/glide";
+import { PendingButton } from "@/components/fx/pending-button";
+import { buttonClass, Card, EmptyState, PageHeader, StatusPill, type Tone } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
 import { withWorkspace } from "@/lib/db";
 import { formatMoney } from "@/lib/money";
@@ -58,20 +60,12 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   return (
     <>
       <PageHeader title="Orders" subtitle="Every order from every store in one inbox. New orders go to the supplier, and tracking numbers flow back to the store." />
-      <div className="mb-5 flex flex-wrap gap-1 rounded-xl border border-line bg-raised p-1 text-[14px]" role="tablist">
-        {TABS.map((t) => (
-          <Link
-            key={t.key}
-            href={`/orders?tab=${t.key}`}
-            role="tab"
-            aria-selected={t.key === tab.key}
-            className={`flex min-h-9 items-center gap-2 rounded-lg px-4 ${t.key === tab.key ? "bg-sunken font-semibold" : "text-muted hover:text-ink"}`}
-          >
-            {t.label}
-            <span className="tabular text-[12px] text-muted">{counts[t.key] ?? 0}</span>
-          </Link>
-        ))}
-      </div>
+      <SegmentedNav
+        label="Orders"
+        active={tab.key}
+        className="mb-5"
+        items={TABS.map((t) => ({ key: t.key, href: `/orders?tab=${t.key}`, label: t.label, count: counts[t.key] ?? 0 }))}
+      />
       {sp.sent !== undefined ? (
         <p className="mb-4 rounded-xl bg-accent-soft px-4 py-3 text-[14px]">
           Sent {sent} {sent === 1 ? "order" : "orders"} to the supplier.
@@ -136,7 +130,9 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
           {canSend ? (
             <div className="sticky bottom-20 mt-4 flex items-center justify-end gap-3 rounded-2xl border border-line bg-raised/95 p-3 backdrop-blur md:bottom-6">
               <span className="mr-auto px-2 text-[13px] text-muted">An order can only ever be sent once. Today&apos;s limit is 250 orders.</span>
-              <Button type="submit">Send chosen to the supplier</Button>
+              <PendingButton pendingLabel="Sending to the supplier…" className={buttonClass("primary")}>
+                Send chosen to the supplier
+              </PendingButton>
             </div>
           ) : null}
         </form>

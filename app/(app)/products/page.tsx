@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { addToProducts } from "./actions";
+import { SearchBox } from "./search-box";
+import { SegmentedNav } from "@/components/fx/glide";
+import { PendingButton } from "@/components/fx/pending-button";
 import { ProductArt } from "@/components/product-art";
-import { Button, Card, EmptyState, inputClass, PageHeader, ScoreBadge } from "@/components/ui";
+import { buttonClass, Button, Card, EmptyState, PageHeader, ScoreBadge } from "@/components/ui";
 import { cjStatus, describeCjError } from "@/connectors/cj/client";
 import { requireSession } from "@/lib/auth/session";
 import { formatMoney } from "@/lib/money";
@@ -19,22 +22,15 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
   const q = typeof sp.q === "string" ? sp.q.slice(0, 120) : "";
 
   const tabs = (
-    <div className="mb-5 flex gap-1 rounded-xl border border-line bg-raised p-1 text-[14px]" role="tablist">
-      {[
+    <SegmentedNav
+      label="Products"
+      active={tab}
+      className="mb-5"
+      items={[
         { key: "yours", label: "Your products", href: "/products" },
         { key: "find", label: "Find products", href: "/products?tab=find" },
-      ].map((t) => (
-        <Link
-          key={t.key}
-          href={t.href}
-          role="tab"
-          aria-selected={tab === t.key}
-          className={`flex min-h-9 items-center rounded-lg px-4 ${tab === t.key ? "bg-sunken font-semibold" : "text-muted hover:text-ink"}`}
-        >
-          {t.label}
-        </Link>
-      ))}
-    </div>
+      ]}
+    />
   );
 
   if (tab === "find") {
@@ -57,12 +53,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
           subtitle="Search the supplier catalog. Every result shows its 1 to 100 score, what it costs you delivered, and a suggested price from your pricing rules."
         />
         <div className="flex">{tabs}</div>
-        <form className="mb-6 flex max-w-2xl gap-2" action="/products">
-          <input type="hidden" name="tab" value="find" />
-          {from === "practice" && cj.connected ? <input type="hidden" name="from" value="practice" /> : null}
-          <input name="q" defaultValue={q} className={inputClass} placeholder="Try: kitchen knife, water bottle, lamp" aria-label="Search products" />
-          <Button type="submit">Search</Button>
-        </form>
+        <SearchBox q={q} fromPractice={from === "practice" && cj.connected} />
         <p className="mb-4 max-w-3xl text-[13px] text-muted">
           {from === "cj" ? (
             <>
@@ -121,9 +112,9 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
               ))}
             </ul>
             <div className="sticky bottom-20 mt-6 flex justify-end md:bottom-6">
-              <Button type="submit" className="shadow-lg">
+              <PendingButton pendingLabel="Adding…" className={buttonClass("primary", "shadow-lg")}>
                 Add chosen to your products
-              </Button>
+              </PendingButton>
             </div>
           </form>
         )}

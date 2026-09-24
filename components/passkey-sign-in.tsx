@@ -3,6 +3,9 @@
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { BorderBeam } from "./fx/border-beam";
+import { ShimmerText } from "./fx/shimmer-text";
+import { ThinkingOrb } from "./fx/thinking-orb";
 import { Button } from "./ui";
 
 export function PasskeySignIn() {
@@ -34,9 +37,19 @@ export function PasskeySignIn() {
 
   return (
     <div className="flex flex-col gap-3">
-      <Button onClick={signIn} disabled={busy} className="min-h-11 w-full">
-        {busy ? "Waiting for your device…" : "Sign in with your passkey"}
-      </Button>
+      {/* While the device asks for a fingerprint or face, a light travels round the button. */}
+      <BorderBeam active={busy} className="w-full">
+        <Button onClick={signIn} disabled={busy} aria-busy={busy || undefined} className="min-h-11 w-full" style={busy ? { opacity: 1, cursor: "progress" } : undefined}>
+          {busy ? (
+            <>
+              <ThinkingOrb state="connecting" size={16} decorative ink="inverse" />
+              <ShimmerText tone="current">Waiting for your device…</ShimmerText>
+            </>
+          ) : (
+            "Sign in with your passkey"
+          )}
+        </Button>
+      </BorderBeam>
       {error ? (
         <p role="alert" className="text-[13px] text-negative">
           {error}

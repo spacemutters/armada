@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProductArt } from "@/components/product-art";
-import { Card, PageHeader, ScoreBadge, Section, Stat, StatusPill, type Tone } from "@/components/ui";
+import { Card, PageHeader, platformName, ScoreBadge, Section, Stat, StatusPill, type Tone } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
 import { storeDetail } from "@/lib/fleet/queries";
 import { formatMoney } from "@/lib/money";
@@ -37,7 +37,7 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
         title={store.name}
         subtitle={
           <>
-            {store.platform === "ebay" ? "eBay account" : "Shopify store"}
+            {platformName(store.platform, "long")}
             {store.mode === "practice" ? " · practice" : ""}
             {store.group ? ` · ${store.group}` : ""}
             {store.domain ? ` · ${store.domain}` : ""}
@@ -68,8 +68,14 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
           <Stat label="Recent orders" value={orders.length} hint="Last 25 shown below" />
         </div>
         <div className="mt-6 flex h-24 items-end gap-1" role="img" aria-label="Daily sales for the last 30 days">
-          {daily.map((d) => (
-            <div key={d.day} title={`${d.day}: ${formatMoney(d.salesCents)}`} className="flex-1 rounded-t-[3px] bg-line-strong" style={{ height: `${Math.max(2, (d.salesCents / max) * 100)}%` }} />
+          {/* The month's bars rise once, left to right, when the store opens: the page's one entrance. */}
+          {daily.map((d, i) => (
+            <div
+              key={d.day}
+              title={`${d.day}: ${formatMoney(d.salesCents)}`}
+              className="flex-1 origin-bottom animate-[armada-rise_520ms_cubic-bezier(0.2,0.7,0.2,1)_both] rounded-t-[3px] bg-line-strong"
+              style={{ height: `${Math.max(2, (d.salesCents / max) * 100)}%`, animationDelay: `${i * 12}ms` }}
+            />
           ))}
         </div>
         <div className="mt-1 flex justify-between text-[12px] text-muted">

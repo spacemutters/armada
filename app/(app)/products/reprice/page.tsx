@@ -1,5 +1,6 @@
 import { previewReprice } from "../actions";
-import { Button, Card, EmptyState, Field, inputClass, PageHeader } from "@/components/ui";
+import { PendingButton } from "@/components/fx/pending-button";
+import { buttonClass, Card, EmptyState, Field, inputClass, PageHeader } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
 import { withWorkspace } from "@/lib/db";
 
@@ -38,9 +39,9 @@ export default async function RepricePage({ searchParams }: PageProps<"/products
               <span className="text-muted">%</span>
             </div>
           </Field>
-          <Button type="submit" className="self-start">
+          <PendingButton pendingLabel="Making the preview…" orb="thinking" className={buttonClass("primary", "self-start")}>
             See the preview
-          </Button>
+          </PendingButton>
         </form>
       </Card>
     </>

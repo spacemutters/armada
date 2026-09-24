@@ -1,5 +1,6 @@
 import { createShops } from "../actions";
-import { Button, Card, Field, inputClass, PageHeader } from "@/components/ui";
+import { PendingButton } from "@/components/fx/pending-button";
+import { buttonClass, Card, Field, inputClass, PageHeader } from "@/components/ui";
 import { cjStatus } from "@/connectors/cj/client";
 import { requireSession } from "@/lib/auth/session";
 
@@ -85,7 +86,9 @@ export default async function NewShopPage({ searchParams }: PageProps<"/builder/
             </p>
           ) : null}
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit">Build it</Button>
+            <PendingButton pendingLabel="Starting the build…" beam className={buttonClass("primary")}>
+              Build it
+            </PendingButton>
             <span className="text-[13px] text-muted">Takes about two to four minutes per shop. You can leave this page.</span>
           </div>
         </form>

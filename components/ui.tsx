@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
+import { RollingNumber } from "./fx/rolling-number";
 
 // Shared building blocks. Quiet by default: identity lives in the fleet map, not in chrome.
 
@@ -48,6 +49,11 @@ const variants: Record<Variant, string> = {
   quiet: "text-accent hover:bg-accent-soft",
 };
 
+/** The classes a button of this variant wears, for buttons built elsewhere (a hold or pending button). */
+export function buttonClass(variant: Variant = "primary", className?: string): string {
+  return cx(buttonBase, variants[variant], className);
+}
+
 export function Button({ variant = "primary", className, ...rest }: ComponentProps<"button"> & { variant?: Variant }) {
   return <button className={cx(buttonBase, variants[variant], className)} {...rest} />;
 }
@@ -56,20 +62,39 @@ export function ButtonLink({ variant = "primary", className, ...rest }: Componen
   return <Link className={cx(buttonBase, variants[variant], className)} {...rest} />;
 }
 
-export function Stat({ label, value, hint, tone }: { label: string; value: ReactNode; hint?: ReactNode; tone?: "positive" | "negative" | "attention" }) {
+/**
+ * A labelled number. Numbers (or formatted number text) roll to their new value when it changes;
+ * `rollIn` also rolls them up from zero when the page opens (use it for a page's one headline row).
+ */
+export function Stat({
+  label,
+  value,
+  hint,
+  tone,
+  rollIn = false,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  tone?: "positive" | "negative" | "attention";
+  rollIn?: boolean;
+}) {
   const toneClass = tone === "positive" ? "text-positive" : tone === "negative" ? "text-negative" : tone === "attention" ? "text-attention" : "";
   return (
     <div className="min-w-0">
       <div className="text-[13px] text-muted">{label}</div>
-      <div className={cx("tabular mt-1 text-[26px] font-semibold tracking-tight", toneClass)}>{value}</div>
+      <div className={cx("tabular mt-1 text-[26px] font-semibold tracking-tight", toneClass)}>
+        {typeof value === "string" || typeof value === "number" ? <RollingNumber value={value} rollIn={rollIn} /> : value}
+      </div>
       {hint ? <div className="mt-0.5 text-[13px] text-muted">{hint}</div> : null}
     </div>
   );
 }
 
-export function EmptyState({ title, body, action }: { title: string; body: ReactNode; action?: ReactNode }) {
+export function EmptyState({ title, body, action, mark }: { title: string; body: ReactNode; action?: ReactNode; mark?: ReactNode }) {
   return (
     <div className="flex flex-col items-start gap-3 rounded-2xl border border-dashed border-line-strong p-8">
+      {mark}
       <h3 className="text-[16px] font-semibold">{title}</h3>
       <p className="max-w-xl text-muted">{body}</p>
       {action}
@@ -79,26 +104,35 @@ export function EmptyState({ title, body, action }: { title: string; body: React
 
 export type Tone = "ok" | "attention" | "off" | "working" | "error";
 
-/** Status shown by shape and word, never by color alone. */
+const MARK: Record<Tone, string> = {
+  ok: "rounded-full border-positive bg-positive",
+  attention: "rotate-45 rounded-[1px] border-attention bg-attention",
+  error: "rounded-[1px] border-negative bg-negative",
+  working: "pulse rounded-full border-accent bg-accent",
+  off: "rounded-full border-muted bg-transparent",
+};
+
+/**
+ * Status shown by shape and word, never by color alone. The mark is one element, so when a status
+ * changes on a page that refreshes (building to ready), it eases from one shape to the next.
+ */
 export function StatusPill({ tone, children }: { tone: Tone; children: ReactNode }) {
-  const mark =
-    tone === "ok" ? (
-      <span aria-hidden className="size-2 rounded-full bg-positive" />
-    ) : tone === "attention" ? (
-      <span aria-hidden className="size-2 rotate-45 bg-attention" />
-    ) : tone === "error" ? (
-      <span aria-hidden className="size-2 bg-negative" />
-    ) : tone === "working" ? (
-      <span aria-hidden className="pulse size-2 rounded-full bg-accent" />
-    ) : (
-      <span aria-hidden className="size-2 rounded-full border border-muted" />
-    );
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-line px-2.5 py-0.5 text-[13px]">
-      {mark}
+      <span
+        aria-hidden
+        className={cx("size-2 shrink-0 border transition-[background-color,border-color,border-radius,rotate] duration-300 ease-out", MARK[tone] ?? MARK.off)}
+      />
       {children}
     </span>
   );
+}
+
+/** Plain names for where a store sells. */
+export function platformName(platform: string, form: "short" | "long" = "short"): string {
+  if (platform === "ebay") return form === "long" ? "eBay account" : "eBay";
+  if (platform === "facebook") return "Facebook shop";
+  return form === "long" ? "Shopify store" : "Shopify";
 }
 
 export function ScoreBadge({ score }: { score: number | null }) {

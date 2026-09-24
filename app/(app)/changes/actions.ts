@@ -16,7 +16,8 @@ export async function approveChange(id: string) {
       insert into armada.audit_log (workspace_id, member_id, action, detail)
       values (${session.workspaceId}, ${session.memberId}, 'change.applied', ${tx.json({ changeSetId: id, ...result } as never)})`;
   });
-  redirect(`/changes/${id}`);
+  // The page shows a note with an Undo button once, then drops this from the address.
+  redirect(`/changes/${id}?done=applied`);
 }
 
 export async function cancelChange(id: string) {
@@ -38,5 +39,5 @@ export async function undo(id: string) {
     }
     return u;
   });
-  redirect(undoId ? `/changes/${undoId}` : `/changes/${id}`);
+  redirect(undoId ? `/changes/${undoId}?done=undone` : `/changes/${id}`);
 }

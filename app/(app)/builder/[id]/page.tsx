@@ -1,9 +1,11 @@
 import { ExternalLink } from "lucide-react";
+import { createElement } from "react";
 import { notFound } from "next/navigation";
 import { buildAgain, putInPracticeStore } from "./actions";
 import { iconFor, ProductArt } from "@/components/product-art";
+import { PendingButton } from "@/components/fx/pending-button";
 import { ShopProgress } from "@/components/shop-progress";
-import { Button, ButtonLink, Card, PageHeader, ScoreBadge, Section, StatusPill } from "@/components/ui";
+import { Button, buttonClass, ButtonLink, Card, PageHeader, ScoreBadge, Section, StatusPill } from "@/components/ui";
 import { testsForShop } from "@/lib/abtest/tests";
 import { helperStatus } from "@/lib/ai/jobs";
 import { requireSession } from "@/lib/auth/session";
@@ -41,7 +43,9 @@ export default async function ShopPage({ params }: PageProps<"/builder/[id]">) {
           actions={
             shop.status === "failed" ? (
               <form action={buildAgain.bind(null, shop.id)}>
-                <Button type="submit">Build it again</Button>
+                <PendingButton pendingLabel="Starting again…" className={buttonClass("primary")}>
+                  Build it again
+                </PendingButton>
               </form>
             ) : null
           }
@@ -64,7 +68,7 @@ export default async function ShopPage({ params }: PageProps<"/builder/[id]">) {
   const byId = new Map(products.map((p) => [p.id, p]));
   const palette = bp.theme!.palette;
   const fonts = bp.theme!.fonts;
-  const Monogram = iconFor(bp.brand?.monogramIcon);
+  const monogram = iconFor(bp.brand?.monogramIcon);
   const previewHref = `/s/${shop.slug}`;
   const practiceCount = (bp.products ?? []).filter((p) => p.imagined).length;
   const artVars = { "--art-bg": palette.surface, "--art-fg": palette.accent } as React.CSSProperties;
@@ -84,7 +88,9 @@ export default async function ShopPage({ params }: PageProps<"/builder/[id]">) {
               <ButtonLink href={`/stores/${shop.storeId}`}>Go to its store</ButtonLink>
             ) : (
               <form action={putInPracticeStore.bind(null, shop.id)}>
-                <Button type="submit">Put it in a practice store</Button>
+                <PendingButton pendingLabel="Setting up the store…" className={buttonClass("primary")}>
+                  Put it in a practice store
+                </PendingButton>
               </form>
             )}
           </>
@@ -125,7 +131,7 @@ export default async function ShopPage({ params }: PageProps<"/builder/[id]">) {
         <Section title="The brand" className="lg:col-span-1">
           <div className="flex items-center gap-3">
             <span className="flex size-12 items-center justify-center rounded-2xl" style={{ background: palette.accent, color: palette.accentInk }}>
-              <Monogram aria-hidden className="size-6" />
+              {createElement(monogram, { "aria-hidden": true, className: "size-6" })}
             </span>
             <div className="text-[22px]" style={{ fontFamily: `'${fonts.display}', serif`, color: "var(--ink)" }}>
               {bp.brand?.name}
@@ -137,7 +143,7 @@ export default async function ShopPage({ params }: PageProps<"/builder/[id]">) {
               <dd>{bp.brand?.voice}</dd>
             </div>
             <div>
-              <dt className="text-[13px] text-muted">Who it's for</dt>
+              <dt className="text-[13px] text-muted">Who it&apos;s for</dt>
               <dd>{bp.brand?.audience}</dd>
             </div>
             <div>
@@ -244,7 +250,7 @@ export default async function ShopPage({ params }: PageProps<"/builder/[id]">) {
         <Section title="Policies">
           <p className="text-[13px] text-muted">
             A refund policy and a shipping policy are drafted from the facts above. They are drafts: read them before a real store goes live, and use
-            Shopify's own generator for the privacy policy and terms.
+            Shopify&apos;s own generator for the privacy policy and terms.
           </p>
           <ul className="mt-3 flex flex-col divide-y divide-line">
             <li className="flex items-center justify-between py-2.5">

@@ -4,6 +4,10 @@ import { History, House, Megaphone, MoreHorizontal, Package, Receipt, Settings, 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FleetMark } from "./auth-frame";
+import styles from "./fx/fx.module.css";
+import { useGlide } from "./fx/glide";
+import { StatusText } from "./fx/status-text";
+import { ThinkingOrb } from "./fx/thinking-orb";
 import { cx } from "./ui";
 
 const MAIN = [
@@ -38,18 +42,47 @@ function SignOut({ className }: { className?: string }) {
   );
 }
 
-export function AppNav({ workspaceName, memberName, helperOnline }: { workspaceName: string; memberName: string; helperOnline: boolean }) {
+/** The AI helper's state in the sidebar: a still ring when it's on, the working orb while it works, a faded ring when it's off. */
+function HelperStatus({ online, busy }: { online: boolean; busy: boolean }) {
+  const words = busy ? "AI helper working" : online ? "AI helper on" : "AI helper off";
+  return (
+    <Link href="/settings#ai" className="flex min-h-9 items-center gap-2.5 rounded-xl px-3 text-[13px] text-muted hover:bg-sunken hover:text-ink">
+      <ThinkingOrb state={busy ? "working" : online ? "idle" : "off"} size={16} decorative />
+      <StatusText text={words} shimmer={busy} />
+    </Link>
+  );
+}
+
+export function AppNav({
+  workspaceName,
+  memberName,
+  helperOnline,
+  helperBusy = false,
+}: {
+  workspaceName: string;
+  memberName: string;
+  helperOnline: boolean;
+  helperBusy?: boolean;
+}) {
   const pathname = usePathname();
+  const activeHref = [...MAIN, ...MORE].find((n) => isActive(pathname, n.href))?.href ?? null;
+  const tabHref = MAIN.find((n) => isActive(pathname, n.href))?.href ?? null;
+  // The highlight slides to the page you picked, in the sidebar and in the phone's tab bar.
+  const side = useGlide<HTMLElement>(activeHref);
+  const tabs = useGlide<HTMLElement>(tabHref, { stretch: false });
+
   const item = (n: { href: string; label: string; icon: typeof House }) => {
     const active = isActive(pathname, n.href);
     return (
       <Link
         key={n.href}
         href={n.href}
+        data-glide-key={n.href}
+        data-glide-on={active ? "" : undefined}
         aria-current={active ? "page" : undefined}
         className={cx(
           "flex min-h-9 items-center gap-3 rounded-xl px-3 text-[14px] transition-colors",
-          active ? "bg-sunken font-semibold text-ink" : "text-muted hover:bg-sunken hover:text-ink",
+          active ? "font-semibold text-ink" : "text-muted hover:bg-sunken hover:text-ink",
         )}
       >
         <n.icon aria-hidden className="size-[18px] shrink-0" strokeWidth={active ? 2.2 : 1.8} />
@@ -57,6 +90,7 @@ export function AppNav({ workspaceName, memberName, helperOnline }: { workspaceN
       </Link>
     );
   };
+  const settingsActive = isActive(pathname, "/settings");
 
   return (
     <>
@@ -69,21 +103,25 @@ export function AppNav({ workspaceName, memberName, helperOnline }: { workspaceN
             <div className="truncate text-[12px] text-muted">Armada</div>
           </div>
         </div>
-        <nav aria-label="Main" className="flex flex-col gap-0.5">
+        <nav ref={side} aria-label="Main" className={cx(styles.glide, "relative flex flex-col gap-0.5")}>
+          <span data-glide-ind="" aria-hidden className={cx(styles.glideInd, "rounded-xl bg-sunken")} />
           {MAIN.map(item)}
           <div className="my-2 border-t border-line" />
           {MORE.map(item)}
         </nav>
         <div className="mt-auto flex flex-col gap-0.5">
-          <Link href="/settings#ai" className="flex min-h-9 items-center gap-2 rounded-xl px-3 text-[13px] text-muted hover:bg-sunken hover:text-ink">
-            {helperOnline ? (
-              <span aria-hidden className="size-2 rounded-full bg-positive" />
-            ) : (
-              <span aria-hidden className="size-2 rounded-full border border-muted" />
+          <HelperStatus online={helperOnline} busy={helperOnline && helperBusy} />
+          <Link
+            href="/settings"
+            aria-current={settingsActive ? "page" : undefined}
+            className={cx(
+              "flex min-h-9 items-center gap-3 rounded-xl px-3 text-[14px] transition-colors",
+              settingsActive ? "bg-sunken font-semibold text-ink" : "text-muted hover:bg-sunken hover:text-ink",
             )}
-            {helperOnline ? "AI helper on" : "AI helper off"}
+          >
+            <Settings aria-hidden className="size-[18px] shrink-0" strokeWidth={settingsActive ? 2.2 : 1.8} />
+            Settings
           </Link>
-          {item({ href: "/settings", label: "Settings", icon: Settings })}
           <div className="flex items-center justify-between px-3 pt-2 text-[12px] text-muted">
             <span className="truncate">{memberName}</span>
             <SignOut className="rounded-md px-1 hover:text-ink" />
@@ -93,36 +131,53 @@ export function AppNav({ workspaceName, memberName, helperOnline }: { workspaceN
 
       {/* Phone: top bar and bottom tabs */}
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-raised/95 px-4 py-2 backdrop-blur md:hidden">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <FleetMark size={18} />
-          <span className="text-[15px] font-semibold">{workspaceName}</span>
+          <span className="truncate text-[15px] font-semibold">{workspaceName}</span>
         </div>
-        <details className="relative">
-          <summary className="flex size-11 cursor-pointer list-none items-center justify-center rounded-xl hover:bg-sunken" aria-label="More">
-            <MoreHorizontal aria-hidden className="size-5" />
-          </summary>
-          <div className="absolute right-0 mt-1 w-52 rounded-2xl border border-line bg-raised p-2 shadow-lg">
-            {[...MORE, { href: "/settings", label: "Settings", icon: Settings }].map((n) => (
-              <Link key={n.href} href={n.href} className="flex min-h-11 items-center gap-3 rounded-xl px-3 hover:bg-sunken">
-                <n.icon aria-hidden className="size-[18px]" />
-                {n.label}
-              </Link>
-            ))}
-            <SignOut className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-muted hover:bg-sunken" />
-          </div>
-        </details>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/settings#ai"
+            className="flex size-11 items-center justify-center rounded-xl hover:bg-sunken"
+            aria-label={helperOnline ? (helperBusy ? "AI helper working" : "AI helper on") : "AI helper off"}
+          >
+            <ThinkingOrb state={helperOnline && helperBusy ? "working" : helperOnline ? "idle" : "off"} size={20} decorative />
+          </Link>
+          <details className="relative">
+            <summary className="flex size-11 cursor-pointer list-none items-center justify-center rounded-xl hover:bg-sunken" aria-label="More">
+              <MoreHorizontal aria-hidden className="size-5" />
+            </summary>
+            <div className="absolute right-0 mt-1 w-52 rounded-2xl border border-line bg-raised p-2 shadow-lg">
+              {[...MORE, { href: "/settings", label: "Settings", icon: Settings }].map((n) => (
+                <Link key={n.href} href={n.href} className="flex min-h-11 items-center gap-3 rounded-xl px-3 hover:bg-sunken">
+                  <n.icon aria-hidden className="size-[18px]" />
+                  {n.label}
+                </Link>
+              ))}
+              <SignOut className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-muted hover:bg-sunken" />
+            </div>
+          </details>
+        </div>
       </header>
-      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-line bg-raised/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+      <nav
+        ref={tabs}
+        aria-label="Main"
+        className={cx(styles.glide, "fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-line bg-raised/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden")}
+      >
+        <span data-glide-ind="" aria-hidden className={cx(styles.glideInd, "rounded-full bg-sunken")} />
         {MAIN.map((n) => {
           const active = isActive(pathname, n.href);
           return (
             <Link
               key={n.href}
               href={n.href}
+              data-glide-key={n.href}
               aria-current={active ? "page" : undefined}
-              className={cx("flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px]", active ? "font-semibold text-ink" : "text-muted")}
+              className={cx("flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] transition-colors", active ? "font-semibold text-ink" : "text-muted")}
             >
-              <n.icon aria-hidden className="size-5" strokeWidth={active ? 2.2 : 1.8} />
+              <span data-glide-target="" data-glide-on={active ? "" : undefined} className="flex h-7 w-12 items-center justify-center rounded-full">
+                <n.icon aria-hidden className="size-5" strokeWidth={active ? 2.2 : 1.8} />
+              </span>
               {n.short ?? n.label}
             </Link>
           );

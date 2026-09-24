@@ -117,6 +117,13 @@ body {
   animation: armada-pulse 1.6s ease-in-out infinite;
 }
 
+/* A bar growing up from its baseline (a store's daily sales when the page opens). */
+@keyframes armada-rise {
+  from {
+    transform: scaleY(0);
+  }
+}
+
 /* Long-form text in pages, policies and product descriptions. */
 .prose-armada h1,
 .prose-armada h2,

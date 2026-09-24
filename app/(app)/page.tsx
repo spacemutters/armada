@@ -1,18 +1,63 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Megaphone, Share2 } from "lucide-react";
 import Link from "next/link";
 import { startPracticeFleet } from "./actions";
 import { FleetMap } from "@/components/fleet-map";
-import { Button, ButtonLink, Card, PageHeader, Section, Stat, StatusPill } from "@/components/ui";
+import { PendingButton } from "@/components/fx/pending-button";
+import { ThinkingOrb } from "@/components/fx/thinking-orb";
+import { buttonClass, ButtonLink, Card, PageHeader, Section, Stat, StatusPill } from "@/components/ui";
 import { helperStatus } from "@/lib/ai/jobs";
 import { requireSession } from "@/lib/auth/session";
 import { homeSummary } from "@/lib/fleet/queries";
 import { formatMoney, formatMoneyCompact } from "@/lib/money";
+import { listShops } from "@/lib/shops/queries";
+import type { ShopRow } from "@/lib/shops/types";
+
+const SOCIAL_SHOWN = 6;
+
+/** One press per shop: set up its social media accounts, or make its posts. */
+function SocialMedia({ shops }: { shops: ShopRow[] }) {
+  const ready = shops.filter((s) => s.status === "ready" || s.status === "published" || s.status === "publishing");
+  if (!ready.length) return null;
+  return (
+    <Section
+      title="Social media"
+      className="mt-4"
+      action={<span className="text-[13px] text-muted">Set up each shop&apos;s accounts once, then make posts in one press</span>}
+    >
+      <ul className="flex flex-col divide-y divide-line">
+        {ready.slice(0, SOCIAL_SHOWN).map((s) => (
+          <li key={s.id} className="flex flex-wrap items-center gap-3 py-3">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{s.blueprint.brand?.name ?? s.niche}</span>
+              <span className="block truncate text-[13px] text-muted">{s.blueprint.brand?.tagline ?? s.niche}</span>
+            </span>
+            <span className="flex flex-wrap gap-2">
+              <ButtonLink href={`/social/connect?shop=${s.id}`} variant="secondary" className="min-h-11 md:min-h-9">
+                <Share2 aria-hidden className="size-4" />
+                Set up social media
+              </ButtonLink>
+              <ButtonLink href={`/social?shop=${s.id}`} variant="quiet" className="min-h-11 md:min-h-9">
+                <Megaphone aria-hidden className="size-4" />
+                Make posts
+              </ButtonLink>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {ready.length > SOCIAL_SHOWN ? (
+        <Link href="/builder" className="mt-2 inline-flex min-h-11 items-center text-[13px] text-accent hover:underline md:min-h-0">
+          {ready.length - SOCIAL_SHOWN} more {ready.length - SOCIAL_SHOWN === 1 ? "shop" : "shops"} in the Shop builder
+        </Link>
+      ) : null}
+    </Section>
+  );
+}
 
 export const metadata = { title: "Home" };
 
 export default async function HomePage() {
   const session = await requireSession();
-  const [summary, helper] = await Promise.all([homeSummary(session.workspaceId), helperStatus()]);
+  const [summary, helper, shops] = await Promise.all([homeSummary(session.workspaceId), helperStatus(), listShops(session.workspaceId)]);
   const { yesterday, week, tiles, needs, counts } = summary;
   const firstName = session.name.split(" ")[0];
 
@@ -22,7 +67,10 @@ export default async function HomePage() {
         <PageHeader title={`Welcome, ${firstName}`} subtitle="Two ways to start. Both work before any real store is connected." />
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="flex flex-col gap-4 p-6">
-            <h2 className="text-[18px] font-semibold">Build a shop with AI</h2>
+            <div className="flex items-center gap-3">
+              <ThinkingOrb state="idle" size={24} decorative />
+              <h2 className="text-[18px] font-semibold">Build a shop with AI</h2>
+            </div>
             <p className="text-muted">
               Type an idea. The AI names the brand, picks the look, chooses and writes the products, and writes every page. You watch it happen,
               then open the finished shop.
@@ -47,12 +95,13 @@ export default async function HomePage() {
                 <option value="60">60</option>
                 <option value="120">120</option>
               </select>
-              <Button type="submit" variant="secondary">
+              <PendingButton variant="secondary" pendingLabel="Setting up the stores…" className={buttonClass("secondary")}>
                 Start a practice fleet
-              </Button>
+              </PendingButton>
             </form>
           </Card>
         </div>
+        <SocialMedia shops={shops} />
       </>
     );
   }
@@ -80,10 +129,16 @@ export default async function HomePage() {
       />
 
       <Card className="mb-4 grid grid-cols-2 gap-6 p-6 md:grid-cols-4">
-        <Stat label="Sold yesterday" value={formatMoney(yesterday.salesCents, "USD", { whole: true })} hint={`${yesterday.orders} orders`} />
-        <Stat label="Profit yesterday" value={formatMoney(yesterday.profitCents, "USD", { whole: true })} hint="Before ad spend" tone={yesterday.profitCents >= 0 ? "positive" : "negative"} />
-        <Stat label="Sold in 7 days" value={formatMoneyCompact(week.salesCents)} hint={`${week.orders} orders`} />
-        <Stat label="Profit in 7 days" value={formatMoneyCompact(week.profitCents)} hint="Before ad spend" tone={week.profitCents >= 0 ? "positive" : "negative"} />
+        <Stat rollIn label="Sold yesterday" value={formatMoney(yesterday.salesCents, "USD", { whole: true })} hint={`${yesterday.orders} orders`} />
+        <Stat
+          rollIn
+          label="Profit yesterday"
+          value={formatMoney(yesterday.profitCents, "USD", { whole: true })}
+          hint="Before ad spend"
+          tone={yesterday.profitCents >= 0 ? "positive" : "negative"}
+        />
+        <Stat rollIn label="Sold in 7 days" value={formatMoneyCompact(week.salesCents)} hint={`${week.orders} orders`} />
+        <Stat rollIn label="Profit in 7 days" value={formatMoneyCompact(week.profitCents)} hint="Before ad spend" tone={week.profitCents >= 0 ? "positive" : "negative"} />
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
@@ -115,12 +170,15 @@ export default async function HomePage() {
             <StatusPill tone={helper.online ? "ok" : "off"}>{helper.online ? (helper.busy ? "Working" : "On") : "Off"}</StatusPill>
           </div>
           {counts.building ? (
-            <Link href="/builder" className="mt-2 block text-[13px] text-accent hover:underline">
+            <Link href="/builder" className="mt-2 flex min-h-11 items-center gap-2 text-[13px] text-accent hover:underline md:min-h-0">
+              <ThinkingOrb state={helper.online ? "working" : "idle"} size={16} decorative />
               {counts.building} {counts.building === 1 ? "shop is" : "shops are"} being built
             </Link>
           ) : null}
         </Section>
       </div>
+
+      <SocialMedia shops={shops} />
     </>
   );
 }

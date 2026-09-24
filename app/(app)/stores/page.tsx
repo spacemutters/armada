@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { startPracticeFleet } from "../actions";
 import { FleetMap } from "@/components/fleet-map";
-import { Button, ButtonLink, Card, EmptyState, PageHeader, Section, StatusPill, type Tone } from "@/components/ui";
+import { PendingButton } from "@/components/fx/pending-button";
+import { buttonClass, ButtonLink, Card, EmptyState, PageHeader, platformName, Section, StatusPill, type Tone } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
 import { storesTable } from "@/lib/fleet/queries";
 import { formatMoney } from "@/lib/money";
@@ -21,6 +22,7 @@ export default async function StoresPage({ searchParams }: PageProps<"/stores">)
   const all = await storesTable(session.workspaceId);
   const groups = [...new Set(all.map((s) => s.group).filter(Boolean))] as string[];
   const rows = all.filter((s) => (!group || s.group === group) && (!platform || s.platform === platform));
+  const hasFacebook = all.some((s) => s.platform === "facebook");
 
   const filterLink = (label: string, params: Record<string, string | undefined>, active: boolean) => {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString();
@@ -40,7 +42,7 @@ export default async function StoresPage({ searchParams }: PageProps<"/stores">)
     <>
       <PageHeader
         title="Stores"
-        subtitle={`${all.length} ${all.length === 1 ? "store" : "stores"} across Shopify and eBay. Open one to see its products, orders and health.`}
+        subtitle={`${all.length} ${all.length === 1 ? "store" : "stores"} across ${hasFacebook ? "Shopify, eBay and Facebook" : "Shopify and eBay"}. Open one to see its products, orders and health.`}
         actions={<ButtonLink href="/builder/new">Open a new shop</ButtonLink>}
       />
 
@@ -51,7 +53,9 @@ export default async function StoresPage({ searchParams }: PageProps<"/stores">)
           action={
             <form action={startPracticeFleet} className="flex items-center gap-3">
               <input type="hidden" name="count" value="24" />
-              <Button type="submit">Start a practice fleet</Button>
+              <PendingButton pendingLabel="Setting up the stores…" className={buttonClass("primary")}>
+                Start a practice fleet
+              </PendingButton>
             </form>
           }
         />
@@ -67,6 +71,7 @@ export default async function StoresPage({ searchParams }: PageProps<"/stores">)
             <span className="mx-1 w-px self-stretch bg-line" aria-hidden />
             {filterLink("Shopify", { group: group as string | undefined, platform: "shopify" }, platform === "shopify")}
             {filterLink("eBay", { group: group as string | undefined, platform: "ebay" }, platform === "ebay")}
+            {hasFacebook ? filterLink("Facebook shop", { group: group as string | undefined, platform: "facebook" }, platform === "facebook") : null}
           </div>
 
           <Card className="overflow-x-auto">
@@ -92,7 +97,7 @@ export default async function StoresPage({ searchParams }: PageProps<"/stores">)
                           {s.name}
                         </Link>
                         <div className="text-[12px] text-muted">
-                          {s.platform === "ebay" ? "eBay" : "Shopify"}
+                          {platformName(s.platform)}
                           {s.mode === "practice" ? " · practice" : ""}
                         </div>
                       </td>

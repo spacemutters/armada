@@ -1,5 +1,6 @@
 import { previewListing } from "../actions";
-import { Button, Card, EmptyState, PageHeader } from "@/components/ui";
+import { PendingButton } from "@/components/fx/pending-button";
+import { buttonClass, Card, EmptyState, PageHeader, platformName } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
 import { withWorkspace } from "@/lib/db";
 
@@ -58,7 +59,7 @@ export default async function ListInStoresPage({ searchParams }: PageProps<"/pro
                   <label key={s.id} className="flex min-h-11 items-center gap-3 rounded-lg px-2 hover:bg-sunken md:min-h-9">
                     <input type="checkbox" name="stores" value={s.id} className="size-5 accent-[var(--accent)]" />
                     <span className="min-w-0 truncate">{s.name}</span>
-                    <span className="ml-auto shrink-0 text-[12px] text-muted">{s.platform === "ebay" ? "eBay" : "Shopify"}</span>
+                    <span className="ml-auto shrink-0 text-[12px] text-muted">{platformName(s.platform)}</span>
                   </label>
                 ))}
               </div>
@@ -66,7 +67,9 @@ export default async function ListInStoresPage({ searchParams }: PageProps<"/pro
           </Card>
         ))}
         <div className="flex items-center gap-3">
-          <Button type="submit">See the preview</Button>
+          <PendingButton pendingLabel="Making the preview…" orb="thinking" className={buttonClass("primary")}>
+            See the preview
+          </PendingButton>
           <span className="text-[13px] text-muted">Nothing changes until you approve the preview. eBay rules are checked for you.</span>
         </div>
       </form>
