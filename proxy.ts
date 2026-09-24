@@ -6,7 +6,8 @@ import { looksLikeAPerson, newVisitor, readVisitor, VISITOR_COOKIE, VISITOR_MAX_
 //   the same version every time. The id is also handed to this same request, so the first page
 //   they see is already in the test.
 // - Everything else: no session cookie means sign in. The real check (signature, member, session
-//   version) happens on every page through requireSession().
+//   version) happens on every page through requireSession(). The one exception is the front door:
+//   a signed-out visitor at "/" sees the public homepage (app/home) while the address stays "/".
 export async function proxy(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/s/")) {
     if (!looksLikeAPerson(request.headers.get("user-agent"))) return NextResponse.next();
@@ -24,11 +25,18 @@ export async function proxy(request: NextRequest) {
     return response;
   }
   if (!request.cookies.has("armada_session")) {
+    if (request.nextUrl.pathname === "/") {
+      const home = request.nextUrl.clone();
+      home.pathname = "/home";
+      return NextResponse.rewrite(home);
+    }
     return NextResponse.redirect(new URL("/welcome", request.url));
   }
   return NextResponse.next();
 }
 
+// Public paths skip this check: sign-in, setup links, the API, Next's own files, the homepage (/home)
+// and its files (/marketing/...), and the icons.
 export const config = {
-  matcher: ["/((?!welcome|setup/|api/|_next/|icon\\.svg|favicon\\.ico|robots\\.txt).*)"],
+  matcher: ["/((?!welcome|setup/|api/|_next/|home$|home/|home\\.|marketing/|icon\\.svg|favicon\\.ico|robots\\.txt).*)"],
 };
