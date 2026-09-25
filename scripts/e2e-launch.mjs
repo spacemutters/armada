@@ -163,8 +163,8 @@ try {
   );
   expect(again.week_runs === 1 && again.ad_sets === 1 && again.accounts === 2, "more passes make nothing twice", again);
 
-  // ---- how it looks
-  await page.reload({ waitUntil: "networkidle0" });
+  // ---- how it looks (back on the shop's page, which the walk-away left)
+  await page.goto(shopUrl, { waitUntil: "networkidle0" });
   await page.evaluate(() => document.querySelector("#launch")?.scrollIntoView());
   expect(/Launched\. Everything Armada can do for this shop is done\./.test(await page.evaluate(() => document.querySelector("#launch")?.innerText ?? "")), "the page says it's launched");
   await shot("03-launched-light");
@@ -174,6 +174,7 @@ try {
   await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
   await page.reload({ waitUntil: "networkidle0" });
   await page.evaluate(() => document.querySelector("#launch")?.scrollIntoView());
+  expect(Boolean(await page.$("#launch")), "the phone check is looking at the launch");
   const phone = await page.evaluate(() => ({
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     small: [...document.querySelectorAll("#launch a, #launch button")].filter((el) => el.getBoundingClientRect().height > 0 && el.getBoundingClientRect().height < 44).map((el) => el.textContent.trim()),

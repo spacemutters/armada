@@ -30,7 +30,7 @@ export function LaunchSection({
   problem: string | null;
 }) {
   return (
-    <Card id="launch" className="mb-6 scroll-mt-6 p-5 md:p-6">
+    <Card id="launch" className="mb-6 scroll-mt-20 p-5 md:scroll-mt-6 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-[17px] font-semibold tracking-tight">{view ? `Launch of ${brand}` : `Launch ${brand}`}</h2>
         {view ? <StatusPill tone={STATUS[view.status].tone}>{STATUS[view.status].label}</StatusPill> : null}
