@@ -8,6 +8,8 @@ import type { Provider } from "./types";
 // minutes, and says which workspace and person started the round trip and why.
 
 const hash = (s: string) => createHash("sha256").update(s).digest("base64url");
+/** The stored form of a state token (only its hash is kept). */
+export const stateHash = hash;
 
 export interface StateDetail {
   /** Where to send the person when it's done, e.g. "/connections" or "/stores/new". */

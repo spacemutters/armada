@@ -145,6 +145,17 @@ export async function clearServiceHere(): Promise<ServiceResult> {
   return { ok: true, message: "Switched off. Accounts already connected stop working until it's on again." };
 }
 
+/** Platform admins only: the Composio key that switches on one-press Instagram. */
+export async function saveComposioKeyHere(_prev: FormResult | null, formData: FormData): Promise<FormResult> {
+  const session = await requireSession();
+  if (!(await isPlatformAdmin(session.memberId))) return { ok: false, message: "Only Armada's admin can change this." };
+  const key = String(formData.get("COMPOSIO_API_KEY") ?? "").trim();
+  if (!key || key.length > 300 || /\s/.test(key)) return { ok: false, message: "Paste the whole Composio key." };
+  await saveAppKeys({ COMPOSIO_API_KEY: key }, session.memberId);
+  refresh();
+  return { ok: true, message: "Saved. Instagram connects in one press now." };
+}
+
 /** Platform admins only: saves Armada's own app keys for one platform, pasted on its card. */
 export async function saveAppKeysHere(_prev: FormResult | null, formData: FormData): Promise<FormResult> {
   const session = await requireSession();

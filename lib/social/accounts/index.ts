@@ -1,4 +1,5 @@
 import "server-only";
+import { ComposioProblem, composioOn, postInstagramCarousel } from "@/connectors/composio/client";
 import { refreshTikTokToken, needsRefresh, describeTikTokError } from "@/connectors/social-accounts/tiktok";
 import { appOrigin } from "@/lib/connections/types";
 import { withWorkspace } from "@/lib/db";
@@ -13,6 +14,7 @@ import {
   noteProblem,
   recordPracticePost,
   saveRenewedSecret,
+  type ComposioSecret,
   type MetaPageSecret,
   type TikTokSecret,
 } from "./store";
@@ -78,10 +80,29 @@ async function freshTikTokAccess(workspaceId: string, accountId: string): Promis
 }
 
 export const publishCarousel: PublishCarousel = async (workspaceId, accountId, post): Promise<PublishResult> => {
-  const acc = await withWorkspace(workspaceId, (tx) => loadAccountWithSecret<MetaPageSecret & TikTokSecret>(tx, accountId));
+  const acc = await withWorkspace(workspaceId, (tx) => loadAccountWithSecret<MetaPageSecret & TikTokSecret & Partial<ComposioSecret>>(tx, accountId));
   if (!acc) return { ok: false, problem: "That social account isn't connected any more." };
 
   const slides = (post.slides ?? []).map((s) => ({ imageUrl: absolute(s.imageUrl), alt: s.alt ?? "" }));
+
+  // Instagram connected through Composio: its approved app posts the carousel.
+  if (acc.kind === "real" && acc.status === "connected" && acc.platform === "instagram" && acc.secret?.composio) {
+    if (!composioOn()) return { ok: false, problem: "Instagram posting is switched off in Armada right now." };
+    const relay = relaySecret();
+    try {
+      const id = await postInstagramCarousel(
+        acc.secret.composio,
+        acc.externalId ?? "",
+        post.caption,
+        slides.map((s) => (relay ? `${appOrigin()}${relayPath(relay, s.imageUrl)}` : s.imageUrl)),
+      );
+      return { ok: true, externalId: id };
+    } catch (e) {
+      const problem = e instanceof ComposioProblem ? `Instagram said: ${e.message}` : "Couldn't reach Instagram just now. Try again in a minute.";
+      await noteProblem(workspaceId, accountId, problem);
+      return { ok: false, problem };
+    }
+  }
   const target: PublishTarget = { platform: acc.platform, kind: acc.kind, status: acc.status, externalId: acc.externalId, access: acc.secret };
 
   if (acc.kind === "real" && acc.status === "connected") {
@@ -94,7 +115,7 @@ export const publishCarousel: PublishCarousel = async (workspaceId, accountId, p
         return { ok: false, problem: fresh.problem };
       }
       target.access = { accessToken: fresh.accessToken };
-    } else if (!metaReady()) {
+    } else if (!metaReady() && !(acc.platform === "facebook" && acc.meta?.viaService)) {
       return { ok: false, problem: "Facebook and Instagram posting is switched off in Armada right now." };
     }
   }

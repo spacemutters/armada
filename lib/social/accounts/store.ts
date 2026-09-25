@@ -20,6 +20,10 @@ export interface AccountMeta {
   instagramLinked?: boolean;
   /** Facebook: what Armada filled in on the Page from the profile kit. */
   kit?: PageSetupResult & { at: string };
+  /** Facebook: connected through the connection service (posting only). */
+  viaService?: boolean;
+  /** Instagram: connected through Composio's approved Instagram app. */
+  viaComposio?: boolean;
   /** The last thing the platform refused, in plain words. */
   lastProblem?: string;
   lastProblemAt?: string;
@@ -51,6 +55,10 @@ export interface MetaPageSecret {
 export interface TikTokSecret {
   accessToken: string;
   refreshToken: string;
+}
+/** Instagram through Composio: which connection it is there, never a key. */
+export interface ComposioSecret {
+  composio: { connectedAccountId: string; userId: string };
 }
 
 const COLUMNS = "id, workspace_id, shop_id, platform, kind, name, handle, external_id, status, token_expires_at, refresh_expires_at, meta, created_at, updated_at";
@@ -100,7 +108,7 @@ export interface RealAccountInput {
   name: string;
   handle: string | null;
   externalId: string;
-  secret: MetaPageSecret | TikTokSecret;
+  secret: MetaPageSecret | TikTokSecret | ComposioSecret;
   tokenExpiresAt?: Date | null;
   refreshExpiresAt?: Date | null;
   meta: AccountMeta;

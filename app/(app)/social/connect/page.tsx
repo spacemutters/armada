@@ -1,4 +1,5 @@
 import { applyKit, makePracticeAccount, pickPage, removeSocialAccount, skipPageChoice } from "./actions";
+import { composioOn } from "@/connectors/composio/client";
 import { serviceOn } from "@/lib/connections/service";
 import { isPlatformAdmin } from "@/app/(app)/admin/access";
 import { ShopChooser, type ShopChoice } from "@/components/social-connect/shop-list";
@@ -135,7 +136,7 @@ export default async function SocialConnectPage({ searchParams }: { searchParams
       choice={choice}
       rows={rows}
       practice={practice}
-      ready={{ instagram: metaReady(), facebook: metaReady() || (await serviceOn()), tiktok: tiktokReady() }}
+      ready={{ instagram: metaReady() || composioOn(), facebook: metaReady() || (await serviceOn()), tiktok: tiktokReady() }}
       canConnect={canConnect(session)}
       canPractice={session.role !== "viewer"}
       practiceShop={shop.brief?.source === "practice"}

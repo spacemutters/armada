@@ -1,5 +1,7 @@
 import { isPlatformAdmin } from "../admin/access";
-import { clearServiceHere, connectCjHere, disconnectHere, saveAppKeysHere, saveServiceHere } from "./actions";
+import { clearServiceHere, connectCjHere, disconnectHere, saveAppKeysHere, saveComposioKeyHere, saveServiceHere } from "./actions";
+import { AppKeysForm } from "@/components/connect/app-keys-form";
+import { appKeySource } from "@/lib/app-keys";
 import { ConnectBanner, ConnectorGroup } from "@/components/connect/connector-card";
 import { ServiceSetup } from "@/components/connect/service-setup";
 import { pdStatus } from "@/connectors/pipedream/client";
@@ -74,6 +76,23 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
           save={saveServiceHere}
           clear={clearServiceHere}
         />
+      ) : null}
+
+      {admin ? (
+        <details className="mb-8 rounded-2xl border border-line bg-raised px-5 py-4">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+            <span className="text-[15px] font-semibold">Instagram in one press</span>
+            <span className="text-[13px] text-muted">{appKeySource("COMPOSIO_API_KEY") ? "On" : "Off"} · Admin</span>
+          </summary>
+          <div className="mt-3">
+            <AppKeysForm
+              provider="composio"
+              name="Composio"
+              fields={[{ name: "COMPOSIO_API_KEY", label: "Composio key", secret: true, source: appKeySource("COMPOSIO_API_KEY"), current: null }]}
+              action={saveComposioKeyHere}
+            />
+          </div>
+        </details>
       ) : null}
 
       {!canManage ? (

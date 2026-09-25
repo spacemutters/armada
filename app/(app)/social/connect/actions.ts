@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { applyKitToPage, backTo, canConnect, choosePage } from "@/lib/social/accounts/connect";
 import { usernameIdeas } from "@/lib/social/accounts/kit";
-import { createPracticeAccount, dropPageChoices, removeAccount } from "@/lib/social/accounts/store";
+import { createPracticeAccount, dropPageChoices, loadAccountWithSecret, removeAccount, type ComposioSecret } from "@/lib/social/accounts/store";
+import { forgetConnection } from "@/connectors/composio/client";
+import { withWorkspace } from "@/lib/db";
 import { getShop } from "@/lib/shops/queries";
 import type { SocialPlatform } from "@/lib/social/types";
 
@@ -27,6 +29,10 @@ export async function makePracticeAccount(shopId: string, platform: SocialPlatfo
 export async function removeSocialAccount(shopId: string, accountId: string) {
   const session = await requireSession();
   if (session.role === "viewer") redirect(backTo(shopId, { problem: "role" }));
+  if (canConnect(session)) {
+    const acc = await withWorkspace(session.workspaceId, (tx) => loadAccountWithSecret<Partial<ComposioSecret>>(tx, accountId)).catch(() => null);
+    if (acc?.secret?.composio) await forgetConnection(acc.secret.composio.connectedAccountId);
+  }
   const row = await removeAccount(session.workspaceId, session.memberId, accountId, canConnect(session));
   redirect(backTo(shopId, row ? { removed: row.platform, kind: row.kind } : canConnect(session) ? {} : { problem: "role" }));
 }

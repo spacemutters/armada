@@ -12,7 +12,9 @@ import {
 } from "@/connectors/social-accounts/meta";
 import { describeTikTokError, exchangeTikTokCode, tiktokLoginUrl, tiktokProfileUrl, tiktokUser, TIKTOK_SCOPES } from "@/connectors/social-accounts/tiktok";
 import type { Session } from "@/lib/auth/session";
+import { ComposioProblem, composioOn, instagramLink, instagramUser, waitUntilActive } from "@/connectors/composio/client";
 import { pagesViaService } from "@/connectors/pipedream/social";
+import { stateHash } from "@/lib/connections/state";
 import type { ViaService } from "@/connectors/pipedream/core";
 import { serviceOn, startViaService } from "@/lib/connections/service";
 import { consumeState, createState } from "@/lib/connections/state";
@@ -142,7 +144,9 @@ export async function metaStart(session: Session, route: "facebook_page" | "inst
   if (!shop) return backTo(null, { problem: "shop" });
   if (!canConnect(session)) return backTo(shop.id, { problem: "role" });
   if (!metaReady()) {
-    // No Meta app of Armada's own: a Page connects through the connection service's approved app.
+    // No Meta app of Armada's own: Instagram connects through Composio's approved app.
+    if (route === "instagram" && composioOn()) return composioInstagramStart(session, shop);
+    // A Page connects through the connection service's approved app.
     if (route === "facebook_page" && (await serviceOn())) {
       return startViaService({ workspaceId: session.workspaceId, memberId: session.memberId, provider: "facebook_page", purpose: "connect", returnTo: backTo(shop.id), detail: { shopId: shop.id } });
     }
@@ -240,6 +244,57 @@ export async function metaFinish(route: "facebook_page" | "instagram", url: URL,
     return backTo(shop.id, { choose: wanted });
   } catch (e) {
     return backTo(shop.id, { problem: "platform", p: wanted, ...signedNote(describeMetaError(e, wanted).problem ?? "") });
+  }
+}
+
+// ---------- Instagram through Composio ----------
+
+/** Composio's own sign-in for Instagram (its approved app), then back to Armada. */
+async function composioInstagramStart(session: Session, shop: ShopRow): Promise<string> {
+  const userId = `armada-${session.workspaceId}`;
+  try {
+    // The state is made first so its one-time token can ride on the return address.
+    const pending = await createState(session.workspaceId, session.memberId, "social_instagram_composio" as Provider, "connect", { returnTo: backTo(shop.id), shopId: shop.id });
+    const link = await instagramLink(userId, `${appOrigin()}/api/connect/composio/instagram?state=${encodeURIComponent(pending)}`);
+    await withWorkspace(
+      session.workspaceId,
+      (tx) => tx`update armada.oauth_states set detail = detail || ${tx.json({ connectedAccountId: link.connectedAccountId, userId } as never)} where state_hash = ${stateHash(pending)}`,
+    );
+    return link.redirectUrl;
+  } catch (e) {
+    return backTo(shop.id, { problem: "platform", p: "instagram", ...signedNote(e instanceof ComposioProblem ? e.message : "Couldn't reach Composio just now. Try again in a minute.") });
+  }
+}
+
+/** Composio sends the person back once Instagram approved. Returns where to send them next. */
+export async function composioInstagramFinish(url: URL, person: ReturningPerson): Promise<string> {
+  const state = await consumeState(url.searchParams.get("state"), "social_instagram_composio" as Provider);
+  if (!state) return backTo(null, { problem: "expired" });
+  if (!samePerson(state, person)) return backTo(null, { problem: "browser" });
+  const shopId = String(state.detail.shopId ?? "");
+  const connectedAccountId = String(state.detail.connectedAccountId ?? "");
+  const userId = String(state.detail.userId ?? "");
+  const shop = await getShop(state.workspaceId, shopId);
+  if (!shop) return backTo(null, { problem: "shop" });
+  if (!connectedAccountId || !userId) return backTo(shop.id, { problem: "cancelled", p: "instagram" });
+  try {
+    if (!(await waitUntilActive(connectedAccountId))) return backTo(shop.id, { problem: "cancelled", p: "instagram" });
+    const me = await instagramUser(connectedAccountId, userId);
+    await withWorkspace(state.workspaceId, (tx) =>
+      saveRealAccount(tx, state.workspaceId, {
+        shopId: shop.id,
+        platform: "instagram",
+        name: me.name || me.username || "Instagram account",
+        handle: me.username,
+        externalId: me.id,
+        secret: { composio: { connectedAccountId, userId } },
+        meta: { link: me.username ? instagramProfileUrl(me.username) : null, viaComposio: true },
+        memberId: state.memberId,
+      }),
+    );
+    return backTo(shop.id, { done: "instagram" });
+  } catch (e) {
+    return backTo(shop.id, { problem: "platform", p: "instagram", ...signedNote(e instanceof ComposioProblem ? e.message : "Instagram didn't finish connecting. Try again in a minute.") });
   }
 }
 

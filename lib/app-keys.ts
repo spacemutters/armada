@@ -28,6 +28,8 @@ export const APP_KEYS: Record<string, { secret: boolean }> = {
   GOOGLE_ADS_DEVELOPER_TOKEN: { secret: true },
   ALIEXPRESS_APP_KEY: { secret: false },
   ALIEXPRESS_APP_SECRET: { secret: true },
+  // The connection service with an approved Instagram app.
+  COMPOSIO_API_KEY: { secret: true },
 };
 
 export const isAppKey = (name: string) => Object.hasOwn(APP_KEYS, name);
