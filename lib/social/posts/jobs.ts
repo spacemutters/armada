@@ -5,7 +5,7 @@ import type { Tx } from "@/lib/db";
 import type { ShopRow } from "@/lib/shops/types";
 import type { AiJob } from "@/lib/types";
 import { slideAlt } from "./design";
-import { POSTS_PER_WEEK, readCarouselAnswer, type ReadPost } from "./schema";
+import { POSTS_PER_PRODUCT, POSTS_PER_WEEK, readCarouselAnswer, type ReadPost } from "./schema";
 import { suggestedMoment, zoneFor } from "./time";
 import type { SocialPostRow, SocialRunRow } from "./types";
 
@@ -50,7 +50,7 @@ onJobFinished("social.carousel", async (tx: Tx, job: AiJob) => {
     await failRun(tx, run, "The shop is gone.");
     return;
   }
-  const count = run.kind === "week" ? POSTS_PER_WEEK : 1;
+  const count = run.kind === "week" ? POSTS_PER_WEEK : run.kind === "product" ? POSTS_PER_PRODUCT : 1;
   const { posts, notes } = readCarouselAnswer(job.output, Object.keys(run.refs ?? {}), count);
   if (notes.length) console.warn("social.carousel answer notes", run.id, notes);
   if (!posts.length) {

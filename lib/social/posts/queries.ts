@@ -5,7 +5,7 @@ import { withWorkspace, type Tx } from "@/lib/db";
 import type { ShopRow } from "@/lib/shops/types";
 import { slideAlt } from "./design";
 import { carouselPrompt, photoRefs, SYSTEM, type PhotoRef, type PromptProduct } from "./prompt";
-import { carouselSchema, CAPTION_MAX, HEADLINE_MAX, LINE_MAX, normalizeHashtags, POSTS_PER_WEEK, tidyCaption, tidyLine } from "./schema";
+import { carouselSchema, CAPTION_MAX, HEADLINE_MAX, LINE_MAX, normalizeHashtags, POSTS_PER_PRODUCT, POSTS_PER_WEEK, tidyCaption, tidyLine } from "./schema";
 import { takenDays, zoneFor } from "./time";
 import type { PostWithSlides, SocialPostRow, SocialRunRow, SocialSlideRow } from "./types";
 
@@ -50,11 +50,15 @@ export async function shopProducts(tx: Tx, shop: ShopRow): Promise<PromptProduct
 async function askForPosts(
   tx: Tx,
   shop: ShopRow,
-  run: { id: string; kind: "week" | "rewrite" },
-  opts: { platforms: string[]; replacing?: { postId: string; angle: string; headlines: string[] } },
+  run: { id: string; kind: "week" | "rewrite" | "product" },
+  opts: { platforms: string[]; replacing?: { postId: string; angle: string; headlines: string[] }; productId?: string },
 ): Promise<Record<string, PhotoRef>> {
-  const products = await shopProducts(tx, shop);
-  if (!products.length) throw new PostProblem("This shop has no products yet, so there's nothing to post about.");
+  const all = await shopProducts(tx, shop);
+  // A product run sees only its own product, so every fact and photo in the ads is that product's.
+  const products = opts.productId ? all.filter((p) => p.id === opts.productId) : all;
+  if (!products.length) {
+    throw new PostProblem(opts.productId ? "This product isn't in that shop, so its ads can't be made there." : "This shop has no products yet, so there's nothing to post about.");
+  }
   const refs = photoRefs(products);
   const recent = await tx<{ angle: string; scheduledAt: Date | null }[]>`
     select angle, scheduled_at from armada.social_posts
@@ -62,7 +66,7 @@ async function askForPosts(
     order by created_at desc limit 30`;
   const zone = zoneFor(countryCode(shop.brief.country ?? ""));
   const scheduled = recent.map((r) => r.scheduledAt).filter((d): d is Date => d != null).map((d) => new Date(d));
-  const count = run.kind === "week" ? POSTS_PER_WEEK : 1;
+  const count = run.kind === "week" ? POSTS_PER_WEEK : run.kind === "product" ? POSTS_PER_PRODUCT : 1;
   await tx`update armada.social_runs set refs = ${tx.json(refs as never)} where id = ${run.id}`;
   await enqueueJob(tx, {
     workspaceId: shop.workspaceId,
@@ -80,6 +84,7 @@ async function askForPosts(
         takenDays: takenDays(new Date(), scheduled, zone.tz),
         zoneLabel: zone.label,
         replacing: opts.replacing ? { angle: opts.replacing.angle, headlines: opts.replacing.headlines } : undefined,
+        focus: run.kind === "product",
       }),
       schema: carouselSchema(Object.keys(refs), count) as never,
       timeoutMs: count === 1 ? ONE_TIMEOUT_MS : WEEK_TIMEOUT_MS,
@@ -111,6 +116,59 @@ export async function startWeek(workspaceId: string, shopId: string, memberId: s
       values (${workspaceId}, ${memberId}, 'social.week_started', ${tx.json({ shopId, runId: run.id } as never)})`;
     return run.id;
   });
+}
+
+/**
+ * "Make an ad with AI" on a product: the AI writes a few carousel ads about that one product, in the
+ * shop's look, as drafts on the shop's posts page. A second press while they're being written finds
+ * the same run.
+ */
+export async function startProductAds(workspaceId: string, shopId: string, productId: string, memberId: string, platforms: string[]): Promise<string> {
+  return withWorkspace(workspaceId, async (tx) => {
+    const shop = await readyShop(tx, shopId);
+    const find = () => tx<{ id: string }[]>`
+      select id from armada.social_runs where shop_id = ${shopId} and product_id = ${productId} and kind = 'product' and status = 'writing'`;
+    const [open] = await find();
+    if (open) return open.id;
+    const [run] = await tx<{ id: string }[]>`
+      insert into armada.social_runs (workspace_id, shop_id, kind, product_id, created_by)
+      values (${workspaceId}, ${shopId}, 'product', ${productId}, ${memberId})
+      on conflict (shop_id, product_id) where status = 'writing' and kind = 'product' do nothing
+      returning id`;
+    if (!run) {
+      const [other] = await find();
+      if (other) return other.id;
+      throw new PostProblem("Couldn't start writing. Try again.");
+    }
+    await askForPosts(tx, shop, { id: run.id, kind: "product" }, { platforms, productId });
+    await tx`
+      insert into armada.audit_log (workspace_id, member_id, action, detail)
+      values (${workspaceId}, ${memberId}, 'social.product_ads_started', ${tx.json({ shopId, productId, runId: run.id } as never)})`;
+    return run.id;
+  });
+}
+
+/** The newest week or product run for the shop, with the product's name for a product run. */
+export async function latestRun(workspaceId: string, shopId: string): Promise<(SocialRunRow & { productTitle: string | null }) | null> {
+  const rows = await withWorkspace(
+    workspaceId,
+    (tx) => tx<(SocialRunRow & { productTitle: string | null })[]>`
+      select r.*, p.title as product_title from armada.social_runs r left join armada.products p on p.id = r.product_id
+      where r.shop_id = ${shopId} and r.kind in ('week', 'product') order by r.created_at desc limit 1`,
+  );
+  return rows[0] ?? null;
+}
+
+/** Ready shops that sell this product, for "Make an ad with AI". */
+export async function shopsWithProduct(workspaceId: string, productId: string): Promise<{ id: string; name: string }[]> {
+  return withWorkspace(
+    workspaceId,
+    (tx) => tx<{ id: string; name: string }[]>`
+      select id, coalesce(blueprint -> 'brand' ->> 'name', niche) as name from armada.shops
+      where status in ('ready', 'publishing', 'published') and blueprint ? 'theme'
+        and blueprint -> 'products' @> ${tx.json([{ productId }] as never)}
+      order by updated_at desc`,
+  );
 }
 
 /** "Write again": the AI writes a new version of one post, in place. */

@@ -55,8 +55,10 @@ export interface SocialRunRow {
   id: string;
   workspaceId: string;
   shopId: string;
-  kind: "week" | "rewrite";
+  kind: "week" | "rewrite" | "product";
   postId: string | null;
+  /** The product a "product" run (Make an ad with AI) is about. */
+  productId: string | null;
   status: "writing" | "done" | "failed" | "cancelled";
   refs: Record<string, { productId: string; url: string; title: string }>;
   count: number;

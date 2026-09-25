@@ -56,6 +56,8 @@ export interface CarouselRequest {
   zoneLabel: string;
   /** Writing one post again: what it said before. */
   replacing?: { angle: string; headlines: string[] };
+  /** Ads about the one product given ("Make an ad with AI" on a product). */
+  focus?: boolean;
 }
 
 export function carouselPrompt(r: CarouselRequest): string {
@@ -83,7 +85,13 @@ export function carouselPrompt(r: CarouselRequest): string {
   const platforms = [...new Set(r.platforms.map((p) => PLATFORM_NAMES[p] ?? p))];
   const one = r.count === 1;
 
-  return `Write ${one ? "one carousel post" : `${r.count} carousel posts`} for the social media accounts of the online shop "${bp.brand?.name}".
+  const focus = r.focus && r.products.length === 1 ? r.products[0] : null;
+  const what = focus
+    ? `${one ? "one carousel ad" : `${r.count} carousel ads`} about one product, "${focus.title}",`
+    : one
+      ? "one carousel post"
+      : `${r.count} carousel posts`;
+  return `Write ${what} for the social media accounts of the online shop "${bp.brand?.name}".
 ${platforms.length ? `They will go out on ${platforms.join(" and ")}.` : "They will go out on Instagram-style photo carousels."}
 
 The shop
@@ -98,7 +106,13 @@ The products (use only these, and only their facts)
 ${productLines || "(none yet)"}
 ${r.earlierAngles.length ? `\nRecent posts, whose ideas you must not repeat:\n${r.earlierAngles.map((a) => `- ${a}`).join("\n")}\n` : ""}${r.replacing ? `\nYou are writing a new version of this post. Keep its idea ("${r.replacing.angle}") but make it fresh: don't reuse these headlines: ${r.replacing.headlines.map((h) => `"${h}"`).join(", ")}.\n` : ""}
 Each post is a carousel of ${MIN_SLIDES} to ${MAX_SLIDES} slides that people swipe through. Armada draws every slide itself in the shop's colours and fonts, with the headline, the line under it and, if you pick one, a product photo.
-${one ? "" : `\nGive each post a genuinely different idea, for example: one product up close; how to use or care for something; what to pair with what; a small routine the products fit into; how to choose between two products; what the shop promises (only the facts above). Spread the posts across the products.\n`}
+${
+  one
+    ? ""
+    : focus
+      ? `\nEvery post is about "${focus.title}" and nothing else. Give each one a genuinely different idea, for example: the product up close and the detail that makes it good; how it's used day to day; who it's for and the moment it fits; how to care for it or what's included. Put its photos on the slides that show it.\n`
+      : `\nGive each post a genuinely different idea, for example: one product up close; how to use or care for something; what to pair with what; a small routine the products fit into; how to choose between two products; what the shop promises (only the facts above). Spread the posts across the products.\n`
+}
 For each post:
 - angle: the idea of the post, in plain words for the shop owner, at most 12 words.
 - slides: ${MIN_SLIDES} to ${MAX_SLIDES} slides.

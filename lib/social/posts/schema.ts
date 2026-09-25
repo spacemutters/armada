@@ -7,6 +7,8 @@ import { z } from "zod";
 
 /** Posts in "a week of posts". */
 export const POSTS_PER_WEEK = 5;
+/** "Make an ad with AI" on a product: this many carousel ads about that one product. */
+export const POSTS_PER_PRODUCT = 3;
 export const MIN_SLIDES = 3;
 export const MAX_SLIDES = 8;
 export const MIN_HASHTAGS = 3;

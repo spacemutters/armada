@@ -173,11 +173,13 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
                           <ProductArt images={p.images} title={p.title} />
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate font-medium">{p.title}</span>
+                          <Link href={`/products/${p.id}`} className="block truncate font-medium hover:underline">
+                            {p.title}
+                          </Link>
                           <span className="block text-[12px] text-muted">
                             {p.category}
                             {p.status === "paused" ? " · paused, supplier out of stock" : ""}
-                            {p.unconfirmed ? " · shipping not confirmed by CJ yet" : ""}
+                            {p.unconfirmed ? " · shipping not confirmed by the supplier yet" : ""}
                           </span>
                         </span>
                       </div>

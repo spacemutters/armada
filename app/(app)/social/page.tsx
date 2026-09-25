@@ -28,9 +28,9 @@ import { requireSession } from "@/lib/auth/session";
 import { readNote } from "@/lib/social/accounts/config";
 import { lookFromBlueprint } from "@/lib/social/posts/design";
 import { isDue } from "@/lib/social/posts/due";
-import { latestWeekRun, photoChoices, postsForShop, uuid } from "@/lib/social/posts/queries";
+import { latestRun, photoChoices, postsForShop, uuid } from "@/lib/social/posts/queries";
 import { platformLabel, publishDuePosts } from "@/lib/social/posts/schedule";
-import { MAX_SLIDES, MIN_SLIDES, POSTS_PER_WEEK } from "@/lib/social/posts/schema";
+import { MAX_SLIDES, MIN_SLIDES, POSTS_PER_PRODUCT, POSTS_PER_WEEK } from "@/lib/social/posts/schema";
 import { shopAccounts } from "@/lib/social/posts/targets";
 import type { PostWithSlides } from "@/lib/social/posts/types";
 import { listShops } from "@/lib/shops/queries";
@@ -60,7 +60,7 @@ export default async function SocialPostsPage({ searchParams }: { searchParams: 
   const [accounts, posts, run, helper, choices] = await Promise.all([
     shopAccounts(session.workspaceId, shop.id),
     postsForShop(session.workspaceId, shop.id),
-    latestWeekRun(session.workspaceId, shop.id),
+    latestRun(session.workspaceId, shop.id),
     helperStatus(),
     photoChoices(session.workspaceId, shop),
   ]);
@@ -159,11 +159,16 @@ export default async function SocialPostsPage({ searchParams }: { searchParams: 
               <ThinkingOrb state="composing" size={48} label="Writing" />
               <div className="min-w-0 flex-1">
                 <p role="status" className="text-[16px] font-semibold">
-                  <ShimmerText>Writing {POSTS_PER_WEEK} carousel posts for {shopName(shop)}</ShimmerText>
+                  <ShimmerText>
+                    {writing.kind === "product"
+                      ? `Writing ${POSTS_PER_PRODUCT} ads for ${writing.productTitle ?? "your product"}`
+                      : `Writing ${POSTS_PER_WEEK} carousel posts for ${shopName(shop)}`}
+                  </ShimmerText>
                 </p>
                 <p className="mt-1 max-w-2xl text-[14px] text-muted">
-                  The AI reads the shop&apos;s products, photos and voice, picks a different idea for each post, and suggests a time for each. This usually
-                  takes two or three minutes. You can leave this page; they&apos;ll be here.
+                  {writing.kind === "product"
+                    ? "The AI reads the product's facts and photos and the shop's voice, and writes each ad around a different idea. This usually takes a minute or two. You can leave this page; they'll be here."
+                    : "The AI reads the shop's products, photos and voice, picks a different idea for each post, and suggests a time for each. This usually takes two or three minutes. You can leave this page; they'll be here."}
                 </p>
                 {!helper.online ? (
                   <p className="mt-3 rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">
