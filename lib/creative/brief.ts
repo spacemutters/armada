@@ -1,4 +1,4 @@
-import { PICTURE_CRAFT, withCraft } from "@/lib/shops/craft";
+import { withCraft } from "@/lib/shops/craft";
 import { PRICE_WORDS, productKinds } from "@/lib/shops/images";
 import type { ShopRow } from "@/lib/shops/types";
 import { clip } from "@/lib/text";

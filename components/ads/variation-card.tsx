@@ -170,6 +170,11 @@ export function VariationCard({
           </p>
         )}
         {v.error ? <p className="rounded-xl bg-attention-soft px-3 py-2 text-[13px] text-attention">{v.error}</p> : null}
+        {v.format === "carousel" && v.cards.length < minCards && editable && !rewriting ? (
+          <p className="rounded-xl bg-attention-soft px-3 py-2 text-[13px] text-attention">
+            This carousel was written before carousels had at least {minCards} cards. Press Write again for a {minCards}-card version with scenes made for it.
+          </p>
+        ) : null}
         {problem ? (
           <p role="alert" className="rounded-xl bg-sunken px-3 py-2 text-[13px] text-negative">
             {problem}

@@ -57,13 +57,15 @@ async function totalsBy(workspaceId: string, setIds: string[], by: "ad_set_id" |
 export interface ShopAdsRow {
   shop: Pick<ShopRow, "id" | "slug" | "status" | "niche"> & { brand: string; tagline: string; palette: Palette | null; practice: boolean };
   thumb: ProductLite | null;
+  /** One of the ads' own pictures (a scene made for them), shown in place of the product thumbnail once there is one. */
+  cover: string | null;
   set: AdSet | null;
   totals: Totals;
   ads: number;
 }
 
 export async function adsOverview(workspaceId: string): Promise<{ rows: ShopAdsRow[]; onCount: number; totals: Totals }> {
-  const { shops, sets, counts } = await withWorkspace(workspaceId, async (tx) => {
+  const { shops, sets, counts, covers } = await withWorkspace(workspaceId, async (tx) => {
     const shops = await tx<ShopRow[]>`select * from armada.shops where status in ('ready', 'published') order by created_at desc limit 200`;
     // Each shop's unfinished ad set, or else its latest one.
     const sets = await tx<AdSet[]>`
@@ -73,7 +75,15 @@ export async function adsOverview(workspaceId: string): Promise<{ rows: ShopAdsR
       ? await tx<{ adSetId: string; n: number }[]>`
           select ad_set_id, count(*)::int as n from armada.ad_variations where ad_set_id in ${tx(sets.map((s) => s.id))} and status <> 'removed' group by ad_set_id`
       : [];
-    return { shops, sets, counts };
+    // A scene from each set's first ad that has one: never a product, so it can stand for the set.
+    const covers = sets.length
+      ? await tx<{ adSetId: string; id: string }[]>`
+          select distinct on (v.ad_set_id) v.ad_set_id, c.id
+          from armada.creative_pictures c join armada.ad_variations v on v.id = c.ad_variation_id
+          where v.ad_set_id in ${tx(sets.map((s) => s.id))} and c.live and c.kind = 'scene' and c.variant = 'square' and v.status <> 'removed'
+          order by v.ad_set_id, v.position, c.created_at`
+      : [];
+    return { shops, sets, counts, covers };
   });
   const firstIds = shops.map((s) => s.blueprint.products?.find((p) => p) ?? null).filter((p) => p).map((p) => p!.productId);
   const thumbs = firstIds.length
@@ -87,6 +97,7 @@ export async function adsOverview(workspaceId: string): Promise<{ rows: ShopAdsR
   const thumbBy = new Map(thumbs.map((t) => [t.id, t]));
   const setBy = new Map(sets.map((s) => [s.shopId, s]));
   const countBy = new Map(counts.map((c) => [c.adSetId, c.n]));
+  const coverBy = new Map(covers.map((c) => [c.adSetId, `/api/img/${c.id}`]));
   const totals = await totalsBy(workspaceId, sets.map((s) => s.id), "ad_set_id");
 
   const rows: ShopAdsRow[] = shops.map((s) => {
@@ -105,6 +116,7 @@ export async function adsOverview(workspaceId: string): Promise<{ rows: ShopAdsR
         practice: s.brief?.source === "practice",
       },
       thumb: t && first ? { id: t.id, title: t.title, imageUrl: t.images?.[0]?.url ?? null, icon: t.icon, priceCents: first.priceCents } : null,
+      cover: set ? (coverBy.get(set.id) ?? null) : null,
       set,
       totals: (set && totals.get(set.id)) ?? EMPTY,
       ads: set ? countBy.get(set.id) ?? 0 : 0,

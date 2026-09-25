@@ -49,16 +49,26 @@ const press = async (label) =>
   }, label);
 const waitFor = (re, ms) => page.waitForFunction((s) => new RegExp(s).test(document.body.innerText), { timeout: ms }, re.source).then(() => true, () => false);
 
-/** Every ad preview's pictures on the page: loaded composed pictures, and placeholders still waiting. */
+/**
+ * Every ad preview's pictures on the page: each composed picture fetched for real (cards off to the
+ * side load lazily, so the page alone can't tell), and the placeholders still waiting.
+ */
 const adPictures = () =>
-  page.evaluate(() => {
+  page.evaluate(async () => {
     const figs = [...document.querySelectorAll("article[data-variation] figure")];
-    const imgs = figs.flatMap((f) => [...f.querySelectorAll("img")]);
+    const srcs = [...new Set(figs.flatMap((f) => [...f.querySelectorAll("img")]).map((i) => i.src).filter((u) => /\/api\/ads\/picture\//.test(u)))];
     const waiting = figs.flatMap((f) => [...f.querySelectorAll('[role="img"]')]).map((e) => e.getAttribute("aria-label"));
+    const results = await Promise.all(
+      srcs.map(async (u) => {
+        const r = await fetch(u).catch(() => null);
+        const b = r ? new Uint8Array(await r.arrayBuffer()) : new Uint8Array();
+        return r?.ok && r.headers.get("content-type") === "image/jpeg" && b[0] === 0xff && b[1] === 0xd8 ? null : u;
+      }),
+    );
     return {
-      pictures: imgs.filter((i) => /\/api\/ads\/picture\//.test(i.src)).length,
-      loaded: imgs.filter((i) => /\/api\/ads\/picture\//.test(i.src) && i.complete && i.naturalWidth > 0).length,
-      broken: imgs.filter((i) => i.complete && i.naturalWidth === 0).map((i) => i.src).slice(0, 3),
+      pictures: srcs.length,
+      loaded: results.filter((x) => x === null).length,
+      broken: results.filter(Boolean).slice(0, 3),
       waiting,
       icons: figs.flatMap((f) => [...f.querySelectorAll("svg.lucide")]).filter((s) => s.getBoundingClientRect().width > 60).length,
     };
@@ -134,7 +144,7 @@ try {
   const perAd = await page.$$eval("article[data-variation]", (els) =>
     els.map((a) => {
       const m = /Carousel · (\d+) cards/.exec(a.innerText);
-      return { carousel: Boolean(m), cards: m ? Number(m[1]) : 1, pictures: a.querySelectorAll('figure img[src*="/api/ads/picture/"]').length };
+      return { carousel: Boolean(m), cards: m ? Number(m[1]) : 1, pictures: new Set([...a.querySelectorAll('figure img[src*="/api/ads/picture/"]')].map((i) => i.src.split("?")[0])).size };
     }),
   );
   console.log(`  ads: ${perAd.map((a) => (a.carousel ? `carousel of ${a.cards}` : "single")).join(", ")}`);
@@ -194,7 +204,7 @@ try {
   await page.reload({ waitUntil: "networkidle0" });
   const t4 = await text();
   expect(/practice/i.test(t4) && /made up|made-up/i.test(t4), "practice results are labelled as made up");
-  const livePics = await page.$$eval('figure img[src*="/api/ads/picture/"]', (is) => is.filter((i) => i.naturalWidth > 0).length);
+  const livePics = (await adPictures()).loaded;
   expect(livePics > 0, `the created ads keep their pictures (${livePics})`);
   await shot("07-on");
 
@@ -218,12 +228,19 @@ try {
     for (let i = 0; i < 90; i++) {
       await sleep(10000);
       await page.reload({ waitUntil: "networkidle0" }).catch(() => {});
+      // Slides past the first load lazily, so each one is fetched for real.
       posts = await page.$$eval("article[id^='post-']", (els) =>
-        els.map((a) => ({
-          slides: Number(/(\d+) slides/.exec(a.innerText)?.[1] ?? 0),
-          making: /Making this slide's picture|About to make this slide's picture|Waiting for the AI helper/.test(a.querySelector("figure")?.innerText ?? ""),
-          loaded: [...a.querySelectorAll('figure img[src*="/api/social/slide/"]')].filter((i) => i.complete && i.naturalWidth > 0).length,
-        })),
+        Promise.all(
+          els.map(async (a) => {
+            const srcs = [...a.querySelectorAll('figure img[src*="/api/social/slide/"]')].map((i) => i.src);
+            const ok = await Promise.all(srcs.map((u) => fetch(u).then((r) => r.ok && /image\/(jpeg|png)/.test(r.headers.get("content-type") ?? ""), () => false)));
+            return {
+              slides: Number(/(\d+) slides/.exec(a.innerText)?.[1] ?? 0),
+              making: /Making this slide's picture|About to make this slide's picture|Waiting for the AI helper/.test(a.querySelector("figure")?.innerText ?? ""),
+              loaded: ok.filter(Boolean).length,
+            };
+          }),
+        ),
       );
       const writing = /Writing \d+ ads for/.test(await text());
       if (!writing && posts.length && posts.every((p) => !p.making && p.loaded >= p.slides)) break;

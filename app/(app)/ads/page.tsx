@@ -180,7 +180,12 @@ function ShopRow({ r, canEdit }: { r: ShopAdsRow; canEdit: boolean }) {
         className="size-14 shrink-0 overflow-hidden rounded-xl border border-line bg-sunken"
         style={palette ? ({ "--art-bg": palette.surface, "--art-fg": palette.accent } as CSSProperties) : undefined}
       >
-        {r.thumb ? <ProductArt images={r.thumb.imageUrl ? [{ url: r.thumb.imageUrl }] : []} icon={r.thumb.icon ?? undefined} title={r.thumb.title} sizes="56px" /> : null}
+        {r.cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={r.cover} alt="" loading="lazy" className="h-full w-full object-cover" />
+        ) : r.thumb ? (
+          <ProductArt images={r.thumb.imageUrl ? [{ url: r.thumb.imageUrl }] : []} icon={r.thumb.icon ?? undefined} title={r.thumb.title} sizes="56px" />
+        ) : null}
       </div>
       <div className="min-w-0 flex-1 basis-48">
         <div className="flex flex-wrap items-center gap-2">
