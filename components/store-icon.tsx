@@ -59,40 +59,45 @@ export function StoreIcon({
         ) : null}
       </div>
       {open && canEdit ? (
-        <form action={choose} className="mt-4">
+        <div className="mt-4">
           <p className="mb-2 text-[13px] text-muted">Pick an icon. It saves as soon as you press it.</p>
+          {/* One small form per icon: the icon's name travels as a hidden field, which every browser sends. */}
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(44px,1fr))] gap-1.5">
             <li>
-              <button
-                type="submit"
-                name="icon"
-                value="none"
-                aria-label="No icon (plain square)"
-                aria-pressed={!icon}
-                className={cx("flex size-11 items-center justify-center rounded-xl border", !icon ? "border-accent bg-accent-soft" : "border-line hover:border-line-strong")}
-              >
-                <span aria-hidden className="size-5 rounded-[5px]" style={{ background: "var(--tile-mid)" }} />
-              </button>
+              <form action={choose}>
+                <input type="hidden" name="icon" value="none" />
+                <button
+                  type="submit"
+                  data-icon="none"
+                  aria-label="No icon (plain square)"
+                  aria-pressed={!icon}
+                  className={cx("flex size-11 items-center justify-center rounded-xl border", !icon ? "border-accent bg-accent-soft" : "border-line hover:border-line-strong")}
+                >
+                  <span aria-hidden className="size-5 rounded-[5px]" style={{ background: "var(--tile-mid)" }} />
+                </button>
+              </form>
             </li>
             {icons.map((name) => (
               <li key={name}>
-                <button
-                  type="submit"
-                  name="icon"
-                  value={name}
-                  aria-label={name.replace(/-\d+$/, "").replace(/-/g, " ")}
-                  aria-pressed={icon === name}
-                  className={cx(
-                    "flex size-11 items-center justify-center rounded-xl border",
-                    icon === name ? "border-accent bg-accent-soft" : "border-line hover:border-line-strong hover:bg-sunken",
-                  )}
-                >
-                  {createElement(iconFor(name), { "aria-hidden": true, className: "size-5", strokeWidth: 1.8 })}
-                </button>
+                <form action={choose}>
+                  <input type="hidden" name="icon" value={name} />
+                  <button
+                    type="submit"
+                    data-icon={name}
+                    aria-label={name.replace(/-\d+$/, "").replace(/-/g, " ")}
+                    aria-pressed={icon === name}
+                    className={cx(
+                      "flex size-11 items-center justify-center rounded-xl border",
+                      icon === name ? "border-accent bg-accent-soft" : "border-line hover:border-line-strong hover:bg-sunken",
+                    )}
+                  >
+                    {createElement(iconFor(name), { "aria-hidden": true, className: "size-5", strokeWidth: 1.8 })}
+                  </button>
+                </form>
               </li>
             ))}
           </ul>
-        </form>
+        </div>
       ) : null}
     </div>
   );
