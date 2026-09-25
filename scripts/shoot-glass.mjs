@@ -53,7 +53,8 @@ for (const scheme of ["light", "dark"]) {
   }
 }
 // The same with less transparency asked for: the glass must turn opaque.
-await page.emulateMediaFeatures([{ name: "prefers-reduced-transparency", value: "reduce" }, { name: "prefers-color-scheme", value: "light" }]);
+// Puppeteer's own list doesn't know this setting yet, so it's asked of Chrome directly.
+await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }, { name: "prefers-color-scheme", value: "light" }] });
 await page.setViewport(views[1][1]);
 await page.goto(`${base}/products`, { waitUntil: "networkidle0" });
 const opaque = await page.evaluate(() => getComputedStyle(document.querySelector("nav.glass, .glass")).backdropFilter);

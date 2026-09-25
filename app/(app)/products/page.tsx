@@ -199,12 +199,13 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
               </tbody>
             </table>
           </Card>
-          <div className="glass sticky bottom-[calc(88px+env(safe-area-inset-bottom))] mt-4 flex flex-wrap items-center justify-end gap-2 rounded-2xl p-3 md:bottom-6">
-            <span className="mr-auto px-2 text-[13px] text-ink">Choose products, then:</span>
-            <Button type="submit" formAction="/products/list" formMethod="get" variant="secondary">
+          <div className="glass sticky bottom-[calc(88px+env(safe-area-inset-bottom))] mt-4 flex items-center justify-end gap-2 rounded-2xl p-2.5 md:bottom-6 md:p-3">
+            {/* On a phone the two buttons share the bar; the words come back where there's room. */}
+            <span className="mr-auto hidden px-2 text-[13px] text-ink sm:inline">Choose products, then:</span>
+            <Button type="submit" formAction="/products/list" formMethod="get" variant="secondary" className="min-h-11 flex-1 sm:flex-none md:min-h-10">
               List in stores…
             </Button>
-            <Button type="submit" formAction="/products/reprice" formMethod="get" variant="secondary">
+            <Button type="submit" formAction="/products/reprice" formMethod="get" variant="secondary" className="min-h-11 flex-1 sm:flex-none md:min-h-10">
               Change prices…
             </Button>
           </div>
