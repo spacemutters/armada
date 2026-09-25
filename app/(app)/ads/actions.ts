@@ -25,6 +25,12 @@ import { requireSession } from "@/lib/auth/session";
 // on, changing the budget of ads that exist, connecting an ad account) is for owners and managers.
 
 const uuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
+/**
+ * For actions pressed on the shop's own ads page: reload the page's data in place. Redirecting back
+ * to the same address instead left the next button showing the last action's "working…" state.
+ */
+const stay = (shopId: string) => revalidatePath(`/ads/${shopId}`);
+
 /** A shop's ads page, with its data reloaded: an action that returns to the page it came from must not show the old page. */
 const shopPage = (shopId: string, extra = "") => {
   revalidatePath(`/ads/${shopId}`);
@@ -77,13 +83,13 @@ export async function makeAdsAction(shopId: string) {
 export async function retryAction(shopId: string, setId: string) {
   const session = await editor();
   if (uuid(setId)) await attempt(shopPage(shopId), () => retryWriting(session.workspaceId, setId));
-  redirect(shopPage(shopId));
+  stay(shopId);
 }
 
 export async function discardAction(shopId: string, setId: string) {
   const session = await editor();
   if (uuid(setId)) await discardSet(session.workspaceId, session.memberId, setId);
-  redirect(shopPage(shopId));
+  stay(shopId);
 }
 
 export async function saveAdAction(shopId: string, variationId: string, form: FormData) {
@@ -124,7 +130,7 @@ export async function removeAdAction(shopId: string, variationId: string) {
 export async function restoreAdAction(shopId: string, variationId: string) {
   const session = await editor();
   if (uuid(variationId)) await restoreAd(session.workspaceId, variationId);
-  redirect(shopPage(shopId));
+  stay(shopId);
 }
 
 // ---------- budget ----------
@@ -149,25 +155,25 @@ export async function saveBudgetAction(shopId: string, setId: string, launched: 
 export async function launchAction(shopId: string, setId: string) {
   const session = await editor();
   if (uuid(setId)) await attempt(shopPage(shopId), () => launchPaused(session.workspaceId, session.memberId, setId));
-  redirect(shopPage(shopId));
+  stay(shopId);
 }
 
 export async function switchOnAction(shopId: string, setId: string) {
   const session = await spender();
   if (uuid(setId)) await attempt(shopPage(shopId), () => switchOn(session.workspaceId, session.memberId, setId));
-  redirect(shopPage(shopId));
+  stay(shopId);
 }
 
 export async function pauseAction(shopId: string, setId: string) {
   const session = await editor();
   if (uuid(setId)) await attempt(shopPage(shopId), () => pauseSet(session.workspaceId, session.memberId, session.name, setId));
-  redirect(shopPage(shopId));
+  stay(shopId);
 }
 
 export async function endAction(shopId: string, setId: string) {
   const session = await editor();
   if (uuid(setId)) await attempt(shopPage(shopId), () => endSet(session.workspaceId, session.memberId, session.name, setId));
-  redirect(shopPage(shopId));
+  stay(shopId);
 }
 
 /** The one stop button: pauses every ad that is on, everywhere. */

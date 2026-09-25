@@ -162,12 +162,12 @@ export default async function ShopAdsPage({
           <p className="text-[16px] font-semibold">{set.error ?? "The AI couldn't write the ads."}</p>
           {canEdit ? (
             <div className="flex flex-wrap gap-2">
-              <form action={retryAction.bind(null, shop.id, set.id)}>
+              <form key="retry" action={retryAction.bind(null, shop.id, set.id)}>
                 <PendingButton orb="composing" pendingLabel="Asking again…" className={buttonClass("primary", touch)}>
                   Try again
                 </PendingButton>
               </form>
-              <form action={discardAction.bind(null, shop.id, set.id)}>
+              <form key="discard" action={discardAction.bind(null, shop.id, set.id)}>
                 <Button type="submit" variant="quiet" className={touch}>
                   Never mind
                 </Button>
@@ -225,7 +225,7 @@ function Start({ shopId, brand, canEdit }: { shopId: string; brand: string; canE
           ))}
         </ol>
         {canEdit ? (
-          <form action={makeAdsAction.bind(null, shopId)}>
+          <form key="makeAds" action={makeAdsAction.bind(null, shopId)}>
             <PendingButton beam orb="composing" pendingLabel="Starting…" className={buttonClass("primary", cx(touch, "w-full sm:w-auto"))}>
               Make ads for {brand}
             </PendingButton>
@@ -261,7 +261,7 @@ function Writing({ brand, set, canEdit, helperOnline }: { brand: string; set: Ad
           </p>
         ) : null}
         {canEdit ? (
-          <form action={discardAction.bind(null, set.shopId, set.id)}>
+          <form key="discard" action={discardAction.bind(null, set.shopId, set.id)}>
             <Button type="submit" variant="quiet" className={touch}>
               Cancel
             </Button>
@@ -411,7 +411,7 @@ function Draft({ view, set, canEdit, pshop, helperOnline }: { view: ShopAdsView;
               <p className="text-[13px] text-muted">These will be practice ads: nothing is spent and the results are made up.</p>
             ) : null}
             {canEdit ? (
-              <form action={launchAction.bind(null, shopId, set.id)}>
+              <form key="launch" action={launchAction.bind(null, shopId, set.id)}>
                 <PendingButton
                   beam
                   pendingLabel="Creating them, switched off…"
@@ -426,7 +426,7 @@ function Draft({ view, set, canEdit, pshop, helperOnline }: { view: ShopAdsView;
               {live.length} {live.length === 1 ? "ad is" : "ads are"} made switched off. Nothing spends until you press Switch on.
             </p>
             {canEdit ? (
-              <form action={discardAction.bind(null, shopId, set.id)}>
+              <form key="discard" action={discardAction.bind(null, shopId, set.id)}>
                 <Button type="submit" variant="quiet" className={cx(touch, "px-0")}>
                   Throw these away
                 </Button>
@@ -526,12 +526,12 @@ function Live({ view, set, canEdit, canSpend, pshop }: { view: ShopAdsView; set:
             {on ? (
               canEdit ? (
                 <>
-                  <form action={pauseAction.bind(null, shopId, set.id)}>
+                  <form key="pause" action={pauseAction.bind(null, shopId, set.id)}>
                     <PendingButton variant="secondary" pendingLabel="Pausing…" className={buttonClass("secondary", cx(touch, "w-full sm:w-auto"))}>
                       <Pause aria-hidden className="size-4" /> Pause these ads
                     </PendingButton>
                   </form>
-                  <form action={stopEverythingAction.bind(null, `/ads/${shopId}`)}>
+                  <form key="stopEverything" action={stopEverythingAction.bind(null, `/ads/${shopId}`)}>
                     <PendingButton variant="secondary" pendingLabel="Stopping every ad…" className={buttonClass("quiet", cx(touch, "text-negative"))}>
                       <OctagonX aria-hidden className="size-4" /> Stop every ad in every shop
                     </PendingButton>
@@ -540,7 +540,7 @@ function Live({ view, set, canEdit, canSpend, pshop }: { view: ShopAdsView; set:
               ) : null
             ) : canSpend ? (
               <>
-                <form action={switchOnAction.bind(null, shopId, set.id)}>
+                <form key="switchOn" action={switchOnAction.bind(null, shopId, set.id)}>
                   <PendingButton beam pendingLabel="Switching on…" className={buttonClass("primary", cx(touch, "w-full text-[15px] sm:w-auto sm:px-6"))}>
                     <Power aria-hidden className="size-4" /> Switch on
                   </PendingButton>
@@ -553,7 +553,7 @@ function Live({ view, set, canEdit, canSpend, pshop }: { view: ShopAdsView; set:
               <p className="text-[14px] text-muted">Only the owner or a manager can switch ads on.</p>
             )}
             {canEdit && !on ? (
-              <form action={endAction.bind(null, shopId, set.id)}>
+              <form key="end" action={endAction.bind(null, shopId, set.id)}>
                 <Button type="submit" variant="quiet" className={cx(touch, "px-0")}>
                   End these ads for good
                 </Button>
@@ -597,7 +597,7 @@ function Finished({ view, set, canEdit }: { view: ShopAdsView; set: AdSet; canEd
           </p>
         </div>
         {canEdit ? (
-          <form action={makeAdsAction.bind(null, view.shop.id)}>
+          <form key="makeAds" action={makeAdsAction.bind(null, view.shop.id)}>
             <PendingButton beam orb="composing" pendingLabel="Starting…" className={buttonClass("primary", cx(touch, "w-full sm:w-auto"))}>
               Make new ads for {brand}
             </PendingButton>
