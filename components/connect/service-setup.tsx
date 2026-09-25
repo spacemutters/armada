@@ -82,15 +82,15 @@ export function ServiceSetup({ view, save, clear }: { view: ServiceView; save: A
           <div className="grid gap-3 md:grid-cols-3">
             <label className="flex flex-col gap-1 text-[13px]" htmlFor={`${id}-project`}>
               Project ID
-              <input id={`${id}-project`} name="projectId" defaultValue={typed?.projectId ?? view.projectId ?? ""} placeholder="proj_…" autoComplete="off" spellCheck={false} required className={cx(inputClass, "min-h-11 md:min-h-10")} />
+              <input id={`${id}-project`} name="projectId" defaultValue={typed?.projectId ?? view.projectId ?? ""} placeholder="proj_…" autoComplete="off" data-1p-ignore data-lpignore="true" spellCheck={false} required className={cx(inputClass, "min-h-11 md:min-h-10")} />
             </label>
             <label className="flex flex-col gap-1 text-[13px]" htmlFor={`${id}-client`}>
               Client ID
-              <input id={`${id}-client`} name="clientId" defaultValue={typed?.clientId ?? ""} autoComplete="off" spellCheck={false} required className={cx(inputClass, "min-h-11 md:min-h-10")} />
+              <input id={`${id}-client`} name="clientId" defaultValue={typed?.clientId ?? ""} autoComplete="off" data-1p-ignore data-lpignore="true" spellCheck={false} required className={cx(inputClass, "min-h-11 md:min-h-10")} />
             </label>
             <label className="flex flex-col gap-1 text-[13px]" htmlFor={`${id}-secret`}>
               Client secret
-              <PasswordInput id={`${id}-secret`} name="clientSecret" autoComplete="off" required className="min-h-11 md:min-h-10" />
+              <PasswordInput id={`${id}-secret`} name="clientSecret" autoComplete="new-password" data-1p-ignore data-lpignore="true" required className="min-h-11 md:min-h-10" />
             </label>
           </div>
           <fieldset className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[14px]">

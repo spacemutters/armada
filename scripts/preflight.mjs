@@ -242,6 +242,22 @@ const checks = {
       return fails.length ? fails.join("; ") : null;
     },
   },
+  "key-boxes": {
+    what: "Boxes for pasted keys never take a saved password: Chrome ignores autocomplete off there, so they say new-password",
+    run(root) {
+      const bad = [];
+      for (const f of sourceFiles(root).filter((p) => p.endsWith(".tsx") && !p.endsWith("password-input.tsx"))) {
+        const text = fs.readFileSync(f, "utf8");
+        for (const m of text.matchAll(/<(input|PasswordInput)\b[^>]*>/g)) {
+          const tag = m[0];
+          if (m[1] === "input" && !/type="password"/.test(tag)) continue;
+          if (/autoComplete="(current-password|new-password)"/.test(tag)) continue;
+          bad.push(`${rel(root, f)}: ${tag.replace(/\s+/g, " ").slice(0, 70)}`);
+        }
+      }
+      return bad.length ? `password boxes without current-password or new-password: ${bad.slice(0, 4).join("; ")}` : null;
+    },
+  },
   "glass-layer": {
     what: "Glass only floats above content (menus, bars, pop-ups): never on cards, rows or pages, and no muted words on bars content scrolls under",
     run(root) {
@@ -509,6 +525,10 @@ const PLANTS = {
     const f = path.join(dir, "connectors", "aliexpress", "parse.ts");
     // Shipping picked regardless of how long it takes: check-aliexpress.mjs must notice.
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("o.daysMax <= 14", "o.daysMax <= 60"));
+  },
+  "key-boxes": (dir) => {
+    const f = path.join(dir, "components", "connect", "cj-connect.tsx");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('autoComplete="new-password"', 'autoComplete="off"'));
   },
   "glass-layer": (dir) => fs.writeFileSync(path.join(dir, "components", "planted.tsx"), `export const X = () => <Card className="glass p-4">A card</Card>;
 `),

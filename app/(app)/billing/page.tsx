@@ -124,7 +124,9 @@ function KeyForm({ replacing }: { replacing: boolean }) {
           name="key"
           type="password"
           required
-          autoComplete="off"
+          autoComplete="new-password"
+          data-1p-ignore
+          data-lpignore="true"
           autoCapitalize="none"
           spellCheck={false}
           maxLength={300}

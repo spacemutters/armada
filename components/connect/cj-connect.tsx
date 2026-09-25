@@ -66,7 +66,9 @@ export function CjConnect({ action, keyPage, again = false }: { action: Action; 
               id={`${id}-key`}
               name="apiKey"
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
               spellCheck={false}
               required
               minLength={10}
