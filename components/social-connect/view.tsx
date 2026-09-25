@@ -56,8 +56,7 @@ export interface ViewProps {
 const TITLES: Record<SocialPlatform, string> = { instagram: "Instagram", facebook: "Facebook Page", tiktok: "TikTok", pinterest: "Pinterest" };
 
 /** The page's one sentence about the limit, said once, at the top. */
-export const LIMIT_SENTENCE =
-  "No app can make an Instagram, Facebook or TikTok account for you, so each button opens that platform's own sign-in or sign-up, and Armada does everything the platform allows once you're back.";
+export const LIMIT_SENTENCE = "Press Set up, approve on the platform's page, and you're done.";
 
 export function Flash({ note }: { note: Note }) {
   return (
@@ -120,10 +119,6 @@ export function SocialConnectView(v: ViewProps) {
 
         {v.choice ? (
           <Section title={`Which Page is ${v.brandName}'s?`}>
-            <p className="-mt-2 mb-3 text-[14px] text-muted">
-              You shared {v.choice.choices.length} Pages with Armada. Pick the one for this shop
-              {v.choice.wanted === "instagram" ? "; each has an Instagram account linked" : ""}.
-            </p>
             <ul className="flex flex-col gap-2">
               {v.choice.choices.map((c) => (
                 <li key={c.id}>
@@ -147,21 +142,15 @@ export function SocialConnectView(v: ViewProps) {
         <PlatformCard
           {...common("instagram")}
           needsLink={!ig && fb?.status === "connected" && v.ready.instagram ? { pageName: fb.name } : null}
-          intro="Opens Facebook's sign-in: Instagram posting runs through the Facebook Page your Instagram account is linked to. Choose that Page, and Armada connects both."
-          firstTime={
-            <>
-              New to Instagram? Make the account in the Instagram app, switch it to a professional account (Settings, then Account type and tools), then tap Edit
-              profile, Page, and Create a new Facebook Page. Then come back and press Set up Instagram.
-            </>
-          }
+          intro="Posts go straight to it."
+          firstTime="No account yet? Make one in the Instagram app first."
           kitOpen={false}
           kit={<KitPanel platform="instagram" {...kitProps} />}
         />
 
         <PlatformCard
           {...common("facebook")}
-          intro="Opens Facebook's sign-in, where you choose the shop's Page. Armada then fills in its description, website, profile picture and cover wherever they're empty."
-          firstTime="No Page yet? Make one on Facebook first (or let Instagram make it for you), then press Set up Facebook Page."
+          intro="Armada fills in the Page from the kit."
           firstTimeAction={
             <a href={META_CREATE_PAGE_URL} target="_blank" rel="noreferrer" className={buttonClass("quiet", "min-h-11 px-4")}>
               Make a new Page <ExternalLink aria-hidden className="size-4" />
@@ -182,12 +171,12 @@ export function SocialConnectView(v: ViewProps) {
 
         <PlatformCard
           {...common("tiktok")}
-          intro="Opens TikTok's sign-in, where you can also sign up. Once connected, the posts Armada makes arrive in your TikTok inbox, ready to post with one tap."
+          intro="Posts land in your TikTok inbox."
           kitOpen={false}
           kit={<KitPanel platform="tiktok" {...kitProps} />}
         />
 
-        <PlatformCard {...common("pinterest")} intro="Opens Pinterest's sign-in. Armada makes the shop a board and pins its posts there." />
+        <PlatformCard {...common("pinterest")} intro="Armada makes the shop a board and pins posts there." />
 
         {v.owner ? <OwnerChecklist o={v.owner} /> : null}
       </div>

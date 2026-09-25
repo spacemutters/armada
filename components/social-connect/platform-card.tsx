@@ -98,8 +98,7 @@ export function PlatformCard(p: CardProps) {
   } else if (p.needsLink) {
     line = (
       <>
-        Your Page <span className="font-medium text-ink">{p.needsLink.pageName}</span> is connected, but no Instagram professional account is linked to it yet. In
-        Instagram, open your profile, tap Edit profile, then Page, and choose {p.needsLink.pageName}. Then press Check again.
+        Link your Instagram to <span className="font-medium text-ink">{p.needsLink.pageName}</span> (in Instagram: Edit profile, then Page), then press Check again.
       </>
     );
     primary = p.canConnect ? (
@@ -108,9 +107,7 @@ export function PlatformCard(p: CardProps) {
       </ConnectButton>
     ) : null;
   } else if (p.practiceShop) {
-    line = p.practice
-      ? "This is a practice shop, so its posts go to the practice account below and stay in Armada."
-      : "This is a practice shop, so its posts go to a practice account. It works like a real one, and nothing leaves Armada.";
+    line = "Practice shop: posts stay in Armada.";
     // A real account can still be connected (to try the sign-in), but it isn't the main press here.
     secondary = realUsable ? (
       <ConnectButton href={p.startHref} pendingLabel={going} variant="secondary">
@@ -118,7 +115,7 @@ export function PlatformCard(p: CardProps) {
       </ConnectButton>
     ) : null;
   } else if (p.ready) {
-    line = p.canConnect ? p.intro : <>{p.intro} The owner or a manager can connect it.</>;
+    line = p.canConnect ? p.intro : <>{p.intro} The owner or a manager connects it.</>;
     primary = realUsable ? (
       <ConnectButton href={p.startHref} pendingLabel={going}>
         {verb}
@@ -128,9 +125,9 @@ export function PlatformCard(p: CardProps) {
   } else {
     line = p.isAdmin
       ? p.platform === "pinterest"
-        ? "Switched off until the connection service is on (Connections page). A practice account works meanwhile."
-        : `Switched off until Armada's ${p.platform === "tiktok" ? "TikTok" : "Meta"} app is set up (the steps are at the bottom of this page). A practice account works meanwhile.`
-      : "Real accounts connect here soon. Until then, a practice account works the same way inside Armada.";
+        ? "Off until the connection service is on (Connections)."
+        : `Off until Armada's ${p.platform === "tiktok" ? "TikTok" : "Meta"} app is set up (steps at the bottom).`
+      : "A practice account works meanwhile.";
   }
 
   // With no real press to make, the practice account is the one primary press.
@@ -186,9 +183,7 @@ export function PlatformCard(p: CardProps) {
                   Practice account <span className="font-normal text-muted">{at(p.practice.handle)}</span>
                 </div>
                 <div className="text-[13px] text-muted">
-                  {p.practiceCount
-                    ? `${p.practiceCount} practice ${p.practiceCount === 1 ? "post" : "posts"}. They stay in Armada and never reach ${p.title}.`
-                    : `Ready. Posts made for it stay in Armada and never reach ${p.title}.`}
+                  {p.practiceCount ? `${p.practiceCount} practice ${p.practiceCount === 1 ? "post" : "posts"}, kept in Armada.` : "Posts stay in Armada."}
                 </div>
               </div>
               {p.canPractice ? (
@@ -220,7 +215,7 @@ export function PlatformCard(p: CardProps) {
         </div>
       ) : !practiceIsPrimary && !p.real && p.canPractice ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3 md:ml-15">
-          <p className="min-w-[14rem] flex-1 text-[13px] text-muted">Or try it first with a practice account. It works like a connected one, and its posts stay in Armada.</p>
+          <p className="min-w-[14rem] flex-1 text-[13px] text-muted">Or try it first.</p>
           {makePracticeButton("secondary")}
         </div>
       ) : null}
@@ -230,10 +225,7 @@ export function PlatformCard(p: CardProps) {
         <Expand
           defaultOpen={p.kitOpen ?? false}
           summary={
-            <span className="text-[14px]">
-              <span className="font-medium">Profile kit</span>
-              <span className="text-muted">{p.platform === "facebook" ? " · picture, cover and description" : " · picture, bio and link"}</span>
-            </span>
+            <span className="text-[14px] font-medium">Profile kit</span>
           }
           buttonClassName="min-h-11 rounded-xl px-1 text-left"
         >

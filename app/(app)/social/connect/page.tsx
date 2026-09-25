@@ -36,37 +36,35 @@ const socialReady = (s: ShopRow) => READY.has(s.status) && Boolean(s.blueprint.b
 /** What the short result codes on the address (from the connect flows and actions) say. */
 function message(sp: Record<string, string | undefined>): Note | null {
   const who = SHORT[sp.p ?? ""] ?? "The platform";
-  if (sp.done === "instagram") return { tone: "ok", text: "Instagram is connected. Posts Armada makes for this shop can go straight to it." };
-  if (sp.done === "facebook") return { tone: "ok", text: "Your Facebook Page is connected, and Armada filled in what the Page was missing from the kit." };
-  if (sp.done === "tiktok") return { tone: "ok", text: "TikTok is connected. Posts arrive in your TikTok inbox, ready to post with one tap." };
-  if (sp.done === "pinterest") return { tone: "ok", text: "Pinterest is connected. Posts go to the shop's board." };
-  if (sp.practice) return { tone: "ok", text: `A practice ${SHORT[sp.practice] ?? ""} account is ready. Posts to it stay in Armada.` };
-  if (sp.removed) return { tone: "ok", text: sp.kind === "practice" ? "The practice account is removed." : `${SHORT[sp.removed] ?? "The account"} is disconnected from this shop.` };
-  if (sp.kit === "applied") return { tone: "ok", text: "The Page now has the kit's description, website, profile picture and cover." };
+  if (sp.done === "facebook") return { tone: "ok", text: "Facebook Page connected and filled in." };
+  if (sp.done && SHORT[sp.done]) return { tone: "ok", text: `${SHORT[sp.done]} connected.` };
+  if (sp.practice) return { tone: "ok", text: "Practice account ready." };
+  if (sp.removed) return { tone: "ok", text: sp.kind === "practice" ? "Practice account removed." : `${SHORT[sp.removed] ?? "Account"} disconnected.` };
+  if (sp.kit === "applied") return { tone: "ok", text: "The Page has the kit now." };
   if (sp.kit === "partial") return { tone: "problem", text: "Facebook took part of the kit. The Facebook card shows what it refused." };
   switch (sp.problem) {
     case "cancelled":
     case "denied":
-      return { tone: "problem", text: `${who}'s window closed before it finished, so nothing changed. Press the button again when you're ready.` };
+      return { tone: "problem", text: "Nothing changed. Press the button again when you're ready." };
     case "nopage":
-      return { tone: "problem", text: "Facebook didn't share a Page with Armada. In Facebook's window, choose the shop's Page (or make one first), then press the button again." };
+      return { tone: "problem", text: "Facebook didn't share a Page. Choose the shop's Page in Facebook's window, then try again." };
     case "notlinked":
       return {
         tone: "problem",
-        text: "None of the Pages you shared has an Instagram professional account linked. In Instagram, open your profile, tap Edit profile, then Page, and choose the Page. Then press the button again.",
+        text: "No shared Page has an Instagram linked. In Instagram, tap Edit profile, then Page, choose it, and try again.",
       };
     case "expired":
-      return { tone: "problem", text: "That sign-in took too long or was already used. Press the button again." };
+      return { tone: "problem", text: "That took too long. Press the button again." };
     case "browser":
-      return { tone: "problem", text: "Nothing was connected: finish in the browser where you're signed in to Armada, as the person who pressed the button. Press it again there." };
+      return { tone: "problem", text: "Finish in the browser where you're signed in to Armada." };
     case "off":
-      return { tone: "problem", text: "That platform isn't switched on in Armada yet. A practice account works meanwhile." };
+      return { tone: "problem", text: "Not switched on yet. A practice account works meanwhile." };
     case "role":
-      return { tone: "problem", text: "Only the owner or a manager can connect or disconnect accounts." };
+      return { tone: "problem", text: "Only the owner or a manager can do that." };
     case "shop":
-      return { tone: "problem", text: "That shop wasn't found. Pick it again below." };
+      return { tone: "problem", text: "Shop not found. Pick it again." };
     case "building":
-      return { tone: "problem", text: "That shop is still being built. Its social media can be set up as soon as it's ready." };
+      return { tone: "problem", text: "That shop is still being built." };
     case "notconnected":
       return { tone: "problem", text: "Connect the Page first." };
     case "failed":

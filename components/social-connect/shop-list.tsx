@@ -19,7 +19,7 @@ export interface ShopChoice {
 export function ShopChooser({ shops, note, building }: { shops: ShopChoice[]; note: Note | null; building: number }) {
   return (
     <>
-      <PageHeader title="Social media" subtitle="Pick a shop to set up its Instagram, Facebook Page and TikTok." />
+      <PageHeader title="Social media" subtitle="Pick a shop." />
       {note ? <Flash note={note} /> : null}
       {shops.length ? (
         <Card className="max-w-3xl overflow-hidden">
@@ -48,8 +48,8 @@ export function ShopChooser({ shops, note, building }: { shops: ShopChoice[]; no
           title={building ? "Your shops are still being built" : "No shops yet"}
           body={
             building
-              ? "Social media can be set up as soon as a shop is ready. This page lists it then."
-              : "Build a shop first. Then set up its social media here in a few presses."
+              ? "Each shop shows up here when it's ready."
+              : "Build a shop first."
           }
           action={
             building ? null : (
@@ -62,7 +62,7 @@ export function ShopChooser({ shops, note, building }: { shops: ShopChoice[]; no
       )}
       {shops.length && building ? (
         <p className="mt-3 max-w-3xl text-[13px] text-muted">
-          {building === 1 ? "One more shop is still being built" : `${building} more shops are still being built`}; each appears here when it&apos;s ready.
+          {building === 1 ? "One more shop is still being built." : `${building} more shops are still being built.`}
         </p>
       ) : null}
     </>
