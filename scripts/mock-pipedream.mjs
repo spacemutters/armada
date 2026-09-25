@@ -12,6 +12,7 @@ import crypto from "node:crypto";
 
 const PORT = Number(process.argv[2] || 4610);
 const CLIENT = { id: "mock-client", secret: "mock-secret" };
+const PROJECT = "proj_Mock1";
 const serviceTokens = new Set();
 const connectTokens = new Map(); // ctok -> { externalUserId, success, error }
 const accounts = []; // { id, externalUserId, app, createdAt, updatedAt, healthy }
@@ -131,10 +132,19 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
+  m = url.pathname.match(/^\/v1\/connect\/(proj_[A-Za-z0-9]+)\/projects\/info$/);
+  if (req.method === "GET" && m) {
+    if (!authed(req)) return send(res, 401, { error: "unauthorized" });
+    if (m[1] !== PROJECT) return send(res, 404, { error: "project not found" });
+    return send(res, 200, { id: PROJECT, name: "Armada", environment: req.headers["x-pd-environment"] ?? null });
+  }
+
   m = url.pathname.match(/^\/v1\/connect\/(proj_[A-Za-z0-9]+)\/users\/([^/]+)\/accounts$/);
   if (req.method === "GET" && m) {
     if (!authed(req)) return send(res, 401, { error: "unauthorized" });
     const ext = decodeURIComponent(m[2]);
+    // Like Pipedream: a user who has never connected anything doesn't exist yet.
+    if (!accounts.some((a) => a.externalUserId === ext)) return send(res, 404, { error: "external user not found" });
     const app = url.searchParams.get("app");
     const list = accounts
       .filter((a) => a.externalUserId === ext && (!app || a.app === app))

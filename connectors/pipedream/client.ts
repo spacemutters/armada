@@ -171,6 +171,8 @@ export async function serviceAccounts(externalUserId: string, provider: PdProvid
     "GET",
     `/v1/connect/${encodeURIComponent(s.projectId)}/users/${encodeURIComponent(externalUserId)}/accounts?app=${provider === "shopify" ? "shopify" : "ebay"}`,
   );
+  // A workspace that hasn't connected anything yet isn't a user at the service yet.
+  if (r.status === 404) return [];
   if (r.status !== 200) throw new PdProblem(r.status, "Couldn't read the connected accounts from the connection service.");
   return readAccounts(r.json);
 }
@@ -218,10 +220,11 @@ export async function savePdSettings(input: PdSettings, memberId: string): Promi
   cachedToken = null;
   try {
     await serviceToken(s);
-    // A harmless read that fails when the project id is wrong or belongs to someone else.
-    const r = await call(s, "GET", `/v1/connect/${encodeURIComponent(s.projectId)}/users/armada-check/accounts`);
-    if (r.status === 404 || r.status === 403) return "The connection service doesn't know that Project ID for this Client ID. Check both are from the same project.";
-    if (r.status >= 400) return `The connection service answered with status ${r.status}. Check the three values and try again.`;
+    // The project's own details: a read that only works when the project belongs to this Client ID's
+    // workspace. (Looking up a user who doesn't exist yet answers "not found" even for a right project.)
+    const r = await call(s, "GET", `/v1/connect/${encodeURIComponent(s.projectId)}/projects/info`);
+    if (r.status === 404 || r.status === 403) return "Pipedream doesn't have that Project ID in the same workspace as this Client ID. Copy the Project ID again from the project's Connect page.";
+    if (r.status >= 400) return `Pipedream answered with status ${r.status}. Check the three values and try again.`;
   } catch (e) {
     return e instanceof PdProblem ? e.message : "Couldn't reach the connection service just now. Try again in a minute.";
   }
