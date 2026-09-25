@@ -1,36 +1,25 @@
-import { hasEnv, type ConnectorInfo } from "@/lib/connections/types";
+import type { ConnectorInfo, Provider } from "@/lib/connections/types";
+import { googleAdsInfo, googleAdsSetupSteps } from "@/connectors/google-ads/info";
+import { metaAdsInfo, metaAdsSetupSteps } from "@/connectors/meta-ads/info";
+import { tiktokAdsInfo, tiktokAdsSetupSteps } from "@/connectors/tiktok-ads/info";
 
-// Placeholder written so the registry compiles; the connections work replaces it.
+// Ad accounts. Each needs Armada's own app on the ad platform (Davis's sign-ups) and a connection flow
+// in Armada. Meta's flow is built (app/api/connect/meta_ads), so it switches on as soon as its settings
+// exist. Google's and TikTok's flows aren't built yet, so they stay "coming soon" (available() is
+// false) even with settings; their connectors report "Coming soon" with the same shape as Meta's.
+
 type WithAvailable = ConnectorInfo & { available: () => boolean };
 
-const make = (info: ConnectorInfo): WithAvailable => ({ ...info, available: () => hasEnv(info.requiredEnv) });
+export const adsInfos: WithAvailable[] = [metaAdsInfo, googleAdsInfo, tiktokAdsInfo];
 
-export const adsInfos: WithAvailable[] = [
-  make({
-    provider: "meta_ads",
-    name: "Meta ads",
-    kind: "ads",
-    blurb: "Run Facebook and Instagram ads for your shops.",
-    method: "redirect",
-    requiredEnv: ["META_APP_ID", "META_APP_SECRET", "META_ADS_APPROVED"],
-    ownerSetup: "Business Verification and App Review for ads (sign-up 1).",
-  }),
-  make({
-    provider: "google_ads",
-    name: "Google ads",
-    kind: "ads",
-    blurb: "Run Google Shopping and search ads for your shops.",
-    method: "redirect",
-    requiredEnv: ["GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_DEVELOPER_TOKEN"],
-    ownerSetup: "Brand verification in Google Cloud and an ads developer token (sign-up 3).",
-  }),
-  make({
-    provider: "tiktok_ads",
-    name: "TikTok ads",
-    kind: "ads",
-    blurb: "Run TikTok ads for your shops.",
-    method: "redirect",
-    requiredEnv: ["TIKTOK_APP_ID", "TIKTOK_APP_SECRET"],
-    ownerSetup: "A TikTok developer profile and app (sign-up 2).",
-  }),
-];
+/** What a platform admin does, step by step, to switch each ad platform on. */
+export const adsSetupSteps: Partial<Record<Provider, string[]>> = {
+  meta_ads: metaAdsSetupSteps,
+  google_ads: googleAdsSetupSteps,
+  tiktok_ads: tiktokAdsSetupSteps,
+};
+
+/** The server settings a platform still needs (names only, never values). */
+export function missingSettings(info: ConnectorInfo): string[] {
+  return info.requiredEnv.filter((n) => !process.env[n]);
+}
