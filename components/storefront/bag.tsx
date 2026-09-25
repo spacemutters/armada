@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { iconFor } from "@/components/product-art";
 import { formatMoney } from "@/lib/money";
+import { bagSetSavings, type ShopSet } from "@/lib/shops/sets";
 import { addToBag, onBagChange, readBag, writeBag, type BagLine } from "./cart-store";
 import { countVisit } from "./visit";
 
@@ -46,9 +47,22 @@ export function AddToBag({ slug, line }: { slug: string; line: Omit<BagLine, "qt
   );
 }
 
-export function BagView({ slug }: { slug: string }) {
+type Suggestion = Omit<BagLine, "qty"> & { why: string };
+
+export function BagView({ slug, sets = [], goesWith = {} }: { slug: string; sets?: ShopSet[]; goesWith?: Record<string, Suggestion[]> }) {
   const lines = useBag(slug);
-  const total = lines.reduce((n, l) => n + l.priceCents * l.qty, 0);
+  const subtotal = lines.reduce((n, l) => n + l.priceCents * l.qty, 0);
+  // Complete sets cost the set price; the saving is the real difference from the items' own prices.
+  const savings = bagSetSavings(lines, sets);
+  const saved = savings.reduce((n, s) => n + s.savingCents, 0);
+  const total = subtotal - saved;
+  const inBag = new Set(lines.map((l) => l.handle));
+  const suggestions: Suggestion[] = [];
+  for (const l of lines) {
+    for (const s of goesWith[l.handle] ?? []) {
+      if (!inBag.has(s.handle) && !suggestions.some((x) => x.handle === s.handle)) suggestions.push(s);
+    }
+  }
   const setQty = (handle: string, qty: number) =>
     writeBag(
       slug,
@@ -105,6 +119,22 @@ export function BagView({ slug }: { slug: string }) {
         })}
       </ul>
       <aside className="sf-line flex h-fit flex-col gap-4 rounded-[var(--s-radius)] border p-6">
+        {saved > 0 ? (
+          <>
+            <div className="flex items-baseline justify-between text-[15px]">
+              <span className="sf-muted">Items</span>
+              <span className="tabular-nums">{formatMoney(subtotal)}</span>
+            </div>
+            {savings.map((s) => (
+              <div key={s.handle} className="flex items-baseline justify-between text-[15px]">
+                <span className="sf-muted">
+                  {s.title} set{s.times > 1 ? ` × ${s.times}` : ""}
+                </span>
+                <span className="tabular-nums">−{formatMoney(s.savingCents)}</span>
+              </div>
+            ))}
+          </>
+        ) : null}
         <div className="flex items-baseline justify-between">
           <span>Subtotal</span>
           <span className="text-xl font-medium tabular-nums">{formatMoney(total)}</span>
@@ -118,6 +148,46 @@ export function BagView({ slug }: { slug: string }) {
           there.
         </p>
       </aside>
+      {suggestions.length ? (
+        <section className="lg:col-span-2" aria-labelledby="sf-bag-goes">
+          <h2 id="sf-bag-goes" className="sf-label mb-4">
+            Goes well with what&apos;s in your bag
+          </h2>
+          <ul className="grid gap-4 md:grid-cols-3">
+            {suggestions.slice(0, 3).map((s) => {
+              const Icon = iconFor(s.icon ?? undefined);
+              return (
+                <li key={s.handle} className="sf-line flex items-center gap-4 rounded-[var(--s-radius)] border p-3">
+                  <Link href={`/s/${slug}/products/${s.handle}`} className="sf-card-media block w-16 shrink-0" style={{ aspectRatio: "1 / 1" }} aria-label={s.title}>
+                    {s.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={s.image} alt={s.title} className="h-full w-full" />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center" style={{ color: "var(--s-accent)" }}>
+                        <Icon aria-hidden className="size-6" strokeWidth={1.25} />
+                      </span>
+                    )}
+                  </Link>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[15px] font-medium">{s.title}</div>
+                    <div className="sf-muted truncate text-[13px]">{s.why}</div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="tabular-nums text-[14px]">{formatMoney(s.priceCents)}</span>
+                      <button
+                        type="button"
+                        className="sf-button sf-button-ghost !min-h-11 !px-3 text-[14px]"
+                        onClick={() => addToBag(slug, { handle: s.handle, title: s.title, priceCents: s.priceCents, image: s.image, icon: s.icon })}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
     </div>
   );
 }

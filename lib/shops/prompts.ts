@@ -24,6 +24,8 @@ const PRICE_WORDS: Record<ShopBrief["priceFeel"], string> = {
   budget: "everyday prices",
   mid: "considered, mid-range prices",
   premium: "premium prices",
+  luxury:
+    "a premium brand: prices several times the cost, earned only by a clear brand, beautiful presentation and generous true terms (60-day returns the shop pays for). Choose products whose materials and make can carry that price, and describe them with quiet confidence; never fake discounts, reviews, scarcity or claims the data doesn't support",
 };
 
 const str = { type: "string" } as const;
@@ -339,8 +341,23 @@ export function buildProposals(
 export const pagesSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["about", "faq", "shippingPage", "contactPage", "refundPolicy", "shippingPolicy", "announcement", "footerBlurb", "seoTitle", "seoDescription"],
+  required: ["about", "faq", "shippingPage", "contactPage", "refundPolicy", "shippingPolicy", "announcement", "footerBlurb", "seoTitle", "seoDescription", "sets", "pairings"],
   properties: {
+    sets: {
+      type: "array",
+      maxItems: 3,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "why", "products"],
+        properties: { title: str, why: str, products: { type: "array", minItems: 2, maxItems: 3, items: str } },
+      },
+    },
+    pairings: {
+      type: "array",
+      maxItems: 24,
+      items: { type: "object", additionalProperties: false, required: ["product", "with", "why"], properties: { product: str, with: str, why: str } },
+    },
     about: str,
     faq: {
       type: "array",
@@ -359,15 +376,18 @@ export const pagesSchema = {
   },
 } as const;
 
-export function pagesPrompt(bp: Blueprint): string {
+export function pagesPrompt(bp: Blueprint, products: { handle: string; title: string; collection: string }[] = []): string {
   const f = bp.facts!;
+  const returns = f.freeReturns
+    ? `accepted within ${f.returnDays} days of delivery for unused items in their original packaging, and the shop pays for the return shipping.`
+    : `accepted within ${f.returnDays} days of delivery for unused items in their original packaging. The customer pays return shipping unless the item arrived damaged or was the wrong item, in which case the shop covers it.`;
   return `Write the pages for the shop "${bp.brand?.name}". Voice: ${bp.brand?.voice}
 
 Facts to use exactly as stated, never changed or improved:
 - Ships to: ${f.country}
 - Orders are processed within ${f.handlingDays} business days
 - Delivery takes ${f.deliveryMin}-${f.deliveryMax} business days after dispatch
-- Returns: accepted within ${f.returnDays} days of delivery for unused items in their original packaging. The customer pays return shipping unless the item arrived damaged or was the wrong item, in which case the shop covers it.
+- Returns: ${returns}
 - Support email: {{support_email}} (keep this placeholder exactly as written)
 - Collections: ${(bp.collections ?? []).map((c) => c.title).join(", ")}
 
@@ -380,5 +400,16 @@ Write, using markdown where a page needs structure:
 - shippingPolicy: a plain-language shipping policy draft built from the facts.
 - announcement: one factual line for the top of every page, at most 60 characters.
 - footerBlurb: one sentence for the footer.
-- seoTitle: home page title, at most 60 characters. seoDescription: at most 155 characters.`;
+- seoTitle: home page title, at most 60 characters. seoDescription: at most 155 characters.
+${
+  products.length
+    ? `
+The products, by handle:
+${products.map((p) => `- ${p.handle}: ${p.title}${p.collection ? ` (${p.collection})` : ""}`).join("\n")}
+
+Then, using only those handles:
+- sets: up to 3 small sets of 2 or 3 products that are genuinely used together (a routine, a room, a gift). title: at most 5 words. why: one sentence on what the set does for the buyer. Armada prices each set a little below its items bought separately; never mention a price, a discount or savings. Leave the list empty if nothing truly belongs together.
+- pairings: for products that go well with another one, the pair and why in one short phrase from their facts (for example "keeps the blade dry between uses"). At most 2 per product. Never say "frequently bought together", "popular" or "customers also bought": there's no data for that.`
+    : ""
+}`;
 }

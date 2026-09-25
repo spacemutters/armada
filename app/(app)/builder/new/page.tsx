@@ -46,6 +46,7 @@ export default async function NewShopPage({ searchParams }: PageProps<"/builder/
                 <option value="budget">Everyday</option>
                 <option value="mid">Mid-range</option>
                 <option value="premium">Premium</option>
+                <option value="luxury">Premium brand: big markups, earned by brand and service</option>
               </select>
             </Field>
             <Field label="Products at launch">

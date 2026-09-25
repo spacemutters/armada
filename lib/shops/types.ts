@@ -1,6 +1,7 @@
 import type { Palette } from "@/lib/color";
 import type { PriceFeel } from "@/lib/pricing";
 import type { CatalogImage } from "@/lib/types";
+import type { Pairings, ShopSet } from "./sets";
 
 export interface ShopBrief {
   niche: string;
@@ -82,7 +83,11 @@ export interface Blueprint {
   announcement?: string;
   footerBlurb?: string;
   seo?: { title: string; description: string };
-  facts?: { country: string; deliveryMin: number; deliveryMax: number; handlingDays: number; returnDays: number };
+  facts?: { country: string; deliveryMin: number; deliveryMax: number; handlingDays: number; returnDays: number; freeReturns?: boolean };
+  /** Sets of products sold together for less than their items separately (lib/shops/sets.ts). */
+  sets?: ShopSet[];
+  /** Each product's "goes well with" products and why. */
+  pairings?: Pairings;
   candidateCount?: number;
   /** The supplier candidates the AI was shown. Only these ids are accepted back. */
   candidateIds?: string[];

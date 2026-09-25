@@ -1,6 +1,6 @@
 // End-to-end run in real Chrome with a virtual passkey (Chrome's WebAuthn test authenticator),
 // so sign-up and sign-in are exercised for real without anyone's fingerprint.
-// usage: node --env-file=.env.local scripts/e2e.mjs <base-url> [--shop "idea"] [--fleet 24]
+// usage: node --env-file=.env.local scripts/e2e.mjs <base-url> [--shop "idea"] [--fleet 24] [--price budget|mid|premium|luxury]
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -13,6 +13,7 @@ const arg = (name, fallback) => {
 };
 const shopIdea = arg("--shop", "Calm bedroom and sleep goods");
 const fleetSize = arg("--fleet", "24");
+const priceLevel = arg("--price", "mid");
 const outDir = path.join(process.cwd(), ".shots");
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -122,6 +123,7 @@ try {
   step(`build a shop: “${shopIdea}”`);
   await page.goto(`${base}/builder/new`, { waitUntil: "networkidle0" });
   await page.type('input[name="niche"]', shopIdea);
+  await page.select('select[name="priceFeel"]', priceLevel);
   await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click('button[type="submit"]')]);
   const shopUrl = page.url();
   console.log("shop page", shopUrl);

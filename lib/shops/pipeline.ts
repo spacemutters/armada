@@ -25,6 +25,7 @@ import {
   text,
 } from "./prompts";
 import { withCraft } from "./craft";
+import { readSetsAndPairings } from "./sets";
 import { startShopImages } from "./images";
 import { ART_ICONS, BODY_FONTS, DISPLAY_FONTS } from "./style";
 import { aiPicks, checkChoice, chooseCount, proposalTarget, stalledCjStep } from "./types";
@@ -61,6 +62,11 @@ const productsTimeout = (target: number) => Math.min(600_000, 240_000 + target *
 
 const HANDLING_DAYS = 2;
 const RETURN_DAYS = 30;
+
+/** A premium brand's price is earned partly by its terms: twice the return window, and the shop pays for returns. */
+function returnTerms(feel: ShopBrief["priceFeel"]): { returnDays: number; freeReturns?: boolean } {
+  return feel === "luxury" ? { returnDays: 60, freeReturns: true } : { returnDays: RETURN_DAYS };
+}
 /** Fewer real products than this and it isn't a shop yet; the build stops and says why. */
 const MIN_CJ_PRODUCTS = 4;
 
@@ -116,6 +122,8 @@ const Pages = z.object({
   footerBlurb: text(200),
   seoTitle: text(70),
   seoDescription: text(160),
+  sets: z.array(z.unknown()).default([]),
+  pairings: z.array(z.unknown()).default([]),
 });
 
 async function setStep(tx: Tx, shopId: string, key: StepKey, state: ProgressStep["state"], note?: string) {
@@ -372,14 +380,14 @@ async function buildWithChosen(
     deliveryMin: mins.length ? Math.min(...mins) : 7,
     deliveryMax: maxs.length ? Math.max(...maxs) : 15,
     handlingDays: HANDLING_DAYS,
-    returnDays: RETURN_DAYS,
+    ...returnTerms(brief.priceFeel),
   };
   await saveBlueprint(tx, shop.id, next, "building");
   await setStep(tx, shop.id, "pages", "running");
   await enqueueJob(tx, {
     workspaceId: shop.workspaceId,
     kind: "shop.pages",
-    input: { system: withCraft(SYSTEM, ["conversion"]), prompt: pagesPrompt(next), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
+    input: { system: withCraft(SYSTEM, ["conversion"]), prompt: pagesPrompt(next, await productList(tx, next)), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
     parent: { type: "shop", id: shop.id },
   });
 }
@@ -425,6 +433,16 @@ export async function chooseShopProducts(
   return result;
 }
 
+/** The shop's products by handle, for the pages step to make sets and pairs from. */
+async function productList(tx: Tx, bp: Blueprint): Promise<{ handle: string; title: string; collection: string }[]> {
+  const refs = bp.products ?? [];
+  if (!refs.length) return [];
+  const rows = await tx<{ id: string; title: string }[]>`select id, title from armada.products where id in ${tx(refs.map((r) => r.productId))}`;
+  const title = new Map(rows.map((r) => [r.id, r.title]));
+  const collection = new Map((bp.collections ?? []).map((c) => [c.handle, c.title]));
+  return refs.map((r) => ({ handle: r.handle, title: title.get(r.productId) ?? r.handle, collection: collection.get(r.collection) ?? "" }));
+}
+
 async function afterPages(tx: Tx, shop: ShopRow, output: unknown) {
   const p = Pages.parse(output);
   const blueprint: Blueprint = {
@@ -434,6 +452,8 @@ async function afterPages(tx: Tx, shop: ShopRow, output: unknown) {
     announcement: p.announcement,
     footerBlurb: p.footerBlurb,
     seo: { title: p.seoTitle, description: p.seoDescription },
+    // Sets and pairs, checked against the shop's own products and priced by the rules.
+    ...readSetsAndPairings({ sets: p.sets, pairings: p.pairings }, shop.blueprint.products ?? [], shop.brief.priceFeel === "luxury" ? "whole" : "cents"),
   };
   await saveBlueprint(tx, shop.id, blueprint, "ready");
   await setStep(tx, shop.id, "pages", "done");
@@ -572,7 +592,7 @@ async function cjCheckChosen(workspaceId: string, shopId: string) {
         deliveryMin: Math.min(...items.map((i) => i.shipDaysMin ?? i.shipDaysMax ?? 7)),
         deliveryMax: Math.max(...items.map((i) => i.shipDaysMax ?? 15)),
         handlingDays: HANDLING_DAYS,
-        returnDays: RETURN_DAYS,
+        ...returnTerms(shop.brief.priceFeel),
       },
     };
     await saveBlueprint(tx, shop.id, next);
@@ -588,7 +608,7 @@ async function cjCheckChosen(workspaceId: string, shopId: string) {
     await enqueueJob(tx, {
       workspaceId,
       kind: "shop.pages",
-      input: { system: withCraft(SYSTEM, ["conversion"]), prompt: pagesPrompt(next), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
+      input: { system: withCraft(SYSTEM, ["conversion"]), prompt: pagesPrompt(next, await productList(tx, next)), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
       parent: { type: "shop", id: shop.id },
     });
   });

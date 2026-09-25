@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { ProductArt } from "@/components/product-art";
 import { AddToBag } from "@/components/storefront/bag";
 import { ProductCard } from "@/components/storefront/product-card";
+import { SetCard } from "@/components/storefront/set-card";
+import { AddTogether } from "@/components/storefront/sets";
 import { StickyBuy } from "@/components/storefront/sticky-buy";
 import { formatMoney } from "@/lib/money";
 import { loadStorefront, shopBase, storeItems } from "@/lib/shops/storefront";
@@ -41,7 +43,12 @@ export default async function ProductPage({ params }: PageProps<"/s/[slug]/produ
   const base = shopBase(slug);
   const collection = bp.collections?.find((c) => c.handle === item.collection);
   const facts = bp.facts;
-  const related = items.filter((i) => i.collection === item.collection && i.handle !== item.handle).slice(0, 4);
+  const pairs = (bp.pairings?.[item.handle] ?? [])
+    .map((pr) => ({ ...pr, item: items.find((i) => i.handle === pr.handle) }))
+    .filter((pr): pr is { handle: string; why: string; item: (typeof items)[number] } => Boolean(pr.item));
+  const inSets = (bp.sets ?? []).filter((s) => s.productHandles.includes(item.handle));
+  const shown = new Set([item.handle, ...pairs.map((pr) => pr.handle)]);
+  const related = items.filter((i) => i.collection === item.collection && !shown.has(i.handle)).slice(0, 4);
   const paragraphs = p.description.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
   const { lead, rest } = splitLead(paragraphs);
   const line = { handle: item.handle, title: p.title, priceCents: item.priceCents, image: p.images[0]?.url ?? null, icon: p.art?.icon ?? null };
@@ -104,7 +111,9 @@ export default async function ProductPage({ params }: PageProps<"/s/[slug]/produ
                 </div>
                 <div>
                   <dt className="sf-muted">Returns</dt>
-                  <dd>Within {facts.returnDays} days of delivery</dd>
+                  <dd>
+                    Within {facts.returnDays} days of delivery{facts.freeReturns ? ", and return shipping is on us" : ""}
+                  </dd>
                 </div>
                 <div>
                   <dt className="sf-muted">Ships to</dt>
@@ -130,6 +139,54 @@ export default async function ProductPage({ params }: PageProps<"/s/[slug]/produ
         </div>
       </div>
       <StickyBuy slug={slug} line={line} price={formatMoney(item.priceCents)} targetId="sf-buy" />
+
+      {pairs.length ? (
+        <section className="sf-line border-t" aria-labelledby="sf-pairs">
+          <div className="sf-wrap sf-section">
+            <h2 id="sf-pairs" className="sf-heading mb-10" style={{ fontSize: "var(--text-h2)" }}>
+              Goes well with
+            </h2>
+            <ul className="grid gap-6 md:grid-cols-2">
+              {pairs.map((pr) => {
+                const other = pr.item;
+                const otherLine = { handle: other.handle, title: other.product.title, priceCents: other.priceCents, image: other.product.images[0]?.url ?? null, icon: other.product.art?.icon ?? null };
+                return (
+                  <li key={pr.handle} className="sf-line flex list-none items-center gap-5 rounded-[var(--s-radius)] border p-4">
+                    <Link href={`${base}/products/${other.handle}`} className="sf-card-media block w-24 shrink-0" style={{ aspectRatio: "1 / 1" }} aria-label={other.product.title}>
+                      <ProductArt images={other.product.images} icon={other.product.art?.icon} title={other.product.title} sizes="96px" />
+                    </Link>
+                    <div className="flex min-w-0 flex-1 flex-col gap-2">
+                      <Link href={`${base}/products/${other.handle}`} className="font-medium leading-snug">
+                        {other.product.title}
+                      </Link>
+                      <p className="sf-muted text-[14px]">{pr.why}</p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="tabular-nums">{formatMoney(other.priceCents)}</span>
+                        <AddTogether slug={slug} lines={[line, otherLine]} label="Add both to bag" ghost />
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </section>
+      ) : null}
+
+      {inSets.length ? (
+        <section className="sf-line border-t" aria-labelledby="sf-in-sets">
+          <div className="sf-wrap sf-section">
+            <h2 id="sf-in-sets" className="sf-heading mb-10" style={{ fontSize: "var(--text-h2)" }}>
+              Also in a set
+            </h2>
+            <ul className={`grid gap-6 ${inSets.length > 1 ? "md:grid-cols-2" : "max-w-xl"}`}>
+              {inSets.map((s) => (
+                <SetCard key={s.handle} set={s} items={items} base={base} slug={slug} />
+              ))}
+            </ul>
+          </div>
+        </section>
+      ) : null}
 
       {related.length ? (
         <section className="sf-line border-t">

@@ -28,7 +28,7 @@ const Form = z.object({
   niche: z.string().trim().min(3, "Say what the shop should sell.").max(200),
   audience: z.string().trim().max(200).default(""),
   country: z.string().trim().min(2).max(40).default("United States"),
-  priceFeel: z.enum(["budget", "mid", "premium"]).default("mid"),
+  priceFeel: z.enum(["budget", "mid", "premium", "luxury"]).default("mid"),
   productCount: z.coerce.number().int().min(4).max(24).default(12),
   look: z.string().trim().max(160).default(""),
   count: z.coerce.number().int().min(1).max(10).default(1),

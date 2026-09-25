@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ProductArt } from "@/components/product-art";
 import { BrandPicture, CollectionTiles, TrustStrip } from "@/components/storefront/brand";
 import { ProductCard } from "@/components/storefront/product-card";
+import { SetCard } from "@/components/storefront/set-card";
 import { CountView } from "@/components/storefront/visit";
 import type { HeroCopy } from "@/lib/abtest/prompt";
 import { runningTestForShop } from "@/lib/abtest/tests";
@@ -159,6 +160,25 @@ export default async function StorefrontHome({ params, searchParams }: PageProps
           </section>
         );
       })}
+
+      {/* Sets: products made to be used together, for a little less than buying them one by one */}
+      {bp.sets?.length ? (
+        <section className="sf-line border-t" aria-labelledby="sf-sets">
+          <div className="sf-wrap sf-section">
+            <div className="mb-12">
+              <h2 id="sf-sets" className="sf-heading" style={{ fontSize: "var(--text-h1)" }}>
+                Sets
+              </h2>
+              <p className="sf-muted mt-3 max-w-[52ch]">Made to be used together, for a little less than buying each one on its own.</p>
+            </div>
+            <ul className={`grid gap-6 ${bp.sets.length > 1 ? "md:grid-cols-2" : ""} ${bp.sets.length > 2 ? "lg:grid-cols-3" : ""}`}>
+              {bp.sets.map((s) => (
+                <SetCard key={s.handle} set={s} items={items} base={base} slug={slug} />
+              ))}
+            </ul>
+          </div>
+        </section>
+      ) : null}
 
       {/* The everyday moment the range is for, when the shop has that picture */}
       {images.lifestyle.wide || images.lifestyle.tall ? (

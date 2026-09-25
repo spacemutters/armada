@@ -1,9 +1,17 @@
 // Prices come from rules, never from the AI. The AI writes words; this file decides numbers.
 
-export type PriceFeel = "budget" | "mid" | "premium";
+/**
+ * "luxury" is the premium brand level: a few well-chosen products sold at several times their cost
+ * (a $50 item landing at about $400), earned by the brand, the presentation and true, generous terms
+ * (60-day returns the shop pays for), never by fake discounts, reviews or scarcity.
+ */
+export type PriceFeel = "budget" | "mid" | "premium" | "luxury";
 
 /** Retail price as a multiple of landed cost (supplier cost + shipping). */
-export const MARKUP: Record<PriceFeel, number> = { budget: 2.2, mid: 2.8, premium: 3.4 };
+export const MARKUP: Record<PriceFeel, number> = { budget: 2.2, mid: 2.8, premium: 3.4, luxury: 7 };
+
+/** The lowest price a product is sold for at each level. */
+const FLOOR: Record<PriceFeel, number> = { budget: 500, mid: 500, premium: 500, luxury: 3900 };
 
 /**
  * Estimated platform fees until real fees can be read from orders.
@@ -28,12 +36,17 @@ export const UNCONFIRMED_SHIP_CENTS = 550;
 
 export function retailPrice(costCents: number, shipCents: number, feel: PriceFeel): number {
   const raw = (costCents + shipCents) * MARKUP[feel];
-  return charm(Math.max(raw, 500), feel);
+  return charm(Math.max(raw, FLOOR[feel]), feel);
 }
 
 /** Budget and mid prices end in .99; premium prices are round numbers. */
 export function charm(cents: number, feel: PriceFeel): number {
   const dollars = cents / 100;
+  if (feel === "luxury") {
+    // Round, quiet numbers, as premium brands price: $45, $120, $390, $425.
+    const step = dollars < 100 ? 5 : dollars < 500 ? 10 : 25;
+    return Math.max(step, Math.round(dollars / step) * step) * 100;
+  }
   if (feel === "premium") {
     const step = dollars < 50 ? 1 : dollars < 200 ? 5 : 10;
     return Math.max(step, Math.round(dollars / step) * step) * 100;

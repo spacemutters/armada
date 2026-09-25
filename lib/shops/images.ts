@@ -98,7 +98,12 @@ const ANSWER_SCHEMA = {
   properties: { prompt: { type: "string" }, alt: { type: "string" } },
 } as const;
 
-const PRICE_WORDS = { budget: "everyday prices", mid: "considered, mid-range prices", premium: "premium prices" } as const;
+const PRICE_WORDS = {
+  budget: "everyday prices",
+  mid: "considered, mid-range prices",
+  premium: "premium prices",
+  luxury: "a premium brand: quiet, spacious, expensive-looking, never flashy",
+} as const;
 
 /** The product kinds a shop sells, from its plan. The brief lists them as things that must not appear. */
 function productKinds(bp: Blueprint): string[] {
