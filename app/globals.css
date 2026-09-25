@@ -26,6 +26,11 @@
   --tile-mid: #9aa7ba;
   --tile-busy: #3a4a63;
   --tile-peak: #111418;
+  /* Icon ink on each tile brightness, 3:1 or better. */
+  --tile-quiet-ink: #3a4a63;
+  --tile-mid-ink: #111418;
+  --tile-busy-ink: #e9ecf1;
+  --tile-peak-ink: #e9ecf1;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -48,6 +53,10 @@
     --tile-mid: #3d4757;
     --tile-busy: #7d8ba0;
     --tile-peak: #e9ecf1;
+    --tile-quiet-ink: #9ba5b3;
+    --tile-mid-ink: #e9ecf1;
+    --tile-busy-ink: #0d1015;
+    --tile-peak-ink: #111418;
   }
 }
 

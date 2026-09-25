@@ -7,7 +7,7 @@ import { requireSession } from "@/lib/auth/session";
 import { isBillingAdmin, leaveNote } from "@/lib/billing/access";
 import { standingFrom } from "@/lib/billing/entitlements";
 import { isInterval, isPlanKey, planByKey } from "@/lib/billing/plans";
-import { connectStripe, disconnectStripe, noteStripeProblem, priceIndex, refreshStripe, stripeSecrets } from "@/lib/billing/settings";
+import { connectStripe, disconnectStripe, noteStripeProblem, priceIndex, refreshStripe, setPlansOpen, stripeSecrets } from "@/lib/billing/settings";
 import { subscriptionFor } from "@/lib/billing/subscriptions";
 import { appOrigin } from "@/lib/connections/types";
 import { asSystem } from "@/lib/db";
@@ -32,6 +32,8 @@ export async function choosePlan(formData: FormData) {
   if (session.role !== "owner" || !isPlanKey(planKey) || !isInterval(interval)) redirect("/billing");
   const secrets = await stripeSecrets();
   if (!secrets) redirect("/billing");
+  // Paid plans stay closed to customers until the admin opens them; admins can still try the flow.
+  if (!secrets.connection.plansOpen && !(await isBillingAdmin(session.memberId))) redirect("/billing");
   const plan = planByKey(planKey)!;
   const sub = await subscriptionFor(session.workspaceId);
   const standing = standingFrom(sub);
@@ -114,7 +116,7 @@ export async function connectStripeAction(formData: FormData) {
   const key = String(formData.get("key") ?? "");
   const result = await connectStripe(key, who);
   if (!result.ok) await backWithNote("error", result.message, "#stripe");
-  await backWithNote("ok", `Stripe is connected${result.ok && result.accountName ? ` to ${result.accountName}` : ""}. Fleets can now choose a plan.`, "#stripe");
+  await backWithNote("ok", `Stripe is connected${result.ok && result.accountName ? ` to ${result.accountName}` : ""}. Open paid plans below when you want fleets to be able to choose one.`, "#stripe");
 }
 
 export async function refreshStripeAction() {
@@ -128,4 +130,11 @@ export async function disconnectStripeAction() {
   const who = await requireAdmin();
   await disconnectStripe(who);
   await backWithNote("ok", "Stripe is disconnected. Armada has forgotten the key.", "#stripe");
+}
+
+export async function setPlansOpenAction(formData: FormData) {
+  const who = await requireAdmin();
+  const open = formData.get("open") === "yes";
+  await setPlansOpen(open, who);
+  await backWithNote("ok", open ? "Paid plans are open. Fleets can choose one now." : "Paid plans are closed. Nobody new can choose one.", "#stripe");
 }

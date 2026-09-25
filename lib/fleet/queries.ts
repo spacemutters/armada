@@ -22,6 +22,8 @@ export interface StoreTile {
   group: string | null;
   todayCents: number;
   avgDayCents: number;
+  /** The store's icon from the shop builder's icon set; null draws a plain square. */
+  icon: string | null;
 }
 
 export interface NeedsYou {
@@ -60,7 +62,7 @@ export async function homeSummary(workspaceId: string) {
       from o`;
 
     const tiles = await tx<StoreTile[]>`
-      select s.id, s.name, s.platform, s.mode, s.status, g.name as "group",
+      select s.id, s.name, s.platform, s.mode, s.status, s.icon, g.name as "group",
              coalesce(sum(o.total_cents) filter (where o.placed_at >= now() - interval '24 hours'), 0)::int as today_cents,
              coalesce(sum(o.total_cents) filter (where o.placed_at >= now() - interval '15 days' and o.placed_at < now() - interval '24 hours') / 14, 0)::int as avg_day_cents
       from armada.stores s
@@ -132,7 +134,7 @@ export async function storesTable(workspaceId: string): Promise<StoreRow[]> {
                coalesce((select sum(l.cost_cents) from armada.order_lines l where l.order_id = o.id), 0) as cost_cents
         from armada.orders o where o.placed_at >= now() - interval '15 days' and o.status <> 'cancelled'
       )
-      select s.id, s.name, s.platform, s.mode, s.status, s.domain, s.seller_key, s.health, g.name as "group",
+      select s.id, s.name, s.platform, s.mode, s.status, s.icon, s.domain, s.seller_key, s.health, g.name as "group",
              coalesce(sum(o.total_cents) filter (where o.placed_at >= now() - interval '24 hours'), 0)::int as today_cents,
              coalesce(sum(o.total_cents) filter (where o.placed_at < now() - interval '24 hours') / 14, 0)::int as avg_day_cents,
              coalesce(sum(o.total_cents) filter (where o.placed_at >= now() - interval '7 days'), 0)::int as sales7_cents,

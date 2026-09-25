@@ -1,6 +1,6 @@
 "use client";
 
-import { History, House, Megaphone, MoreHorizontal, Package, Receipt, Settings, Store, WandSparkles } from "lucide-react";
+import { CreditCard, History, House, Megaphone, MoreHorizontal, Package, Plug, Receipt, Settings, ShieldCheck, Store, WandSparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FleetMark } from "./auth-frame";
@@ -20,7 +20,10 @@ const MAIN = [
 const MORE = [
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/changes", label: "Changes", icon: History },
+  { href: "/connections", label: "Connections", icon: Plug },
+  { href: "/billing", label: "Plan and billing", icon: CreditCard },
 ];
+const ADMIN = { href: "/admin", label: "Admin", icon: ShieldCheck };
 
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
@@ -58,14 +61,18 @@ export function AppNav({
   memberName,
   helperOnline,
   helperBusy = false,
+  isAdmin = false,
 }: {
   workspaceName: string;
   memberName: string;
   helperOnline: boolean;
   helperBusy?: boolean;
+  /** Platform admins also see the Admin page. */
+  isAdmin?: boolean;
 }) {
   const pathname = usePathname();
-  const activeHref = [...MAIN, ...MORE].find((n) => isActive(pathname, n.href))?.href ?? null;
+  const more = isAdmin ? [...MORE, ADMIN] : MORE;
+  const activeHref = [...MAIN, ...more].find((n) => isActive(pathname, n.href))?.href ?? null;
   const tabHref = MAIN.find((n) => isActive(pathname, n.href))?.href ?? null;
   // The highlight slides to the page you picked, in the sidebar and in the phone's tab bar.
   const side = useGlide<HTMLElement>(activeHref);
@@ -107,7 +114,7 @@ export function AppNav({
           <span data-glide-ind="" aria-hidden className={cx(styles.glideInd, "rounded-xl bg-sunken")} />
           {MAIN.map(item)}
           <div className="my-2 border-t border-line" />
-          {MORE.map(item)}
+          {more.map(item)}
         </nav>
         <div className="mt-auto flex flex-col gap-0.5">
           <HelperStatus online={helperOnline} busy={helperOnline && helperBusy} />
@@ -148,7 +155,7 @@ export function AppNav({
               <MoreHorizontal aria-hidden className="size-5" />
             </summary>
             <div className="absolute right-0 mt-1 w-52 rounded-2xl border border-line bg-raised p-2 shadow-lg">
-              {[...MORE, { href: "/settings", label: "Settings", icon: Settings }].map((n) => (
+              {[...more, { href: "/settings", label: "Settings", icon: Settings }].map((n) => (
                 <Link key={n.href} href={n.href} className="flex min-h-11 items-center gap-3 rounded-xl px-3 hover:bg-sunken">
                   <n.icon aria-hidden className="size-[18px]" />
                   {n.label}

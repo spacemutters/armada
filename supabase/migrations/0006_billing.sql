@@ -70,3 +70,7 @@ alter table armada.stripe_events enable row level security;
 create policy system_only on armada.stripe_events using (armada.is_system()) with check (armada.is_system());
 
 grant select, insert, update, delete on armada.subscriptions, armada.billing_settings, armada.stripe_events to armada_app;
+
+-- Added by the lead (applied as armada_billing_plans_open): paid plans stay closed to customers
+-- until the admin opens them, even once Stripe is connected.
+alter table armada.billing_settings add column plans_open boolean not null default false;

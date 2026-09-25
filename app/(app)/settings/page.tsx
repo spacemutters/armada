@@ -1,23 +1,13 @@
 import { headers } from "next/headers";
-import { connectCjAction, disconnectCjAction, makeDeviceLink, makeTeamInvite, removePasskey, renameWorkspace, setPasswordAction } from "./actions";
+import { makeDeviceLink, makeTeamInvite, removePasskey, renameWorkspace, setPasswordAction } from "./actions";
 import { PasswordInput } from "@/components/password-input";
-import { Button, Field, inputClass, PageHeader, Section, StatusPill } from "@/components/ui";
-import { cjStatus } from "@/connectors/cj/client";
+import { Button, ButtonLink, Field, inputClass, PageHeader, Section, StatusPill } from "@/components/ui";
 import { helperStatus } from "@/lib/ai/jobs";
 import { requireSession } from "@/lib/auth/session";
 import { withWorkspace } from "@/lib/db";
 import { timeAgo } from "@/lib/text";
 
 export const metadata = { title: "Settings" };
-
-const CONNECTIONS = [
-  { name: "Shopify", needs: "Your Shopify partner account (sign-up 4). Then each store connects with one approval screen." },
-  { name: "eBay", needs: "Your eBay developer account (sign-up 5). Then each eBay account connects by signing in to eBay once." },
-  { name: "CJ Dropshipping", needs: "Your CJ account's API key (sign-up 6). It unlocks the real supplier catalog and automatic ordering." },
-  { name: "Meta ads", needs: "Business Verification and App Review (sign-up 1)." },
-  { name: "Google ads", needs: "Brand verification in Google Cloud (sign-up 3)." },
-  { name: "TikTok ads", needs: "A TikTok developer profile and app (sign-up 2)." },
-];
 
 // What the Password form's result codes (from setPasswordAction) say to the member.
 const PASSWORD_MESSAGES: Record<string, string> = {
@@ -35,7 +25,7 @@ const PASSWORD_MESSAGES: Record<string, string> = {
 export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
   const session = await requireSession();
   const sp = await searchParams;
-  const [helper, data, h, cj] = await Promise.all([
+  const [helper, data, h] = await Promise.all([
     helperStatus(),
     withWorkspace(session.workspaceId, async (tx) => {
       const passkeys = await tx<{ id: string; deviceLabel: string | null; createdAt: Date; lastUsedAt: Date | null }[]>`
@@ -47,7 +37,6 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       return { passkeys, members, me };
     }),
     headers(),
-    cjStatus(session.workspaceId),
   ]);
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
   const proto = h.get("x-forwarded-proto") ?? "https";
@@ -84,61 +73,14 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         </Section>
 
         <Section title="Connections" className="scroll-mt-6">
-          <ul id="connections" className="flex flex-col divide-y divide-line">
-            {CONNECTIONS.map((c) =>
-              c.name === "CJ Dropshipping" ? (
-                <li key={c.name} className="flex flex-col gap-3 py-3">
-                  <div className="flex flex-wrap items-start gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium">CJ Dropshipping</div>
-                      <p className="text-[13px] text-muted">
-                        {cj.connected
-                          ? `Connected${cj.meta.account ? ` as ${cj.meta.account}` : ""}${cj.meta.isSandbox ? " (a CJ test account)" : ""}. The shop builder and product search use CJ's real catalog, costs and shipping.`
-                          : "Unlocks the real supplier catalog, real costs and shipping times, and automatic ordering."}
-                      </p>
-                      {cj.status === "needs_attention" && cj.meta.lastError ? <p className="mt-1 text-[13px] text-attention">{cj.meta.lastError}</p> : null}
-                    </div>
-                    <StatusPill tone={cj.connected ? (cj.status === "needs_attention" ? "attention" : "ok") : "off"}>
-                      {cj.connected ? (cj.status === "needs_attention" ? "Needs you" : "Connected") : "Not connected"}
-                    </StatusPill>
-                  </div>
-                  {cj.connected ? (
-                    session.role === "owner" ? (
-                      <form action={disconnectCjAction}>
-                        <Button type="submit" variant="quiet">
-                          Disconnect CJ
-                        </Button>
-                      </form>
-                    ) : null
-                  ) : (
-                    <form action={connectCjAction} className="flex flex-col gap-2 rounded-xl bg-sunken p-4">
-                      <label htmlFor="cj-key" className="text-[13px]">
-                        In CJ, open Authorization, then API, press Add API and copy the key. Paste it here.
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        <input id="cj-key" name="apiKey" type="password" autoComplete="off" spellCheck={false} className={`${inputClass} min-w-0 flex-1`} placeholder="Your CJ key" />
-                        <Button type="submit">Connect CJ</Button>
-                      </div>
-                      <p className="text-[12px] text-muted">Armada checks the key with CJ, then keeps it encrypted. You can disconnect any time.</p>
-                    </form>
-                  )}
-                  {typeof sp.cj === "string" ? (
-                    <p role="status" className={`text-[13px] ${sp.cj === "ok" ? "text-positive" : "text-negative"}`}>
-                      {sp.cj === "ok" ? "CJ is connected." : sp.cj}
-                    </p>
-                  ) : null}
-                </li>
-              ) : (
-                <li key={c.name} className="flex flex-wrap items-start gap-3 py-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium">{c.name}</div>
-                    <p className="text-[13px] text-muted">{c.needs}</p>
-                  </div>
-                  <StatusPill tone="off">Not connected</StatusPill>
-                </li>
-              ),
-            )}
-          </ul>
+          <div id="connections" className="flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-xl text-[14px] text-muted">
+              Your stores, your supplier and your ad accounts connect on one page, each with one press.
+            </p>
+            <ButtonLink href="/connections" variant="secondary">
+              Open Connections
+            </ButtonLink>
+          </div>
         </Section>
 
         <Section title="Your devices" className="scroll-mt-6">

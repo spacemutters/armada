@@ -32,6 +32,8 @@ export interface StripeConnection {
   plansVersion: string | null;
   lastError: string | null;
   lastErrorAt: Date | null;
+  /** Whether customers may choose paid plans yet. Off until the admin opens them. */
+  plansOpen: boolean;
 }
 
 interface Row extends Omit<StripeConnection, "connectedByName"> {
@@ -44,7 +46,7 @@ async function loadRow(): Promise<Row | null> {
   const rows = await asSystem(
     (tx) => tx<Row[]>`
       select b.secret_key, b.webhook_secret, b.webhook_endpoint_id, b.portal_configuration_id, b.account_id, b.account_name,
-             b.livemode, b.price_ids, b.product_ids, b.plans_version, b.connected_at, b.updated_at, b.last_error, b.last_error_at,
+             b.livemode, b.price_ids, b.product_ids, b.plans_version, b.connected_at, b.updated_at, b.last_error, b.last_error_at, b.plans_open,
              m.display_name as connected_by_name
       from armada.billing_settings b left join armada.members m on m.id = b.connected_by`,
   );
@@ -231,5 +233,15 @@ export async function disconnectStripe(who: { memberId: string; workspaceId: str
     await tx`
       insert into armada.audit_log (workspace_id, member_id, action, detail)
       values (${who.workspaceId}, ${who.memberId}, 'billing.stripe_disconnected', ${tx.json({ account: secrets?.connection.accountName ?? null } as never)})`;
+  });
+}
+
+/** Opens or closes paid plans to customers. Admins can always choose a plan, to try the flow. */
+export async function setPlansOpen(open: boolean, who: { memberId: string; workspaceId: string }): Promise<void> {
+  await asSystem(async (tx) => {
+    await tx`update armada.billing_settings set plans_open = ${open}, updated_at = now()`;
+    await tx`
+      insert into armada.audit_log (workspace_id, member_id, action, detail)
+      values (${who.workspaceId}, ${who.memberId}, ${open ? "billing.plans_opened" : "billing.plans_closed"}, ${tx.json({})})`;
   });
 }

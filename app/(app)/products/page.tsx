@@ -73,7 +73,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
           ) : (
             <>
               This is the practice catalog: real sample products with simulated costs and stock.{" "}
-              <Link href="/settings#connections" className="text-accent hover:underline">
+              <Link href="/connections" className="text-accent hover:underline">
                 Connect CJ Dropshipping
               </Link>{" "}
               to search the real catalog with real costs, stock and delivery times.

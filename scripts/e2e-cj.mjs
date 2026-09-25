@@ -73,21 +73,29 @@ try {
   const workspaceHint = page.url();
   console.log("landed on", workspaceHint);
 
+  // CJ connects on the Connections page: paste the key, press Connect CJ, and the answer appears in place.
+  const connectCj = async (key) => {
+    await page.goto(`${base}/connections`, { waitUntil: "networkidle0" });
+    await page.$eval('input[name="apiKey"]', (el) => (el.value = ""));
+    await page.type('input[name="apiKey"]', key);
+    await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => /^Connect CJ( again)?$/.test(b.textContent.trim())).click());
+    await page
+      .waitForFunction(() => /CJ is connected\.|didn't accept|CJ said:|allowance|Couldn't reach/.test(document.body.innerText), { timeout: 60000 })
+      .catch(() => {});
+    await new Promise((r) => setTimeout(r, 1500));
+    return text();
+  };
+
   step("a refused key");
-  await page.goto(`${base}/settings#connections`, { waitUntil: "networkidle0" });
-  await page.type("#cj-key", "CJ-THIS-KEY-IS-WRONG-99");
-  await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0", timeout: 60000 }), page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Connect CJ").click())]);
-  expect((await text()).includes("CJ didn't accept that key"), "a wrong key gets a plain refusal");
+  expect((await connectCj("CJ-THIS-KEY-IS-WRONG-99")).includes("CJ didn't accept that key"), "a wrong key gets a plain refusal");
   await shot("01-bad-key", false);
 
   step("the right key");
-  await page.type("#cj-key", `CJ-MOCK-GOOD-KEY-${Date.now()}`);
-  await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0", timeout: 60000 }), page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Connect CJ").click())]);
-  const afterConnect = await text();
+  const afterConnect = await connectCj(`CJ-MOCK-GOOD-KEY-${Date.now()}`);
   expect(afterConnect.includes("CJ is connected."), "a good key connects");
   if (!afterConnect.includes("CJ is connected.")) throw new Error("CJ didn't connect, so nothing after this would test CJ");
-  expect(afterConnect.includes("Connected as Mock Test Shop (a CJ test account)"), "shows the CJ account name and test-account flag");
-  await page.evaluate(() => document.getElementById("connections")?.scrollIntoView());
+  await page.reload({ waitUntil: "networkidle0" });
+  expect((await text()).includes("Mock Test Shop"), "shows the CJ account it's connected as");
   await shot("02-connected", false);
 
   step("search CJ");
@@ -117,9 +125,9 @@ try {
   await fetch(`${mock}/__points?n=1`);
   await page.goto(`${base}/products?tab=find&q=lamp`, { waitUntil: "networkidle0", timeout: 90000 });
   expect((await text()).includes("allowance for this account is used up"), "running out of CJ's daily allowance says so plainly, without retrying");
-  await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
+  await page.goto(`${base}/connections`, { waitUntil: "networkidle0" });
   const settingsNow = await text();
-  expect(settingsNow.includes("Connected as Mock Test Shop") && !settingsNow.includes("Needs you"), "the connection still reads as connected, not needing attention");
+  expect(settingsNow.includes("Mock Test Shop") && !settingsNow.includes("Needs you"), "the connection still reads as connected, not needing attention");
 
   step("add three products; CJ checks them afterwards");
   await page.goto(`${base}/products?tab=find&q=${encodeURIComponent("knife, pan, spoon")}`, { waitUntil: "networkidle0", timeout: 90000 });

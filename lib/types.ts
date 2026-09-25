@@ -26,6 +26,8 @@ export interface Store {
   status: StoreStatus;
   groupId: string | null;
   sellerKey: string | null;
+  /** An icon name from the shop builder's set; null shows as a plain square. */
+  icon: string | null;
   health: Record<string, unknown>;
   meta: Record<string, unknown>;
   createdAt: Date;

@@ -141,7 +141,8 @@ export default async function HomePage() {
         <Stat rollIn label="Profit in 7 days" value={formatMoneyCompact(week.profitCents)} hint="Before ad spend" tone={week.profitCents >= 0 ? "positive" : "negative"} />
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
+      {/* items-start: each card is as tall as its own content, so a short fleet never leaves an empty box. */}
+      <div className="grid items-start gap-4 xl:grid-cols-[1fr_380px]">
         <Section title="Your fleet" action={<span className="text-[13px] text-muted">{tiles.length} stores · last 24 hours</span>}>
           <FleetMap tiles={tiles} />
         </Section>

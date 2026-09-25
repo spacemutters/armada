@@ -2,10 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProductArt } from "@/components/product-art";
 import { Card, PageHeader, platformName, ScoreBadge, Section, Stat, StatusPill, type Tone } from "@/components/ui";
+import { chooseIconAction, makeIconAction } from "./icon-actions";
+import { RefreshEvery } from "@/components/refresh-every";
+import { StoreIcon } from "@/components/store-icon";
 import { requireSession } from "@/lib/auth/session";
 import { storeDetail } from "@/lib/fleet/queries";
 import { formatMoney } from "@/lib/money";
 import { unitProfitCents } from "@/lib/pricing";
+import { ART_ICONS } from "@/lib/shops/style";
+import { iconInProgress } from "@/lib/stores/icon";
 
 export const metadata = { title: "Store" };
 
@@ -30,6 +35,7 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
   const max = Math.max(1, ...daily.map((d) => d.salesCents));
   const health = store.health as { note?: string };
   const shopId = (store.meta as { shopId?: string }).shopId;
+  const making = await iconInProgress(session.workspaceId, store.id);
 
   return (
     <>
@@ -59,6 +65,18 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
           </Link>
         </p>
       ) : null}
+
+      <Card className="mb-4 p-5">
+        {making ? <RefreshEvery seconds={3} /> : null}
+        <StoreIcon
+          icon={store.icon}
+          icons={ART_ICONS}
+          making={making}
+          canEdit={session.role !== "viewer"}
+          choose={chooseIconAction.bind(null, store.id)}
+          make={makeIconAction.bind(null, store.id)}
+        />
+      </Card>
 
       <Card className="mb-4 p-6">
         <div className="grid grid-cols-2 gap-6 md:grid-cols-4">

@@ -35,21 +35,17 @@ try {
   await page.type('input[placeholder="My fleet"]', "CJ live check");
   await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0", timeout: 60000 }), page.click('button[type="submit"]')]);
 
-  await page.goto(`${base}/settings#connections`, { waitUntil: "networkidle0" });
-  expect((await text()).includes("In CJ, open Authorization, then API"), "Settings shows the CJ connect box");
-  await page.type("#cj-key", "CJ0000000@api@00000000000000000000000000000000");
+  await page.goto(`${base}/connections`, { waitUntil: "networkidle0" });
+  expect(Boolean(await page.$('input[name="apiKey"]')), "Connections shows the CJ key box");
+  await page.type('input[name="apiKey"]', "CJ0000000@api@00000000000000000000000000000000");
   const t0 = Date.now();
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: "networkidle0", timeout: 60000 }),
-    page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Connect CJ").click()),
-  ]);
+  await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => /^Connect CJ( again)?$/.test(b.textContent.trim())).click());
+  await page.waitForFunction(() => /CJ is connected\.|didn't accept|CJ said:|Couldn't reach/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
   const after = await text();
-  const line = after.split("\n").find((l) => l.startsWith("CJ ")) ?? "";
-  console.log(`  CJ answered in ${Date.now() - t0}ms: ${line}`);
+  console.log(`  CJ answered in ${Date.now() - t0}ms`);
   expect(/CJ didn't accept that key|CJ said:/.test(after), "a made-up key is refused by the real CJ, in plain words");
   expect(!after.includes("CJ is connected."), "nothing was saved");
-  await page.evaluate(() => document.getElementById("connections")?.scrollIntoView());
-  await page.screenshot({ path: path.join(outDir, "settings-refused.png") });
+  await page.screenshot({ path: path.join(outDir, "connections-refused.png") });
 
   await page.goto(`${base}/products?tab=find&q=lamp`, { waitUntil: "networkidle0", timeout: 60000 });
   expect((await text()).includes("Connect CJ Dropshipping"), "Find products offers to connect CJ while it isn't connected");

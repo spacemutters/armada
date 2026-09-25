@@ -11,7 +11,7 @@ import { confirmCheckout, currentSubscription } from "@/lib/billing/subscription
 import { appOrigin } from "@/lib/connections/types";
 import { asSystem } from "@/lib/db";
 import { formatMoney } from "@/lib/money";
-import { choosePlan, connectStripeAction, disconnectStripeAction, manageBilling, refreshStripeAction } from "./actions";
+import { choosePlan, connectStripeAction, disconnectStripeAction, manageBilling, refreshStripeAction, setPlansOpenAction } from "./actions";
 import { PendingButton } from "./pending-button";
 import { PlanPicker } from "./plan-picker";
 
@@ -229,6 +229,36 @@ function StripeAdmin({ connection, paying }: { connection: StripeConnection | nu
             <span className="text-muted">({connection.livemode ? "live mode" : "test mode: no real money moves"})</span>
           </p>
 
+          <form action={setPlansOpenAction} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-[15px] font-medium">{connection.plansOpen ? "Paid plans are open" : "Paid plans are closed"}</p>
+              <p className="text-[13px] text-muted">
+                {connection.plansOpen
+                  ? "Fleet owners can choose a paid plan and pay."
+                  : "Fleets see the plans but can't choose a paid one yet. The pricing research suggests opening them once a real store connection works."}
+              </p>
+            </div>
+            <input type="hidden" name="open" value={connection.plansOpen ? "no" : "yes"} />
+            <button
+              type="submit"
+              role="switch"
+              aria-checked={connection.plansOpen}
+              aria-label="Let fleets choose paid plans"
+              className={cx(
+                "relative inline-flex h-8 w-14 shrink-0 items-center rounded-full border transition-colors",
+                connection.plansOpen ? "border-accent bg-accent" : "border-line-strong bg-sunken",
+              )}
+            >
+              <span
+                aria-hidden
+                className={cx(
+                  "inline-block size-6 rounded-full bg-raised shadow transition-transform",
+                  connection.plansOpen ? "translate-x-7" : "translate-x-1",
+                )}
+              />
+            </button>
+          </form>
+
           {connection.lastError ? (
             <Notice tone="attention">
               <p>{connection.lastError}</p>
@@ -400,10 +430,16 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
 
       <section aria-labelledby="plans" className="mt-12">
         {connection && !isOwner ? <p className="mb-4 text-[14px] text-muted">Only the fleet&apos;s owner can change the plan.</p> : null}
+        {!connection?.plansOpen && !standing.paying ? (
+          <p className="mb-4 text-[14px] text-muted">
+            Paid plans open soon. Until then, everything on Practice is free.
+            {admin && connection ? " (You can still choose one to try the checkout, because you're an admin.)" : ""}
+          </p>
+        ) : null}
         <PlanPicker
           plans={[...PLANS]}
           current={{ planKey: standing.plan.key, interval: standing.interval, paying: standing.paying, ending: Boolean(standing.endsAt) }}
-          canChoose={isOwner && Boolean(connection)}
+          canChoose={isOwner && Boolean(connection) && (Boolean(connection?.plansOpen) || admin || standing.paying)}
           trialEligible={!sub}
           choose={choosePlan}
         />

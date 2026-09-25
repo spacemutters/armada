@@ -1,20 +1,14 @@
 import Link from "next/link";
+import { createElement } from "react";
 import type { StoreTile } from "@/lib/fleet/queries";
 import { formatMoney } from "@/lib/money";
+import { iconFor } from "./product-art";
 import { cx, platformName } from "./ui";
 
-const HEX = "polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%)";
-
-function shapeOf(platform: string): { className: string; clipPath?: string } {
-  if (platform === "ebay") return { className: "rounded-full" };
-  if (platform === "facebook") return { className: "", clipPath: HEX };
-  return { className: "rounded-[5px]" };
-}
-
-// The signature element: every store as one tile. Brightness says how today compares with the
-// store's usual day; a notch says it needs you; a round tile is an eBay account, a square one a
-// Shopify store, a six-sided one a Facebook shop. No meaning rides on color alone. When the page
-// refreshes, a tile eases to its new brightness instead of snapping.
+// The signature element: every store as one tile, showing the store's own icon (a plain square
+// when it has none). Brightness says how today compares with the store's usual day; a notch says it
+// needs you. No meaning rides on color alone, and the icon's ink is picked per brightness so it keeps
+// 3:1 or better in light and dark. When the page refreshes, a tile eases to its new brightness.
 
 type Level = "quiet" | "mid" | "busy" | "peak";
 
@@ -31,6 +25,13 @@ const FILL: Record<Level, string> = {
   peak: "var(--tile-peak)",
 };
 
+const INK: Record<Level, string> = {
+  quiet: "var(--tile-quiet-ink)",
+  mid: "var(--tile-mid-ink)",
+  busy: "var(--tile-busy-ink)",
+  peak: "var(--tile-peak-ink)",
+};
+
 const WORD: Record<Level, string> = {
   quiet: "slower than usual",
   mid: "about usual",
@@ -39,29 +40,35 @@ const WORD: Record<Level, string> = {
 };
 
 export function FleetMap({ tiles, size = "md" }: { tiles: StoreTile[]; size?: "md" | "lg" }) {
-  const px = size === "lg" ? "size-11 md:size-9" : "size-11 md:size-7";
+  const px = size === "lg" ? "size-11 md:size-12" : "size-11 md:size-10";
   const counts = tiles.reduce<Record<Level, number>>((acc, t) => ((acc[level(t)] += 1), acc), { quiet: 0, mid: 0, busy: 0, peak: 0 });
-  const hasFacebook = tiles.some((t) => t.platform === "facebook");
   return (
     <div>
-      <ul className="flex flex-wrap gap-1.5" aria-label="Every store, by how today compares with its usual day">
+      <ul className="flex flex-wrap gap-2" aria-label="Every store, by how today compares with its usual day">
         {tiles.map((t) => {
           const lv = level(t);
           const attention = t.status === "needs_attention" || t.status === "disconnected";
-          const shape = shapeOf(t.platform);
           return (
             <li key={t.id}>
               <Link
                 href={`/stores/${t.id}`}
-                title={`${t.name}: ${formatMoney(t.todayCents)} in the last day, ${WORD[lv]}${attention ? ". Needs you." : ""}`}
+                title={`${t.name} (${platformName(t.platform)}): ${formatMoney(t.todayCents)} in the last day, ${WORD[lv]}${attention ? ". Needs you." : ""}`}
                 aria-label={`${t.name}, ${platformName(t.platform)}: ${formatMoney(t.todayCents)} in the last day, ${WORD[lv]}${attention ? ", needs you" : ""}`}
-                className={cx("relative block transition-transform hover:scale-110", px, shape.className)}
+                className={cx("relative flex items-center justify-center rounded-[9px] transition-transform hover:scale-110", px)}
               >
                 <span
                   aria-hidden
-                  className={cx("absolute inset-0 transition-[background-color] duration-700 ease-out", shape.className)}
-                  style={{ background: FILL[lv], clipPath: shape.clipPath }}
+                  className="absolute inset-0 rounded-[9px] transition-[background-color] duration-700 ease-out"
+                  style={{ background: FILL[lv] }}
                 />
+                {t.icon
+                  ? createElement(iconFor(t.icon), {
+                      "aria-hidden": true,
+                      strokeWidth: 1.8,
+                      className: "relative size-1/2 transition-colors duration-700",
+                      style: { color: INK[lv] },
+                    })
+                  : null}
                 {attention ? (
                   <span
                     aria-hidden
@@ -81,16 +88,6 @@ export function FleetMap({ tiles, size = "md" }: { tiles: StoreTile[]; size?: "m
             {WORD[lv].replace(/^./, (c) => c.toUpperCase())} ({counts[lv]})
           </span>
         ))}
-        <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden className="size-3 rounded-full" style={{ background: "var(--tile-mid)" }} />
-          eBay account
-        </span>
-        {hasFacebook ? (
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="size-3" style={{ background: "var(--tile-mid)", clipPath: HEX }} />
-            Facebook shop
-          </span>
-        ) : null}
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden className="relative size-3 rounded-[3px]" style={{ background: "var(--tile-mid)" }}>
             <span className="absolute -top-0.5 -right-0.5 size-2 bg-attention" style={{ clipPath: "polygon(0 0, 100% 0, 100% 100%)" }} />

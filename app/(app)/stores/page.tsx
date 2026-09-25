@@ -43,17 +43,25 @@ export default async function StoresPage({ searchParams }: PageProps<"/stores">)
       <PageHeader
         title="Stores"
         subtitle={`${all.length} ${all.length === 1 ? "store" : "stores"} across ${hasFacebook ? "Shopify, eBay and Facebook" : "Shopify and eBay"}. Open one to see its products, orders and health.`}
-        actions={<ButtonLink href="/builder/new">Open a new shop</ButtonLink>}
+        actions={
+          <>
+            <ButtonLink href="/builder/new" variant="secondary">
+              Build a shop with AI
+            </ButtonLink>
+            <ButtonLink href="/stores/new">Open a new store</ButtonLink>
+          </>
+        }
       />
 
       {all.length === 0 ? (
         <EmptyState
           title="No stores yet"
-          body="Connecting real Shopify stores and eBay accounts needs your partner and developer accounts first. Meanwhile, a practice fleet lets you try everything."
+          body="Open a store on Shopify, eBay or Facebook in one press, or start a practice fleet to try everything without real money."
           action={
-            <form action={startPracticeFleet} className="flex items-center gap-3">
+            <form action={startPracticeFleet} className="flex flex-wrap items-center gap-3">
+              <ButtonLink href="/stores/new">Open a new store</ButtonLink>
               <input type="hidden" name="count" value="24" />
-              <PendingButton pendingLabel="Setting up the stores…" className={buttonClass("primary")}>
+              <PendingButton pendingLabel="Setting up the stores…" className={buttonClass("secondary")}>
                 Start a practice fleet
               </PendingButton>
             </form>

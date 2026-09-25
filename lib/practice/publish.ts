@@ -18,9 +18,10 @@ export async function publishShopToPractice(tx: Tx, shop: ShopRow, memberId: str
     returning id`;
 
   const [store] = await tx<{ id: string }[]>`
-    insert into armada.stores (workspace_id, platform, mode, name, domain, currency, country, status, group_id, meta)
+    insert into armada.stores (workspace_id, platform, mode, name, domain, currency, country, status, group_id, icon, meta)
     values (${shop.workspaceId}, 'shopify', 'practice', ${brand}, ${`${slugify(brand)}.practice`}, 'USD', 'US', 'connected',
-            ${group.id}, ${tx.json({ shopId: shop.id, builtByAi: true, openedAt: new Date().toISOString() } as never)})
+            ${group.id}, ${bp.brand?.monogramIcon ?? null},
+            ${tx.json({ shopId: shop.id, builtByAi: true, openedAt: new Date().toISOString() } as never)})
     returning id`;
 
   const products = bp.products ?? [];
