@@ -1,4 +1,5 @@
 import "server-only";
+import { importAliexpressSearch } from "@/lib/catalog/aliexpress";
 import { importCjSearch } from "@/lib/catalog/cj";
 import { searchCatalog } from "@/lib/catalog/search";
 import { withWorkspace } from "@/lib/db";
@@ -19,7 +20,7 @@ export interface ProductRow {
   hiddenListings: number;
   typicalPriceCents: number | null;
   unitsSold30: number;
-  /** A CJ product whose shipping CJ hasn't confirmed yet. */
+  /** A CJ or AliExpress product whose shipping the supplier hasn't confirmed yet. */
   unconfirmed: boolean;
 }
 
@@ -28,7 +29,7 @@ export async function listProducts(workspaceId: string): Promise<ProductRow[]> {
     workspaceId,
     (tx) => tx<ProductRow[]>`
       select p.id, p.title, p.category, p.images, p.cost_cents, p.ship_cents, p.score, p.score_parts, p.status,
-             coalesce((select c.source = 'cj' and coalesce(c.attributes -> 'cj' ->> 'checked', 'false') <> 'true'
+             coalesce((select c.source in ('cj', 'aliexpress') and coalesce(c.attributes -> c.source ->> 'checked', 'false') <> 'true'
                        from armada.catalog_items c where c.id = p.catalog_item_id), false) as unconfirmed,
              count(l.id) filter (where l.status = 'active')::int as active_listings,
              count(l.id) filter (where l.status = 'hidden')::int as hidden_listings,
@@ -56,20 +57,27 @@ export interface FoundItem {
   reasons: string[];
   alreadyAdded: boolean;
   practice: boolean;
-  /** CJ search results carry no shipping until the product is checked. */
+  /** Supplier search results carry no shipping until the product is checked. */
   shippingKnown: boolean;
 }
 
-export async function findProducts(workspaceId: string, q: string, source: "practice" | "cj" = "practice"): Promise<FoundItem[]> {
+export type FindSource = "practice" | "cj" | "aliexpress";
+
+export async function findProducts(workspaceId: string, q: string, source: FindSource = "practice"): Promise<FoundItem[]> {
   const phrases = q
     .split(/[,;]+/)
     .map((s) => s.trim())
     .filter(Boolean);
   if (!phrases.length) return [];
-  // CJ is searched live (one call per phrase, in the account's speed lane) and saved to the catalog.
-  const cjItems = source === "cj" ? await importCjSearch(workspaceId, phrases, { maxPhrases: 3, perPhrase: 24 }) : null;
+  // Suppliers are searched live (one call per phrase, in the account's speed lane) and saved to the catalog.
+  const live =
+    source === "cj"
+      ? await importCjSearch(workspaceId, phrases, { maxPhrases: 3, perPhrase: 24 })
+      : source === "aliexpress"
+        ? await importAliexpressSearch(workspaceId, phrases, { maxPhrases: 3, perPhrase: 24 })
+        : null;
   return withWorkspace(workspaceId, async (tx) => {
-    const items = cjItems ?? (await searchCatalog(tx, { source: "practice", phrases, limit: 48 }));
+    const items = live ?? (await searchCatalog(tx, { source: "practice", phrases, limit: 48 }));
     const added = new Set(
       (await tx<{ catalogItemId: string }[]>`select catalog_item_id from armada.products where catalog_item_id is not null`).map((r) => r.catalogItemId),
     );

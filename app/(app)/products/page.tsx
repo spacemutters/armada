@@ -5,14 +5,15 @@ import { SegmentedNav } from "@/components/fx/glide";
 import { PendingButton } from "@/components/fx/pending-button";
 import { ProductArt } from "@/components/product-art";
 import { buttonClass, Button, Card, EmptyState, PageHeader, ScoreBadge } from "@/components/ui";
+import { aliexpressStatus, describeAliexpressError } from "@/connectors/aliexpress/client";
 import { cjStatus, describeCjError } from "@/connectors/cj/client";
 import { requireSession } from "@/lib/auth/session";
 import { formatMoney } from "@/lib/money";
-import { findProducts, listProducts, type FoundItem } from "@/lib/products/queries";
+import { findProducts, listProducts, type FindSource, type FoundItem } from "@/lib/products/queries";
 
 export const metadata = { title: "Products" };
 
-// Adding CJ products checks each one with CJ after the page moves on (about two seconds each).
+// Adding CJ or AliExpress products checks each one with the supplier after the page moves on (about two seconds each).
 export const maxDuration = 300;
 
 export default async function ProductsPage({ searchParams }: PageProps<"/products">) {
@@ -34,18 +35,25 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
   );
 
   if (tab === "find") {
-    const cj = await cjStatus(session.workspaceId);
-    const from = cj.connected && sp.from !== "practice" ? "cj" : "practice";
+    const [cj, ali] = await Promise.all([cjStatus(session.workspaceId), aliexpressStatus(session.workspaceId)]);
+    // Connected suppliers first, then the practice catalog, which is always there.
+    const sources: { key: FindSource; label: string }[] = [
+      ...(cj.connected ? [{ key: "cj" as const, label: "CJ Dropshipping" }] : []),
+      ...(ali.connected ? [{ key: "aliexpress" as const, label: "AliExpress" }] : []),
+      { key: "practice", label: "Practice catalog" },
+    ];
+    const from = sources.find((x) => x.key === sp.from)?.key ?? sources[0].key;
     let results: FoundItem[] = [];
     let problem: string | null = null;
     if (q) {
       try {
         results = await findProducts(session.workspaceId, q, from);
       } catch (e) {
-        problem = describeCjError(e);
+        problem = from === "aliexpress" ? describeAliexpressError(e) : describeCjError(e);
       }
     }
-    const otherHref = `/products?tab=find${from === "cj" ? "&from=practice" : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+    const hrefFor = (key: FindSource) => `/products?tab=find&from=${key}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+    const supplierName = from === "cj" ? "CJ Dropshipping" : "AliExpress";
     return (
       <>
         <PageHeader
@@ -53,30 +61,27 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
           subtitle="Search the supplier catalog. Every result shows its 1 to 100 score, what it costs you delivered, and a suggested price from your pricing rules."
         />
         <div className="flex">{tabs}</div>
-        <SearchBox q={q} fromPractice={from === "practice" && cj.connected} />
+        {sources.length > 1 ? (
+          <div className="flex">
+            <SegmentedNav label="Search in" active={from} className="mb-4" items={sources.map((x) => ({ key: x.key, label: x.label, href: hrefFor(x.key) }))} />
+          </div>
+        ) : null}
+        <SearchBox q={q} from={from} />
         <p className="mb-4 max-w-3xl text-[13px] text-muted">
-          {from === "cj" ? (
+          {from !== "practice" ? (
             <>
-              Searching CJ Dropshipping&apos;s real catalog. Shipping is estimated in these results. When you add a product, Armada checks its real
-              shipping cost and time with CJ.{" "}
-              <Link href={otherHref} className="text-accent hover:underline">
-                Search the practice catalog instead
-              </Link>
+              Searching {supplierName}&apos;s real catalog. Shipping is estimated in these results. When you add a product, Armada checks its real
+              shipping cost and time with {from === "cj" ? "CJ" : "AliExpress"}.
             </>
-          ) : cj.connected ? (
-            <>
-              Searching the practice catalog.{" "}
-              <Link href={otherHref} className="text-accent hover:underline">
-                Search CJ instead
-              </Link>
-            </>
+          ) : sources.length > 1 ? (
+            <>Searching the practice catalog: real sample products with simulated costs and stock.</>
           ) : (
             <>
               This is the practice catalog: real sample products with simulated costs and stock.{" "}
               <Link href="/connections" className="text-accent hover:underline">
-                Connect CJ Dropshipping
+                Connect CJ Dropshipping or AliExpress
               </Link>{" "}
-              to search the real catalog with real costs, stock and delivery times.
+              to search a real catalog with real costs, stock and delivery times.
             </>
           )}
         </p>

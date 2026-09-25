@@ -47,6 +47,7 @@ const NOUN: Record<Provider, [one: string, many: string]> = {
   ebay: ["eBay account", "eBay accounts"],
   facebook: ["Facebook shop", "Facebook shops"],
   cj: ["account", "accounts"],
+  aliexpress: ["account", "accounts"],
   meta_ads: ["ad account", "ad accounts"],
   google_ads: ["ad account", "ad accounts"],
   tiktok_ads: ["ad account", "ad accounts"],
@@ -58,6 +59,7 @@ const SHORT: Partial<Record<Provider, string>> = { facebook: "Facebook" };
 function consequence(provider: Provider, kind: Connector["kind"]): string {
   if (provider === "shopify") return "Armada takes itself off the store in Shopify and stops keeping it in step. Its products and orders stay here.";
   if (provider === "cj") return "The shop builder and product search go back to the practice catalog, and sales stop being ordered from CJ. You can connect again any time.";
+  if (provider === "aliexpress") return "Product search stops showing AliExpress. Products you already added stay. You can connect again any time.";
   if (kind === "store") return "Armada stops keeping it in step. Its products and orders stay here.";
   return "Armada stops managing ads on this account. Ads already running keep running on the platform.";
 }

@@ -57,6 +57,7 @@ export const CREDENTIAL_PROVIDER: Record<Provider, string> = {
   ebay: "ebay",
   facebook: "meta",
   cj: "cj",
+  aliexpress: "aliexpress",
   meta_ads: "meta",
   google_ads: "google",
   tiktok_ads: "tiktok",

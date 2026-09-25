@@ -1,4 +1,4 @@
-import { Clapperboard, Gavel, Megaphone, Search, ShoppingBag, Store, Warehouse, type LucideIcon } from "lucide-react";
+import { Clapperboard, Gavel, Megaphone, PackageSearch, Search, ShoppingBag, Store, Warehouse, type LucideIcon } from "lucide-react";
 import type { Provider } from "@/lib/connections/types";
 import { cx } from "@/components/ui";
 
@@ -9,6 +9,7 @@ const GLYPH: Record<Provider, LucideIcon> = {
   ebay: Gavel,
   facebook: Store,
   cj: Warehouse,
+  aliexpress: PackageSearch,
   meta_ads: Megaphone,
   google_ads: Search,
   tiktok_ads: Clapperboard,

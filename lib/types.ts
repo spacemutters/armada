@@ -47,7 +47,7 @@ export interface ItemArt {
 export interface CatalogItem {
   id: string;
   workspaceId: string | null;
-  source: "practice" | "cj";
+  source: "practice" | "cj" | "aliexpress";
   sourceId: string;
   title: string;
   description: string;

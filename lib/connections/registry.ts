@@ -1,5 +1,6 @@
 import "server-only";
 import { adsInfos } from "@/connectors/ads/info";
+import { aliexpressInfo } from "@/connectors/aliexpress/info";
 import { cjInfo } from "@/connectors/cj/info";
 import { ebayInfo } from "@/connectors/ebay/info";
 import { facebookInfo } from "@/connectors/meta/info";
@@ -9,7 +10,7 @@ import type { ConnectorInfo, Provider } from "./types";
 // Every connection Armada offers, in the order people see them.
 export type Connector = ConnectorInfo & { available: () => boolean };
 
-export const CONNECTORS: Connector[] = [shopifyInfo, ebayInfo, facebookInfo, cjInfo, ...adsInfos];
+export const CONNECTORS: Connector[] = [shopifyInfo, ebayInfo, facebookInfo, cjInfo, aliexpressInfo, ...adsInfos];
 
 export function connector(provider: Provider): Connector | undefined {
   return CONNECTORS.find((c) => c.provider === provider);

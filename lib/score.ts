@@ -20,6 +20,8 @@ export interface ScoreInput {
   fleetUnitsSold30d?: number | null;
   /** How many stores list this item through the supplier (CJ reports it). */
   supplierListings?: number | null;
+  /** How many times this item has sold at the supplier (AliExpress reports it). */
+  supplierOrders?: number | null;
   /** `shipCents` is a stand-in until the supplier confirms it. */
   shipEstimated?: boolean;
 }
@@ -51,7 +53,13 @@ export function scoreProduct(i: ScoreInput): { score: number; parts: ScoreParts 
             measured: true,
             note: `${i.supplierListings} stores already sell this through the supplier`,
           }
-        : {
+        : i.supplierOrders != null
+          ? {
+              value: clamp(Math.log10(1 + i.supplierOrders) / 4),
+              measured: true,
+              note: `Sold ${i.supplierOrders.toLocaleString("en-US")} times at the supplier`,
+            }
+          : {
             value: i.rating != null ? clamp((i.rating - 3.5) / 1.5) : 0.5,
             measured: false,
             note: "Estimated from the supplier's rating. Live demand needs eBay's market data.",

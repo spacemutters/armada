@@ -7,7 +7,7 @@
 // accounts). Until its settings are present, `available()` is false: people see it as coming
 // soon, and the platform admin sees what's missing.
 
-export type Provider = "shopify" | "ebay" | "facebook" | "cj" | "meta_ads" | "google_ads" | "tiktok_ads";
+export type Provider = "shopify" | "ebay" | "facebook" | "cj" | "aliexpress" | "meta_ads" | "google_ads" | "tiktok_ads";
 
 export interface ConnectorInfo {
   provider: Provider;

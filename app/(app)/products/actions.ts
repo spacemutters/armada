@@ -27,11 +27,11 @@ export async function addToProducts(formData: FormData) {
         values (${session.workspaceId}, ${item.id}, ${item.title}, ${item.description}, ${tx.json(item.images as never)}, ${item.category},
                 ${item.costCents}, ${shipCents}, ${item.title}, ${score}, ${tx.json(parts as never)})
         returning id`;
-      if (item.source === "cj") fromCj.push(p.id);
+      if (item.source === "cj" || item.source === "aliexpress") fromCj.push(p.id);
     }
     return { added: items.length, fromCj };
   });
-  // CJ products get their real photos, cost and shipping confirmed once the page has moved on.
+  // CJ and AliExpress products get their real photos, cost and shipping confirmed once the page has moved on.
   if (fromCj.length) after(() => checkProductsWithCj(session.workspaceId, fromCj).then(() => undefined));
   redirect(`/products?added=${added}`);
 }

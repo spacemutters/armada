@@ -11,7 +11,7 @@ import { buttonClass, inputClass } from "@/components/ui";
  * The "Find products" search. It still posts as a plain form without scripts; with them it moves in
  * place and a light travels round the box for as long as the search is running.
  */
-export function SearchBox({ q, fromPractice }: { q: string; fromPractice: boolean }) {
+export function SearchBox({ q, from }: { q: string; from: string }) {
   const router = useRouter();
   const [searching, start] = useTransition();
   return (
@@ -29,7 +29,7 @@ export function SearchBox({ q, fromPractice }: { q: string; fromPractice: boolea
       }}
     >
       <input type="hidden" name="tab" value="find" />
-      {fromPractice ? <input type="hidden" name="from" value="practice" /> : null}
+      <input type="hidden" name="from" value={from} />
       <BorderBeam active={searching} className="min-w-0 flex-1">
         <input name="q" defaultValue={q} className={inputClass} placeholder="Try: kitchen knife, water bottle, lamp" aria-label="Search products" />
       </BorderBeam>

@@ -27,11 +27,11 @@ const rel = (root, p) => path.relative(root, p).replace(/\\/g, "/");
 const sourceFiles = (root) => walk(root).filter((p) => /\.(ts|tsx|mjs|js)$/.test(p) && !rel(root, p).startsWith("scripts/"));
 
 // ---------- the checks ----------
-const PLATFORM_HOSTS = /(myshopify\.com\/admin|api\.ebay\.com|api\.sandbox\.ebay\.com|developers\.cjdropshipping\.com\/api|graph\.facebook\.com|googleads\.googleapis\.com|business-api\.tiktok\.com)/;
+const PLATFORM_HOSTS = /(myshopify\.com\/admin|api\.ebay\.com|api\.sandbox\.ebay\.com|developers\.cjdropshipping\.com\/api|api-sg\.aliexpress\.com|api\.stripe\.com|graph\.facebook\.com|googleads\.googleapis\.com|business-api\.tiktok\.com)/;
 
 const checks = {
   "one-door": {
-    what: "Only files in connectors/ may call Shopify, eBay, CJ or an ad platform directly",
+    what: "Only files in connectors/ may call Shopify, eBay, CJ, AliExpress, Stripe or an ad platform directly",
     run(root) {
       const bad = sourceFiles(root).filter((p) => !rel(root, p).startsWith("connectors/") && PLATFORM_HOSTS.test(fs.readFileSync(p, "utf8")));
       return bad.length ? `direct platform calls in: ${bad.map((p) => rel(root, p)).join(", ")}` : null;
@@ -112,6 +112,32 @@ const checks = {
         if (!/await waitForSlot\([^)]*\);\s*return raw/.test(laned)) problems.push("laned() no longer waits for a slot before sending");
       }
       if (!files.length) problems.push("connectors/cj is missing");
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
+  "aliexpress-lane": {
+    what: "Every request to AliExpress waits for the account's next slot",
+    run(root) {
+      const dir = path.join(root, "connectors", "aliexpress");
+      const files = walk(dir).filter((p) => /\.ts$/.test(p));
+      const problems = [];
+      for (const f of files) {
+        const text = fs.readFileSync(f, "utf8");
+        const name = rel(root, f);
+        const fetches = (text.match(/\bfetch\(/g) ?? []).length;
+        if (name !== "connectors/aliexpress/client.ts") {
+          if (fetches) problems.push(`${name} calls AliExpress without going through client.ts`);
+          continue;
+        }
+        if (fetches !== 1) problems.push(`client.ts has ${fetches} places that send requests; only send() should`);
+        // Every call to send() comes right after waiting for a slot (within the two lines before it).
+        const lines = text.split("\n");
+        lines.forEach((line, i) => {
+          if (!/(?<!function )\bsend\(/.test(line)) return;
+          if (!lines.slice(Math.max(0, i - 2), i + 1).some((l) => /await waitForSlot\(/.test(l))) problems.push(`client.ts line ${i + 1} sends without waiting for a slot`);
+        });
+      }
+      if (!files.length) problems.push("connectors/aliexpress is missing");
       return problems.length ? problems.join("; ") : null;
     },
   },
@@ -393,6 +419,11 @@ const PLANTS = {
     const f = path.join(dir, "connectors", "cj", "client.ts");
     // A token call that skips the lane, the bug this check exists for.
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('const env = await laned<TokenData>(workspaceId, gapMs, "POST", "/authentication/getAccessToken"', 'const env = await raw<TokenData>("POST", "/authentication/getAccessToken"'));
+  },
+  "aliexpress-lane": (dir) => {
+    const f = path.join(dir, "connectors", "aliexpress", "client.ts");
+    // A token call that skips the lane.
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('  await waitForSlot(workspaceId, "aliexpress", GAP_MS);\n  const t = await send("/auth/token/create"', '  const t = await send("/auth/token/create"'));
   },
   "sealed-keys": (dir) => {
     const f = path.join(dir, "connectors", "cj", "client.ts");
