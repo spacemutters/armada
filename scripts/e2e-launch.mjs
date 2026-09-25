@@ -5,7 +5,7 @@
 // on them, and the ads made and switched off. Pressing again changes nothing. Screenshots in light,
 // dark and on a phone. Makes a throwaway workspace ("Launch check"); delete it afterwards.
 //
-// usage: node --env-file=.env.local scripts/e2e-launch.mjs https://armada-pi.vercel.app [--shop "idea"]
+// usage: node --env-file=.env.local scripts/e2e-launch.mjs https://armada-pi.vercel.app [--shop "idea"] [--watch]
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -106,9 +106,11 @@ try {
   await page.evaluate(() => document.querySelector("#launch")?.scrollIntoView());
   await shot("02-launch-working");
 
-  // ---- watch it: the page runs the passes itself
+  // ---- walk away: nobody watches the launch page, so only the helper's once-a-minute sweep carries
+  // it on (the read below never moves it). --watch keeps the page open instead.
+  if (!process.argv.includes("--watch")) await page.goto(`${base}/`, { waitUntil: "networkidle0" });
   let v = null;
-  const end = Date.now() + 14 * 60_000;
+  const end = Date.now() + 25 * 60_000;
   let last = "";
   while (Date.now() < end) {
     v = await page.evaluate(async (id) => (await fetch(`/api/shops/${id}/launch`, { cache: "no-store" })).json(), shopId).catch(() => null);
@@ -119,7 +121,7 @@ try {
     if (v && !v.steps.some((s) => s.state === "working") && v.status !== "working") break;
     await sleep(5000);
   }
-  expect(v?.status === "done", "the whole launch finishes by itself", brief(v));
+  expect(v?.status === "done", process.argv.includes("--watch") ? "the whole launch finishes by itself" : "the whole launch finishes by itself with nobody on its page", brief(v));
   expect(stepOf(v, "store")?.state === "done", "the shop's own store is done");
   expect(stepOf(v, "checkout")?.state === "waiting" && stepOf(v, "checkout").note === "Switches on when payments are connected (Plan and billing).", "checkout waits on payments, in plain words", stepOf(v, "checkout"));
   const eb = stepOf(v, "ebay");
