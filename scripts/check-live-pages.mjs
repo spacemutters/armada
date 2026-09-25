@@ -58,6 +58,10 @@ try {
   // Find products still searches the practice catalog when no supplier is connected.
   const found = await visit("/products?tab=find&q=lamp", "find-products", /practice catalog/);
   expect(/sells around/.test(found), "a practice search for lamp shows priced results");
+  // With no supplier connected there's nothing to choose: the builder says where products come from.
+  const builder = await visit("/builder/new", "builder-new", /Products from[\s\S]*practice catalog/);
+  expect(!(await page.$('select[name="source"]')), "no one-option supplier dropdown when only the practice catalog is available");
+  void builder;
   await visit("/billing", "billing", /Practice[\s\S]*Starter[\s\S]*Growth[\s\S]*Fleet/);
   const adminRes = await page.goto(`${base}/admin`, { waitUntil: "networkidle0" });
   expect(adminRes.status() === 404 || /Nothing here|could not be found/i.test(await text()), "Admin is closed to a non-admin");

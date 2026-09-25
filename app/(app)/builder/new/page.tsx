@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createShops } from "../actions";
 import { PendingButton } from "@/components/fx/pending-button";
 import { buttonClass, Card, Field, inputClass, PageHeader } from "@/components/ui";
@@ -69,15 +70,27 @@ export default async function NewShopPage({ searchParams }: PageProps<"/builder/
               </select>
             </Field>
           </div>
-          <Field
-            label="Products from"
-            hint={cj.connected ? "CJ gives real products, photos, costs and shipping times." : "Connect CJ in Settings to build shops from real supplier products."}
-          >
-            <select name="source" defaultValue={cj.connected ? "cj" : "practice"} className={inputClass}>
-              {cj.connected ? <option value="cj">CJ Dropshipping (real products)</option> : null}
-              <option value="practice">Practice catalog</option>
-            </select>
-          </Field>
+          {cj.connected ? (
+            <Field label="Products from" hint="CJ gives real products, photos, costs and shipping times.">
+              <select name="source" defaultValue="cj" className={inputClass}>
+                <option value="cj">CJ Dropshipping (real products)</option>
+                <option value="practice">Practice catalog</option>
+              </select>
+            </Field>
+          ) : (
+            // Only one place to take products from, so there's nothing to choose: say where they come from.
+            <div className="flex flex-col gap-1.5">
+              <input type="hidden" name="source" value="practice" />
+              <span className="text-[14px] font-medium">Products from</span>
+              <p className="rounded-xl bg-sunken px-4 py-3 text-[14px]">
+                The practice catalog: real sample products with made-up costs, so you can see a whole shop before spending anything.{" "}
+                <Link href="/connections" className="text-accent hover:underline">
+                  Connect CJ Dropshipping
+                </Link>{" "}
+                to build from real supplier products, costs and shipping times.
+              </p>
+            </div>
+          )}
           <Field label="Look and feel" hint="Optional, a few words.">
             <input name="look" maxLength={160} className={inputClass} placeholder="Calm, natural materials, lots of white space" />
           </Field>

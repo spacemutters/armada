@@ -1,8 +1,8 @@
 # Armada
 
 Run hundreds of Shopify stores and eBay accounts from one screen: an AI shop builder, a product
-catalog with 1–100 scores, listing across stores with preview and undo, one orders inbox, and a
-practice fleet that behaves like real stores without real money.
+catalog with 1–100 scores, listing across stores with preview and undo, one orders inbox, AI ads and
+social posts, and a practice fleet that behaves like real stores without real money.
 
 - Live: https://armada-pi.vercel.app (the bare project alias; the per-deployment URLs sit behind Vercel login)
 - Plan: https://claude.ai/code/artifact/663c5d19-8ce7-4979-818a-b1be82742e01 (plain-language plan plus a "For the build" tab)
@@ -46,6 +46,41 @@ practice fleet that behaves like real stores without real money.
   labelled everywhere. Checks: `ab-fair-count` and `ab-math` in preflight
   (`scripts/check-abtest-math.mjs` compares the math with a simulation and textbook figures).
 
+- **Connections** (`/connections`, `lib/connections/*`, one connector per folder in `connectors/`):
+  stores (Shopify, eBay, Facebook), suppliers (CJ, AliExpress) and ad accounts. Only files in
+  `connectors/` may call a platform (preflight `one-door`); keys are sealed (`sealed-keys`).
+- **One-click connections through Pipedream Connect** (`connectors/pipedream/`, `lib/connections/service.ts`):
+  a platform only shows its "Allow access?" page for an approved app. Pipedream holds approved apps
+  with Shopify and eBay, so when Armada has no app of its own there, Connect goes to Pipedream's page,
+  the seller approves on the platform's page, and `/api/connect/service/<platform>/done` finishes it.
+  Armada keeps only which account it is; every Shopify/eBay call for that store goes through
+  Pipedream's relay (Shopify as a relative path, since each store has its own address). Switched on by
+  the platform admin on Connections (Project ID, Client ID, Client secret; sealed in
+  `armada.connection_service`), or by `PIPEDREAM_*` settings. Testing mode is free for up to 10 users
+  who are signed in to pipedream.com; live mode is Pipedream's paid Connect plan. Not covered by any
+  service: Instagram posting, Facebook shops, Meta ads, TikTok posting, AliExpress. Tested against
+  `scripts/mock-pipedream.mjs` only (`e2e-service.mjs`, `e2e-service-admin.mjs`).
+- **AliExpress** (`connectors/aliexpress/`): the official Open Platform, signed requests, a speed lane
+  (preflight `aliexpress-lane`). Find products can search it; added items are checked for photos,
+  stock and a real shipping quote (`lib/catalog/aliexpress.ts`). Not yet a shop-builder source.
+  Switched on by `ALIEXPRESS_APP_KEY`/`ALIEXPRESS_APP_SECRET` from an approved Dropshipping app.
+- **Shop builder** (`lib/shops/pipeline.ts`): concept → products (the AI proposes twice the count) →
+  the owner chooses on cards → (CJ: shipping check) → pages, sets and "goes well with" pairs →
+  brand pictures. Prices always come from `lib/pricing.ts`, never the AI; "Premium brand" (`luxury`)
+  prices at about 7× landed cost in round numbers and gives 60-day returns the shop pays for. Sets
+  cost a little less than their items at the shop's own prices (`lib/shops/sets.ts`). The craft
+  guides in `lib/shops/craft.ts` ride along with the prompts.
+- **Brand pictures** (`lib/shops/images.ts`): made by the helper with ChatGPT's image maker (model
+  in `lib/ai/config.ts`; only `gpt-5.5` reaches it under the helper's lockdown), cut for desktop,
+  phone and link previews, served from `/api/img/<id>`. They never show a product the shop sells.
+- **Ads and social** (`lib/ads`, `lib/social`): AI-written ad sets and carousel posts (ChatGPT,
+  `social.` and `ads.` jobs), practice results and practice accounts; scheduled posts go out from the
+  helper's once-a-minute sweep. Each product page has "Make an ad with AI" (three carousel ads for it).
+- **Look**: the app's own tokens in `app/globals.css`, following the system light/dark setting.
+  Glass (Apple's Liquid Glass rules) only on what floats above content: the sidebar, the phone's
+  bars, sticky action bars and menus; solid when the system asks for less transparency or more
+  contrast (preflight `contrast`, `glass-layer`).
+
 ## Everyday commands
 
 ```
@@ -55,7 +90,15 @@ node --env-file=.env.local scripts/e2e.mjs https://armada-pi.vercel.app   # full
 node --env-file=.env.local scripts/e2e-ab.mjs https://armada-pi.vercel.app   # headline test end to end (builds a practice shop; delete "AB test fleet" after)
 node --env-file=.env.local scripts/make-invite.mjs https://armada-pi.vercel.app   # a first-owner setup link
 vercel deploy --prod --yes --scope spacemutters-projects                   # deploy (run preflight first)
+node --env-file=.env.local scripts/check-live-pages.mjs https://armada-pi.vercel.app   # the signed-in pages, live (delete "Pages check" after)
+node --env-file=.env.local scripts/e2e.mjs https://armada-pi.vercel.app --price luxury   # a premium brand shop, chooser included
+node scripts/shoot-glass.mjs <url>             # screenshots of the glass layer, light and dark, desktop and phone
 ```
+
+Deploy from the `projects/armada-verify` worktree so only committed work ships: commit (this repo
+has no git identity; pass `-c user.name=Davis -c user.email=davis@insight-underground.com`), then in
+the worktree `git checkout --detach <sha>`, `npm run build`, `node scripts/preflight.mjs`, deploy.
+Preflight's `suites` check runs every offline `scripts/check-*.mjs`.
 
 Testing CJ without a real key: `node scripts/mock-cj.mjs` runs a stand-in CJ (DummyJSON products,
 CJ's answer shapes, a per-account one-call-a-second limit, and switches for expired access and busy
@@ -78,7 +121,8 @@ the Claude app's container and survives the session. Its settings are in `helper
 
 ## Not built yet
 
-Real Shopify and eBay connections (they need Davis's partner and developer accounts), automatic CJ
-ordering from real sales (the calls exist in `connectors/cj/api.ts`; they need a real store's orders),
-ads, the plain-language command box, and the practice fleet's live clock. The CJ connection has been
-tested end to end against the stand-in only, until Davis adds his key.
+AliExpress as a shop-builder source (it's in Find products), automatic supplier ordering from real
+sales (the calls exist in `connectors/cj/api.ts`; they need a real store's orders), the plain-language
+command box, and the practice fleet's live clock. CJ, AliExpress and the Pipedream connections have
+been tested against stand-ins only, until Davis adds his keys; real Shopify/eBay/Meta connections of
+Armada's own need his developer accounts.
