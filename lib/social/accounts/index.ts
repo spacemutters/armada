@@ -1,10 +1,16 @@
 import "server-only";
 import { ComposioProblem, composioOn, postInstagramCarousel } from "@/connectors/composio/client";
 import { refreshTikTokToken, needsRefresh, describeTikTokError } from "@/connectors/social-accounts/tiktok";
+import { isViaService } from "@/connectors/pipedream/core";
+import { relayFetch } from "@/connectors/pipedream/social";
+import type { Fetch } from "@/connectors/social-accounts/types";
+import { serviceOn } from "@/lib/connections/service";
 import { appOrigin } from "@/lib/connections/types";
+import { getShop } from "@/lib/shops/queries";
 import { withWorkspace } from "@/lib/db";
 import type { PublishCarousel, PublishResult, SocialAccount, SocialPlatform } from "@/lib/social/types";
 import { metaReady, metaSettings, relaySecret, tiktokPicturesReady, tiktokReady, tiktokSettings } from "./config";
+import { shopLink } from "./connect";
 import { publishTo, type PublishTarget } from "./publish";
 import { relayPath } from "./relay";
 import {
@@ -33,7 +39,8 @@ export async function socialAccountsFor(workspaceId: string, shopId: string): Pr
     name: r.name,
     handle: r.handle,
     status: r.status,
-    // All three take multi-picture posts: Instagram carousels, Facebook multi-photo posts, TikTok photo posts.
+    // All four take multi-picture posts: Instagram carousels, Facebook multi-photo posts, TikTok photo
+    // posts, and Pinterest carousel pins (a single-picture pin on personal accounts).
     // TikTok can only download pictures once Armada's picture address is confirmed with TikTok.
     canPostCarousel: r.kind === "practice" || r.platform !== "tiktok" || tiktokPicturesReady(),
   }));
@@ -104,9 +111,23 @@ export const publishCarousel: PublishCarousel = async (workspaceId, accountId, p
     }
   }
   const target: PublishTarget = { platform: acc.platform, kind: acc.kind, status: acc.status, externalId: acc.externalId, access: acc.secret };
+  let send: Fetch = fetch;
 
   if (acc.kind === "real" && acc.status === "connected") {
-    if (acc.platform === "tiktok") {
+    if (acc.platform === "pinterest") {
+      // Through the connection service: the relay adds the person's Pinterest access.
+      if (!(await serviceOn())) return { ok: false, problem: "Pinterest posting is switched off in Armada right now." };
+      const via: unknown = acc.secret;
+      if (!isViaService(via)) return { ok: false, problem: "This Pinterest account isn't fully connected. Connect it again." };
+      const shop = await getShop(workspaceId, acc.shopId);
+      target.access = {
+        boardId: acc.meta.boardId,
+        business: acc.meta.business,
+        link: shop ? await shopLink(workspaceId, shop) : null,
+        shopName: shop?.blueprint.brand?.name || shop?.niche,
+      };
+      send = relayFetch(via);
+    } else if (acc.platform === "tiktok") {
       if (!tiktokReady()) return { ok: false, problem: "TikTok posting is switched off in Armada right now." };
       if (!tiktokPicturesReady()) return { ok: false, problem: "TikTok can't download Armada's pictures until the Armada owner confirms Armada's picture address with TikTok." };
       const fresh = await freshTikTokAccess(workspaceId, accountId);
@@ -122,7 +143,7 @@ export const publishCarousel: PublishCarousel = async (workspaceId, accountId, p
 
   const secret = acc.kind === "real" ? relaySecret() : null;
   const outcome = await publishTo(target, { caption: post.caption, slides }, {
-    fetch,
+    fetch: send,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     appSecret: metaReady() ? metaSettings().appSecret : undefined,
     recordPractice: (p) => recordPracticePost(workspaceId, accountId, p),

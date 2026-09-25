@@ -16,7 +16,7 @@ import type { AccountResult, SocialPostRow, SocialSlideRow } from "./types";
 // any later try, so a retry only goes to the accounts that didn't take it.
 
 
-const PLATFORM: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok" };
+const PLATFORM: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", pinterest: "Pinterest" };
 export const platformLabel = (p: string) => PLATFORM[p] ?? p;
 
 /**

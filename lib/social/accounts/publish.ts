@@ -1,4 +1,5 @@
 import { publishInstagramCarousel, publishPagePhotos } from "@/connectors/social-accounts/meta";
+import { publishPin } from "@/connectors/social-accounts/pinterest";
 import { publishTikTokPhotos } from "@/connectors/social-accounts/tiktok";
 import type { Fetch, PostOutcome, Sleep, SlideIn } from "@/connectors/social-accounts/types";
 import type { SocialPlatform } from "@/lib/social/types";
@@ -14,8 +15,8 @@ export interface PublishTarget {
   status: "connected" | "needs_attention" | "practice";
   /** Instagram account id, Facebook Page id, or TikTok open_id. */
   externalId: string | null;
-  /** Opened access: the Page's for Instagram and Facebook, the 24-hour access for TikTok. */
-  access: { pageToken?: string; accessToken?: string } | null;
+  /** Opened access: the Page's for Instagram and Facebook, the 24-hour access for TikTok. Pinterest: its board (the relay adds access). */
+  access: { pageToken?: string; accessToken?: string; boardId?: string; business?: boolean; link?: string | null; shopName?: string } | null;
 }
 
 export interface PublishDeps {
@@ -30,7 +31,7 @@ export interface PublishDeps {
   maxWaitMs?: number;
 }
 
-const NAME: Record<SocialPlatform, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok" };
+const NAME: Record<SocialPlatform, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", pinterest: "Pinterest" };
 
 export async function publishTo(t: PublishTarget, post: { caption: string; slides: SlideIn[] }, deps: PublishDeps): Promise<PostOutcome> {
   const slides = (post.slides ?? []).filter((s) => s && typeof s.imageUrl === "string" && /^https?:\/\//.test(s.imageUrl));
@@ -62,5 +63,16 @@ export async function publishTo(t: PublishTarget, post: { caption: string; slide
     case "tiktok":
       if (!t.access.accessToken) return { ok: false, reconnect: true, problem: "This TikTok account isn't fully connected. Connect it again." };
       return publishTikTokPhotos(deps.fetch, { token: t.access.accessToken, caption, photoUrls: slides.map((s) => deps.pictureUrl(s.imageUrl)) }, wait);
+    case "pinterest":
+      if (!t.access.boardId) return { ok: false, reconnect: true, problem: "This Pinterest account has no board for the shop yet. Press Connect again." };
+      // deps.fetch is the connection service's relay here: it adds the person's Pinterest access.
+      return publishPin(deps.fetch, {
+        boardId: t.access.boardId,
+        caption,
+        link: t.access.link ?? null,
+        slides: slides.map((s) => ({ imageUrl: deps.pictureUrl(s.imageUrl), alt: s.alt })),
+        business: Boolean(t.access.business),
+        fallbackTitle: t.access.shopName ?? "New in the shop",
+      });
   }
 }

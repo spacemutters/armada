@@ -13,7 +13,8 @@ import {
 import { describeTikTokError, exchangeTikTokCode, tiktokLoginUrl, tiktokProfileUrl, tiktokUser, TIKTOK_SCOPES } from "@/connectors/social-accounts/tiktok";
 import type { Session } from "@/lib/auth/session";
 import { ComposioProblem, composioOn, instagramLink, instagramUser, waitUntilActive } from "@/connectors/composio/client";
-import { pagesViaService } from "@/connectors/pipedream/social";
+import { pagesViaService, relayFetch } from "@/connectors/pipedream/social";
+import { boardForShop, describePinterestError, pinterestMe } from "@/connectors/social-accounts/pinterest";
 import { stateHash } from "@/lib/connections/state";
 import type { ViaService } from "@/connectors/pipedream/core";
 import { serviceOn, startViaService } from "@/lib/connections/service";
@@ -323,6 +324,57 @@ export async function metaFinishViaService(state: { workspaceId: string; memberI
     return backTo(shop.id, { choose: "facebook" });
   } catch (e) {
     return backTo(shop.id, { problem: "platform", p: "facebook", ...signedNote(describeMetaError(e, "facebook").problem ?? "") });
+  }
+}
+
+// ---------- Pinterest (through the connection service) ----------
+
+/** One press: the service's page, then Pinterest's own Authorize page, then back to Armada. */
+export async function pinterestStart(session: Session, shopId: string): Promise<string> {
+  const shop = await getShop(session.workspaceId, shopId);
+  if (!shop) return backTo(null, { problem: "shop" });
+  if (!canConnect(session)) return backTo(shop.id, { problem: "role" });
+  if (!(await serviceOn())) return backTo(shop.id, { problem: "off" });
+  try {
+    return await startViaService({ workspaceId: session.workspaceId, memberId: session.memberId, provider: "pinterest", purpose: "connect", returnTo: backTo(shop.id), detail: { shopId: shop.id } });
+  } catch {
+    return backTo(shop.id, { problem: "platform", p: "pinterest", ...signedNote("Couldn't reach Pinterest just now. Try again in a minute.") });
+  }
+}
+
+/**
+ * Finishes a Pinterest connected through the service: who the account is, and the board the shop's
+ * pins go to (one named for the shop, or one Armada makes). Returns where to send the person next.
+ */
+export async function pinterestFinishViaService(state: { workspaceId: string; memberId: string | null; shopId: string }, via: ViaService): Promise<string> {
+  const shop = await getShop(state.workspaceId, state.shopId);
+  if (!shop) return backTo(null, { problem: "shop" });
+  const pin = relayFetch(via);
+  const brand = shop.blueprint.brand?.name || shop.niche;
+  try {
+    const me = await pinterestMe(pin);
+    const { board } = await boardForShop(pin, brand, shop.blueprint.brand?.tagline ?? "");
+    const needBoard = `Make a board called ${brand} on Pinterest, then press Connect again.`;
+    await withWorkspace(state.workspaceId, (tx) =>
+      saveRealAccount(tx, state.workspaceId, {
+        shopId: shop.id,
+        platform: "pinterest",
+        name: me.name,
+        handle: me.username,
+        externalId: me.id,
+        secret: via,
+        status: board ? "connected" : "needs_attention",
+        meta: {
+          link: me.link,
+          business: me.business,
+          ...(board ? { boardId: board.id, boardName: board.name } : { lastProblem: needBoard, lastProblemAt: new Date().toISOString() }),
+        },
+        memberId: state.memberId,
+      }),
+    );
+    return board ? backTo(shop.id, { done: "pinterest" }) : backTo(shop.id, { problem: "platform", p: "pinterest", ...signedNote(needBoard) });
+  } catch (e) {
+    return backTo(shop.id, { problem: "platform", p: "pinterest", ...signedNote(describePinterestError(e).problem) });
   }
 }
 

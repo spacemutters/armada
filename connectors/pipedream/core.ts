@@ -34,6 +34,8 @@ export const PD_APPS = {
   printify: "printify",
   // A shop's Facebook Page (posting only; this app can't publish to Instagram).
   facebook_page: "facebook_pages",
+  // A shop's Pinterest: its board and pins.
+  pinterest: "pinterest",
 } as const;
 
 /** Platforms with a store or special finishing of their own; the rest are finished the same simple way. */

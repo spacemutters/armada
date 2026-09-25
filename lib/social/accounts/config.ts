@@ -36,7 +36,8 @@ export function tiktokSettings() {
 }
 
 export type ConnectRoute = "facebook_page" | "instagram" | "tiktok";
-export const ROUTE_FOR: Record<SocialPlatform, ConnectRoute> = { facebook: "facebook_page", instagram: "instagram", tiktok: "tiktok" };
+/** Platforms with a sign-in of Armada's own (Pinterest connects only through the connection service). */
+export const ROUTE_FOR: Record<Exclude<SocialPlatform, "pinterest">, ConnectRoute> = { facebook: "facebook_page", instagram: "instagram", tiktok: "tiktok" };
 
 export function callbackUrl(route: ConnectRoute): string {
   return `${appOrigin()}/api/connect/${route}/callback`;

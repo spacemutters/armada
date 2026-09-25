@@ -2,7 +2,7 @@
 // Armada makes for them (lib/social/posts, carousel posts). Accounts own the tokens; posts ask for a
 // publisher and never see a token.
 
-export type SocialPlatform = "instagram" | "facebook" | "tiktok";
+export type SocialPlatform = "instagram" | "facebook" | "tiktok" | "pinterest";
 
 export interface SocialAccount {
   id: string;

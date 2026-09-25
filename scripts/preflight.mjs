@@ -28,7 +28,7 @@ const rel = (root, p) => path.relative(root, p).replace(/\\/g, "/");
 const sourceFiles = (root) => walk(root).filter((p) => /\.(ts|tsx|mjs|js)$/.test(p) && !rel(root, p).startsWith("scripts/"));
 
 // ---------- the checks ----------
-const PLATFORM_HOSTS = /(myshopify\.com\/admin|api\.ebay\.com|api\.sandbox\.ebay\.com|developers\.cjdropshipping\.com\/api|api-sg\.aliexpress\.com|api\.stripe\.com|graph\.facebook\.com|googleads\.googleapis\.com|business-api\.tiktok\.com|open\.tiktokapis\.com|backend\.composio\.dev)/;
+const PLATFORM_HOSTS = /(myshopify\.com\/admin|api\.ebay\.com|api\.sandbox\.ebay\.com|developers\.cjdropshipping\.com\/api|api-sg\.aliexpress\.com|api\.stripe\.com|graph\.facebook\.com|googleads\.googleapis\.com|business-api\.tiktok\.com|open\.tiktokapis\.com|backend\.composio\.dev|api\.pinterest\.com)/;
 
 const checks = {
   "one-door": {

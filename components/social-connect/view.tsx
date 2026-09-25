@@ -53,7 +53,7 @@ export interface ViewProps {
   owner: OwnerInfo | null;
 }
 
-const TITLES: Record<SocialPlatform, string> = { instagram: "Instagram", facebook: "Facebook Page", tiktok: "TikTok" };
+const TITLES: Record<SocialPlatform, string> = { instagram: "Instagram", facebook: "Facebook Page", tiktok: "TikTok", pinterest: "Pinterest" };
 
 /** The page's one sentence about the limit, said once, at the top. */
 export const LIMIT_SENTENCE =
@@ -186,6 +186,8 @@ export function SocialConnectView(v: ViewProps) {
           kitOpen={false}
           kit={<KitPanel platform="tiktok" {...kitProps} />}
         />
+
+        <PlatformCard {...common("pinterest")} intro="Opens Pinterest's sign-in. Armada makes the shop a board and pins its posts there." />
 
         {v.owner ? <OwnerChecklist o={v.owner} /> : null}
       </div>

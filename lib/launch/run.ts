@@ -16,6 +16,7 @@ import { kitFor } from "@/lib/social/accounts/connect";
 import { usernameIdeas } from "@/lib/social/accounts/kit";
 import { createPracticeAccount } from "@/lib/social/accounts/store";
 import { latestWeekRun, PostProblem, postsForShop, scheduleAllSuggested, startWeek } from "@/lib/social/posts/queries";
+import { platformLabel } from "@/lib/social/posts/schedule";
 import { shopAccounts } from "@/lib/social/posts/targets";
 import { checkoutStep } from "./checkout";
 import {
@@ -439,7 +440,7 @@ async function postsStep(c: Ctx, prev: LaunchStep): Promise<Outcome> {
     st.scheduled = r.scheduled;
     st.past = r.past;
     st.doneAt = now();
-    const where = [...new Set(targets.map((a) => (a.platform === "facebook" ? "Facebook" : a.platform === "instagram" ? "Instagram" : "TikTok")))].join(" and ");
+    const where = [...new Set(targets.map((a) => platformLabel(a.platform)))].join(" and ");
     const practice = practiceShop ? " practice" : "";
     return {
       state: "done",

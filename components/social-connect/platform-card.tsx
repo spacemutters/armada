@@ -41,8 +41,9 @@ export interface CardProps {
   firstTimeAction?: ReactNode;
   /** Extra actions for a connected account (Facebook: put the kit on the Page). */
   connectedExtra?: ReactNode;
-  kit: ReactNode;
-  kitOpen: boolean;
+  /** The profile kit, for platforms that have one. */
+  kit?: ReactNode;
+  kitOpen?: boolean;
   isAdmin: boolean;
   makePractice: () => Promise<void>;
   remove: (accountId: string) => Promise<void>;
@@ -62,7 +63,7 @@ const at = (h: string | null) => (h ? `@${h.replace(/^@/, "")}` : null);
 export function PlatformCard(p: CardProps) {
   const status = statusOf(p);
   const verb = p.platform === "facebook" ? "Set up Facebook Page" : `Set up ${p.title}`;
-  const going = p.platform === "tiktok" ? "Opening TikTok…" : "Opening Facebook…";
+  const going = p.platform === "tiktok" ? "Opening TikTok…" : p.platform === "pinterest" ? "Opening Pinterest…" : "Opening Facebook…";
   const realUsable = p.ready && p.canConnect;
 
   let line: ReactNode;
@@ -126,7 +127,9 @@ export function PlatformCard(p: CardProps) {
     secondary = realUsable ? p.firstTimeAction : null;
   } else {
     line = p.isAdmin
-      ? `Switched off until Armada's ${p.platform === "tiktok" ? "TikTok" : "Meta"} app is set up (the steps are at the bottom of this page). A practice account works meanwhile.`
+      ? p.platform === "pinterest"
+        ? "Switched off until the connection service is on (Connections page). A practice account works meanwhile."
+        : `Switched off until Armada's ${p.platform === "tiktok" ? "TikTok" : "Meta"} app is set up (the steps are at the bottom of this page). A practice account works meanwhile.`
       : "Real accounts connect here soon. Until then, a practice account works the same way inside Armada.";
   }
 
@@ -222,9 +225,10 @@ export function PlatformCard(p: CardProps) {
         </div>
       ) : null}
 
+      {p.kit ? (
       <div className="mt-4 md:ml-15">
         <Expand
-          defaultOpen={p.kitOpen}
+          defaultOpen={p.kitOpen ?? false}
           summary={
             <span className="text-[14px]">
               <span className="font-medium">Profile kit</span>
@@ -236,6 +240,7 @@ export function PlatformCard(p: CardProps) {
           {p.kit}
         </Expand>
       </div>
+      ) : null}
     </Card>
   );
 }

@@ -27,7 +27,7 @@ import type { ShopRow } from "@/lib/shops/types";
 
 export const metadata = { title: "Social media" };
 
-const SHORT: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok" };
+const SHORT: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", pinterest: "Pinterest" };
 
 /** A shop can have social media once it's built: it has its brand and look, and its link works. */
 const READY = new Set(["ready", "publishing", "published"]);
@@ -39,12 +39,14 @@ function message(sp: Record<string, string | undefined>): Note | null {
   if (sp.done === "instagram") return { tone: "ok", text: "Instagram is connected. Posts Armada makes for this shop can go straight to it." };
   if (sp.done === "facebook") return { tone: "ok", text: "Your Facebook Page is connected, and Armada filled in what the Page was missing from the kit." };
   if (sp.done === "tiktok") return { tone: "ok", text: "TikTok is connected. Posts arrive in your TikTok inbox, ready to post with one tap." };
+  if (sp.done === "pinterest") return { tone: "ok", text: "Pinterest is connected. Posts go to the shop's board." };
   if (sp.practice) return { tone: "ok", text: `A practice ${SHORT[sp.practice] ?? ""} account is ready. Posts to it stay in Armada.` };
   if (sp.removed) return { tone: "ok", text: sp.kind === "practice" ? "The practice account is removed." : `${SHORT[sp.removed] ?? "The account"} is disconnected from this shop.` };
   if (sp.kit === "applied") return { tone: "ok", text: "The Page now has the kit's description, website, profile picture and cover." };
   if (sp.kit === "partial") return { tone: "problem", text: "Facebook took part of the kit. The Facebook card shows what it refused." };
   switch (sp.problem) {
     case "cancelled":
+    case "denied":
       return { tone: "problem", text: `${who}'s window closed before it finished, so nothing changed. Press the button again when you're ready.` };
     case "nopage":
       return { tone: "problem", text: "Facebook didn't share a Page with Armada. In Facebook's window, choose the shop's Page (or make one first), then press the button again." };
@@ -67,6 +69,9 @@ function message(sp: Record<string, string | undefined>): Note | null {
       return { tone: "problem", text: "That shop is still being built. Its social media can be set up as soon as it's ready." };
     case "notconnected":
       return { tone: "problem", text: "Connect the Page first." };
+    case "failed":
+    case "unreachable":
+      return { tone: "problem", text: `${who} didn't finish connecting. Try again in a minute.` };
     case "platform":
       // Only words Armada wrote (signed) are shown; anything else in the address is ignored.
       return { tone: "problem", text: readNote(sp.why, sp.ws) ?? `${who} didn't finish connecting. Try again in a minute.` };
@@ -119,6 +124,7 @@ export default async function SocialConnectPage({ searchParams }: { searchParams
     isPlatformAdmin(session.memberId),
     kitFor(session.workspaceId, shop),
   ]);
+  const service = await serviceOn();
   const practice = await practicePostsFor(
     session.workspaceId,
     rows.filter((r) => r.kind === "practice").map((r) => r.id),
@@ -136,7 +142,7 @@ export default async function SocialConnectPage({ searchParams }: { searchParams
       choice={choice}
       rows={rows}
       practice={practice}
-      ready={{ instagram: metaReady() || composioOn(), facebook: metaReady() || (await serviceOn()), tiktok: tiktokReady() }}
+      ready={{ instagram: metaReady() || composioOn(), facebook: metaReady() || service, tiktok: tiktokReady(), pinterest: service }}
       canConnect={canConnect(session)}
       canPractice={session.role !== "viewer"}
       practiceShop={shop.brief?.source === "practice"}

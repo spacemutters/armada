@@ -3,7 +3,7 @@ import type { SocialPlatform } from "@/lib/social/types";
 // Simple original marks for the three platforms, drawn in the text colour. Not the platforms' logos:
 // the name always sits beside the mark, so the mark only has to give each card its own shape.
 //   Instagram: a stack of pictures (a carousel). Facebook Page: a flag (a place of your own).
-//   TikTok: a tall screen with a play shape (short video).
+//   TikTok: a tall screen with a play shape (short video). Pinterest: a push pin (pinned to a board).
 
 const PATHS: Record<SocialPlatform, React.ReactNode> = {
   instagram: (
@@ -23,6 +23,12 @@ const PATHS: Record<SocialPlatform, React.ReactNode> = {
     <>
       <rect x="6.5" y="2.5" width="11" height="19" rx="3" />
       <path d="M10.5 9.5v5l4-2.5z" />
+    </>
+  ),
+  pinterest: (
+    <>
+      <path d="M9 3h6l-1 5.5 3 3H7l3-3z" />
+      <path d="M12 11.5V21" />
     </>
   ),
 };

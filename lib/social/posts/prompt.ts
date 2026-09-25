@@ -44,7 +44,7 @@ export function photoRefs(products: PromptProduct[], opts: { practice?: boolean 
   return refs;
 }
 
-const PLATFORM_NAMES: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok" };
+const PLATFORM_NAMES: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok", pinterest: "Pinterest" };
 
 export interface CarouselRequest {
   bp: Blueprint;

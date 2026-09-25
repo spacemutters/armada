@@ -3,6 +3,7 @@ import { open, seal } from "@/lib/crypto";
 import { withWorkspace, type Tx } from "@/lib/db";
 import type { SocialPlatform } from "@/lib/social/types";
 import type { PageSetupResult } from "@/connectors/social-accounts/meta";
+import { isViaService, type ViaService } from "@/connectors/pipedream/core";
 
 // Reading and writing armada.social_accounts. Access is sealed on the way in and only opened when
 // Armada is about to call the platform; nothing outside lib/social/accounts ever sees it.
@@ -24,6 +25,10 @@ export interface AccountMeta {
   viaService?: boolean;
   /** Instagram: connected through Composio's approved Instagram app. */
   viaComposio?: boolean;
+  /** Pinterest: the board the shop's pins go to, and whether the account can make carousel pins. */
+  boardId?: string;
+  boardName?: string;
+  business?: boolean;
   /** The last thing the platform refused, in plain words. */
   lastProblem?: string;
   lastProblemAt?: string;
@@ -56,6 +61,8 @@ export interface TikTokSecret {
   accessToken: string;
   refreshToken: string;
 }
+/** Pinterest through the connection service: which account it is there, never a key. */
+export type ServiceSecret = ViaService;
 /** Instagram through Composio: which connection it is there, never a key. */
 export interface ComposioSecret {
   composio: { connectedAccountId: string; userId: string };
@@ -70,7 +77,7 @@ export async function accountsForShop(workspaceId: string, shopId: string): Prom
     (tx) => tx<AccountRow[]>`
       select ${tx.unsafe(COLUMNS)} from armada.social_accounts
       where shop_id = ${shopId}
-      order by case platform when 'instagram' then 1 when 'facebook' then 2 else 3 end, kind`,
+      order by case platform when 'instagram' then 1 when 'facebook' then 2 when 'tiktok' then 3 else 4 end, kind`,
   );
 }
 
@@ -108,7 +115,7 @@ export interface RealAccountInput {
   name: string;
   handle: string | null;
   externalId: string;
-  secret: MetaPageSecret | TikTokSecret | ComposioSecret;
+  secret: MetaPageSecret | TikTokSecret | ComposioSecret | ServiceSecret;
   tokenExpiresAt?: Date | null;
   refreshExpiresAt?: Date | null;
   meta: AccountMeta;
@@ -285,4 +292,23 @@ export async function takePageChoices<S>(tx: Tx, choiceId: string, shopId: strin
 
 export async function dropPageChoices(workspaceId: string, shopId: string): Promise<void> {
   await withWorkspace(workspaceId, (tx) => tx`delete from armada.social_page_choices where shop_id = ${shopId}`);
+}
+
+/** The connection-service accounts this workspace's shops already use for a platform, so a new one can be told apart. */
+export async function serviceAccountIds(workspaceId: string, platform: SocialPlatform, exceptRow?: string): Promise<Set<string>> {
+  const rows = await withWorkspace(
+    workspaceId,
+    (tx) => tx<{ id: string; secret: Buffer | null }[]>`select id, secret from armada.social_accounts where platform = ${platform} and kind = 'real'`,
+  );
+  const ids = new Set<string>();
+  for (const r of rows) {
+    if (r.id === exceptRow) continue;
+    try {
+      const s = r.secret ? open<unknown>(r.secret) : null;
+      if (isViaService(s)) ids.add(s.accountId);
+    } catch {
+      // Sealed with an older key: can't be one of these.
+    }
+  }
+  return ids;
 }

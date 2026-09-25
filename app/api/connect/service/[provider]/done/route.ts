@@ -6,7 +6,8 @@ import { externalUserFor, isPdProvider, pickNewAccount, type ViaService } from "
 import { completeShopifyViaService, ShopifyProblem } from "@/connectors/shopify/client";
 import { getSession } from "@/lib/auth/session";
 import { completeViaService, knownServiceAccounts } from "@/lib/connections/service";
-import { metaFinishViaService } from "@/lib/social/accounts/connect";
+import { metaFinishViaService, pinterestFinishViaService } from "@/lib/social/accounts/connect";
+import { serviceAccountIds } from "@/lib/social/accounts/store";
 import { consumeState } from "@/lib/connections/state";
 import type { Provider } from "@/lib/connections/types";
 import { asSystem } from "@/lib/db";
@@ -27,14 +28,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   // The one-time state is kept under the service's platform name (a shop's Facebook Page included).
   const state = await consumeState(q.get("state"), provider as Provider);
-  const fallback = provider === "ebay" ? "/stores/new" : provider === "facebook_page" ? "/social/connect" : "/connections";
+  const fallback = provider === "ebay" ? "/stores/new" : provider === "facebook_page" || provider === "pinterest" ? "/social/connect" : "/connections";
   if (!state) return go(withProblem(`${fallback}${fallback === "/connections" ? `?provider=${provider}` : ""}`, "expired"));
   const back = safeReturnPath(state.detail.returnTo, fallback);
   const onConnections = back.startsWith("/connections");
   const problem = (code: string) => {
     // The Connections page and Open a new store word their problems differently.
     const mapped = onConnections ? code : provider === "ebay" ? ({ denied: "ebay_declined", unreachable: "ebay_busy" } as Record<string, string>)[code] ?? "ebay_failed" : code;
-    return go(withProblem(onConnections ? `${back}${back.includes("?") ? "&" : "?"}provider=${provider}` : back, mapped));
+    // The social page names the platform from ?p=.
+    const social = back.startsWith("/social/connect") ? `${back}${back.includes("?") ? "&" : "?"}p=${provider === "facebook_page" ? "facebook" : provider}` : back;
+    return go(withProblem(onConnections ? `${back}${back.includes("?") ? "&" : "?"}provider=${provider}` : social, mapped));
   };
   const log = (action: string, detail: Record<string, unknown>) =>
     asSystem(
@@ -52,7 +55,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   try {
     const externalUserId = externalUserFor(state.workspaceId);
-    const account = pickNewAccount(await serviceAccounts(externalUserId, provider), provider, await knownServiceAccounts(state.workspaceId, provider));
+    // A shop's Pinterest is kept with its social accounts; the rest are credentials.
+    const known = provider === "pinterest" ? await serviceAccountIds(state.workspaceId, "pinterest") : await knownServiceAccounts(state.workspaceId, provider);
+    const account = pickNewAccount(await serviceAccounts(externalUserId, provider), provider, known);
     if (!account) {
       await log(`${provider}.connect_failed`, { reason: "no new account at the service" });
       return problem("failed");
@@ -61,6 +66,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (provider === "facebook_page") {
       // A shop's Facebook Page: back to that shop's social media page.
       return go(await metaFinishViaService({ workspaceId: state.workspaceId, memberId: state.memberId, shopId: String(state.detail.shopId ?? "") }, via));
+    }
+    if (provider === "pinterest") {
+      return go(await pinterestFinishViaService({ workspaceId: state.workspaceId, memberId: state.memberId, shopId: String(state.detail.shopId ?? "") }, via));
     }
     if (provider !== "shopify" && provider !== "ebay") {
       // Suppliers and ad accounts: keep which account it is (never a key) and name it.

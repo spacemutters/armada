@@ -1,7 +1,28 @@
 import "server-only";
 import { GRAPH_VERSION, type MetaPage } from "@/connectors/social-accounts/meta";
+import type { Fetch } from "@/connectors/social-accounts/types";
 import { relay } from "./client";
 import type { ViaService } from "./core";
+
+/**
+ * A fetch that goes through the service's relay as this person, so a platform connector written
+ * for fetch (Pinterest) runs unchanged. The service adds the person's access on the way.
+ */
+export function relayFetch(via: ViaService): Fetch {
+  return async (input, init) => {
+    const headers: Record<string, string> = {};
+    new Headers(init?.headers).forEach((v, k) => {
+      if (k !== "content-type") headers[k] = v;
+    });
+    const r = await relay(via.externalUserId, via.accountId, String(input), {
+      method: init?.method ?? "GET",
+      headers,
+      body: typeof init?.body === "string" ? init.body : undefined,
+    });
+    const empty = r.status === 204 || r.status === 205 || r.status === 304;
+    return new Response(empty ? null : r.text, { status: r.status, headers: { "content-type": r.headers.get("content-type") ?? "application/json" } });
+  };
+}
 
 // Facebook Pages connected through the connection service (its own approved Meta app, which may
 // post to Pages but not publish to Instagram). The person's Pages are read through the service's

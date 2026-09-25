@@ -4,13 +4,15 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { applyKitToPage, backTo, canConnect, choosePage } from "@/lib/social/accounts/connect";
 import { usernameIdeas } from "@/lib/social/accounts/kit";
-import { createPracticeAccount, dropPageChoices, loadAccountWithSecret, removeAccount, type ComposioSecret } from "@/lib/social/accounts/store";
+import { createPracticeAccount, dropPageChoices, loadAccountWithSecret, removeAccount, serviceAccountIds, type ComposioSecret } from "@/lib/social/accounts/store";
 import { forgetConnection } from "@/connectors/composio/client";
+import { forgetServiceAccount } from "@/connectors/pipedream/client";
+import { isViaService } from "@/connectors/pipedream/core";
 import { withWorkspace } from "@/lib/db";
 import { getShop } from "@/lib/shops/queries";
 import type { SocialPlatform } from "@/lib/social/types";
 
-const PLATFORMS: SocialPlatform[] = ["instagram", "facebook", "tiktok"];
+const PLATFORMS: SocialPlatform[] = ["instagram", "facebook", "tiktok", "pinterest"];
 
 /** A practice account for one platform: posts to it stay in Armada, so the whole flow works before the platforms approve Armada. */
 export async function makePracticeAccount(shopId: string, platform: SocialPlatform) {
@@ -20,7 +22,7 @@ export async function makePracticeAccount(shopId: string, platform: SocialPlatfo
   const shop = await getShop(session.workspaceId, shopId);
   if (!shop) redirect(backTo(null, { problem: "shop" }));
   const name = shop.blueprint.brand?.name || shop.niche;
-  const handle = usernameIdeas(name, platform === "facebook" ? "instagram" : platform)[0] ?? "practice.shop";
+  const handle = usernameIdeas(name, platform === "tiktok" ? "tiktok" : "instagram")[0] ?? "practice.shop";
   await createPracticeAccount(session.workspaceId, session.memberId, { id: shop.id, name, handle }, platform);
   redirect(backTo(shop.id, { practice: platform }));
 }
@@ -32,6 +34,12 @@ export async function removeSocialAccount(shopId: string, accountId: string) {
   if (canConnect(session)) {
     const acc = await withWorkspace(session.workspaceId, (tx) => loadAccountWithSecret<Partial<ComposioSecret>>(tx, accountId)).catch(() => null);
     if (acc?.secret?.composio) await forgetConnection(acc.secret.composio.connectedAccountId);
+    // Connected through the connection service (Pinterest): its account there is let go too,
+    // unless another of the workspace's shops still posts through it.
+    const via: unknown = acc?.secret;
+    if (acc && isViaService(via) && !(await serviceAccountIds(session.workspaceId, acc.platform, acc.id)).has(via.accountId)) {
+      await forgetServiceAccount(via.accountId).catch(() => false);
+    }
   }
   const row = await removeAccount(session.workspaceId, session.memberId, accountId, canConnect(session));
   redirect(backTo(shopId, row ? { removed: row.platform, kind: row.kind } : canConnect(session) ? {} : { problem: "role" }));
