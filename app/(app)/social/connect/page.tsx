@@ -18,7 +18,6 @@ import {
   TIKTOK_ENV,
   TIKTOK_VERIFY_ENV,
   tiktokPicturePrefix,
-  tiktokPicturesReady,
   tiktokReady,
 } from "@/lib/social/accounts/config";
 import { accountCountsByShop, accountsForShop, pendingPageChoices, practicePostsFor } from "@/lib/social/accounts/store";
@@ -82,7 +81,8 @@ function ownerInfo(): OwnerInfo {
   return {
     meta: { settings: settings(META_ENV), callbacks: [callbackUrl("facebook_page"), callbackUrl("instagram")], permissions: META_PERMISSIONS },
     tiktok: { settings: settings([...TIKTOK_ENV, ...TIKTOK_VERIFY_ENV]), callback: callbackUrl("tiktok"), prefix: tiktokPicturePrefix(), scopes: TIKTOK_SCOPES },
-    open: !metaReady() || !tiktokPicturesReady(),
+    // Closed until opened: the page's own presses come first.
+    open: false,
   };
 }
 

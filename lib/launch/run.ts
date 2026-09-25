@@ -5,6 +5,7 @@ import { advanceEbaySetup, ebaySetupView } from "@/connectors/ebay/setup";
 import { AdsProblem, launchPaused, retryWriting, startAds } from "@/lib/ads/sets";
 import { helperStatus } from "@/lib/ai/jobs";
 import { applyLiveEbayItems, planListing, savePreview } from "@/lib/changes/engine";
+import { serviceOn } from "@/lib/connections/service";
 import { appOrigin } from "@/lib/connections/types";
 import { asSystem, withWorkspace } from "@/lib/db";
 import { MARKUP } from "@/lib/pricing";
@@ -397,6 +398,38 @@ async function socialStep(c: Ctx, platform: "facebook" | "instagram"): Promise<O
   };
 }
 
+// ---- Pinterest (one press through the connection service; Pinterest's page also signs people up)
+
+async function pinterestStep(c: Ctx): Promise<Outcome> {
+  const accounts = (await socialAccountsFor(c.workspaceId, c.shop.id)).filter((a) => a.platform === "pinterest");
+  const real = accounts.find((a) => a.status === "connected");
+  if (real) return { state: "done", note: `Connected as ${real.handle ? `@${real.handle}` : real.name}. Posts are pinned to the shop's board.` };
+  const connectHref = `/api/connect/pinterest/start?shop=${c.shop.id}`;
+  if (accounts.some((a) => a.status === "needs_attention")) {
+    return {
+      state: "needs-you",
+      ask: "Connect Pinterest again",
+      note: "Pinterest needs one more press.",
+      actions: [{ label: "Connect it again", href: `/social/connect?shop=${c.shop.id}#pinterest` , primary: true }],
+    };
+  }
+  if (c.shop.brief?.source === "practice") {
+    if (!accounts.some((a) => a.status === "practice")) {
+      if (!c.memberId) return { state: "failed", note: "The person who pressed Launch isn't on this team any more. Press Try again." };
+      const name = brandOf(c.shop);
+      await createPracticeAccount(c.workspaceId, c.memberId, { id: c.shop.id, name, handle: usernameIdeas(name, "instagram")[0] ?? "practice.shop" }, "pinterest");
+    }
+    return { state: "done", note: "A practice Pinterest account is ready. Its posts stay in Armada.", actions: [{ label: "See it", href: `/social/connect?shop=${c.shop.id}#pinterest` }] };
+  }
+  if (!(await serviceOn())) return { state: "skipped", note: "Pinterest isn't switched on in Armada yet." };
+  return {
+    state: "needs-you",
+    ask: "Connect Pinterest",
+    note: "One press, then approve on Pinterest. Armada makes the shop a board.",
+    actions: [{ label: "Connect Pinterest", href: connectHref, external: true, primary: true }],
+  };
+}
+
 // ---- the first week of posts
 
 async function postsStep(c: Ctx, prev: LaunchStep): Promise<Outcome> {
@@ -516,6 +549,7 @@ const RUNNERS: Record<LaunchStepKey, (c: Ctx, prev: LaunchStep) => Promise<Outco
   ebay: ebayStep,
   facebook: (c) => socialStep(c, "facebook"),
   instagram: (c) => socialStep(c, "instagram"),
+  pinterest: pinterestStep,
   posts: postsStep,
   ads: adsStep,
 };

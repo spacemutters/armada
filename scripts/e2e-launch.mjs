@@ -147,7 +147,7 @@ try {
              (select count(*)::int from armada.audit_log where detail ->> 'shopId' = ${shopId} and action like 'launch.%') as audit_rows`,
   );
   console.log("  database:", JSON.stringify(db));
-  expect(db.practice_accounts === 2 && db.real_accounts === 0, "two practice accounts, no real ones", db);
+  expect(db.practice_accounts === 3 && db.real_accounts === 0, "three practice accounts (Facebook, Instagram, Pinterest), no real ones", db);
   expect(db.week_runs === 1 && db.scheduled >= 1, "one week of posts, scheduled", db);
   expect(db.ad_sets === 1 && db.ad_status === "paused", "one ad set, switched off", db);
   expect(db.live_listings === 0, "nothing listed on any real marketplace", db);

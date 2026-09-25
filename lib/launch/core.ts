@@ -7,7 +7,7 @@
 // the one thing it isn't allowed to do (making an account on Facebook, Instagram or eBay) into one
 // press with everything filled in and ready to copy.
 
-export type LaunchStepKey = "store" | "checkout" | "ebay" | "facebook" | "instagram" | "posts" | "ads";
+export type LaunchStepKey = "store" | "checkout" | "ebay" | "facebook" | "instagram" | "pinterest" | "posts" | "ads";
 
 /**
  * - working: Armada (or the AI helper) is doing it now
@@ -71,6 +71,7 @@ export const LAUNCH_STEPS: { key: LaunchStepKey; label: string }[] = [
   { key: "ebay", label: "eBay listings" },
   { key: "facebook", label: "Facebook Page" },
   { key: "instagram", label: "Instagram" },
+  { key: "pinterest", label: "Pinterest" },
   { key: "posts", label: "The first week of posts" },
   { key: "ads", label: "Ads, ready and switched off" },
 ];

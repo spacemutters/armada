@@ -210,7 +210,7 @@ check(ask("DELETE", `/sell/inventory/v1/inventory_item/${sku}`).status === 204 &
 // ---------------------------------------------------------------- the launch's steps
 
 const fresh = C.freshLaunchSteps();
-check(eq(fresh.map((s) => s.key), ["store", "checkout", "ebay", "facebook", "instagram", "posts", "ads"]), "the launch's steps, in order");
+check(eq(fresh.map((s) => s.key), ["store", "checkout", "ebay", "facebook", "instagram", "pinterest", "posts", "ads"]), "the launch's steps, in order");
 check(fresh.every((s) => s.state === "waiting"), "a new launch starts with every step waiting");
 const set = (over) => fresh.map((s) => ({ ...s, state: over[s.key] ?? "done" }));
 check(C.launchStatus(set({ checkout: "waiting" })) === "done", "checkout waiting on payments never holds the launch up");
@@ -221,7 +221,7 @@ check(C.launchStatus(set({ ads: "failed" })) === "needs_you", "a stopped step ne
 check(C.launchStatus(set({ posts: "waiting" })) === "waiting", "only waiting left: waiting");
 const retried = C.retrySteps(set({ ads: "failed", ebay: "needs-you" }));
 check(retried.find((s) => s.key === "ads").state === "waiting" && retried.find((s) => s.key === "ebay").state === "needs-you" && retried.find((s) => s.key === "store").state === "done", "pressing again retries stopped steps and leaves the rest where they are");
-check(eq(C.normalizeSteps([{ key: "ebay", label: "Old", state: "done" }]).map((s) => [s.key, s.state]), [["store", "waiting"], ["checkout", "waiting"], ["ebay", "done"], ["facebook", "waiting"], ["instagram", "waiting"], ["posts", "waiting"], ["ads", "waiting"]]), "saved steps are brought up to the current list");
+check(eq(C.normalizeSteps([{ key: "ebay", label: "Old", state: "done" }]).map((s) => [s.key, s.state]), [["store", "waiting"], ["checkout", "waiting"], ["ebay", "done"], ["facebook", "waiting"], ["instagram", "waiting"], ["pinterest", "waiting"], ["posts", "waiting"], ["ads", "waiting"]]), "saved steps are brought up to the current list");
 const need = C.launchNeed("Fallow", set({ facebook: "needs-you" }).map((s) => (s.key === "facebook" ? { ...s, ask: "Make its Facebook Page", note: "No app is allowed…" } : s)));
 check(need?.title === "Fallow: Make its Facebook Page", "Home's Needs you names the shop and the one press", need);
 check(C.launchNeed("Fallow", set({ checkout: "waiting" })) === null, "a finished launch needs nothing");
