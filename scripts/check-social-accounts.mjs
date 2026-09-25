@@ -34,7 +34,8 @@ const FAKES = LIVE ? { "server-only": fake("") } : {
     export const unscoped = () => { throw new Error("unscoped in test"); };`),
   "@/lib/connections/state": fake(`
     export const createState = (...a) => globalThis.__state.create(...a);
-    export const consumeState = (...a) => globalThis.__state.consume(...a);`),
+    export const consumeState = (...a) => globalThis.__state.consume(...a);
+    export const stateHash = (s) => s;`),
   "@/lib/shops/queries": fake(`
     export const getShop = async (ws, id) => globalThis.__shops.find((s) => s.workspaceId === ws && s.id === id) ?? null;
     export const listShops = async (ws) => globalThis.__shops.filter((s) => s.workspaceId === ws);`),
