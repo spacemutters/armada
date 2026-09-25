@@ -120,16 +120,10 @@ try {
     }
   }
   if (opened) {
-    await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /Disconnect Mock Store|Yes, disconnect|^Disconnect$/.test((b.textContent ?? "").trim()) && b.closest("dialog,[role=dialog],[data-confirm]")), { timeout: 5000 }).catch(() => {});
-    const confirm = await page.$$("dialog button, [role=dialog] button, [data-confirm] button");
-    for (const b of confirm) {
-      const t = await b.evaluate((el) => (el.textContent ?? "").trim());
-      if (/disconnect/i.test(t)) {
-        await b.click();
-        break;
-      }
-    }
-    await new Promise((r) => setTimeout(r, 4000));
+    // The second press is inside the short "Disconnect <name>?" note that the first press opens.
+    await page.waitForSelector('form[aria-label^="Disconnect"] button[type="submit"]', { timeout: 5000 });
+    await page.click('form[aria-label^="Disconnect"] button[type="submit"]');
+    await new Promise((r) => setTimeout(r, 5000));
   }
   const deletesAfter = (await stats()).deletes;
   await shot("06-disconnected");

@@ -7,7 +7,11 @@ import { PasswordInput } from "@/components/password-input";
 import { Button, buttonClass, Card, cx, inputClass, StatusPill } from "@/components/ui";
 import type { FormResult } from "./cj-connect";
 
-type Action = (prev: FormResult | null, formData: FormData) => Promise<FormResult>;
+/** A refused paste comes back with what was typed (never the secret), so it's still there to fix. */
+export interface ServiceResult extends FormResult {
+  typed?: { projectId: string; clientId: string; environment: "development" | "production" };
+}
+type Action = (prev: ServiceResult | null, formData: FormData) => Promise<ServiceResult>;
 
 export interface ServiceView {
   on: boolean;
@@ -23,9 +27,11 @@ export interface ServiceView {
  */
 export function ServiceSetup({ view, save, clear }: { view: ServiceView; save: Action; clear: Action }) {
   const id = useId();
-  const [result, saveAction] = useActionState<FormResult | null, FormData>(save, null);
-  const [cleared, clearAction] = useActionState<FormResult | null, FormData>(clear, null);
+  const [result, saveAction] = useActionState<ServiceResult | null, FormData>(save, null);
+  const [cleared, clearAction] = useActionState<ServiceResult | null, FormData>(clear, null);
   const message = result ?? cleared;
+  const typed = result && !result.ok ? result.typed : undefined;
+  const environment = typed?.environment ?? view.environment;
 
   return (
     <Card className="mb-8 p-5 sm:p-6">
@@ -76,11 +82,11 @@ export function ServiceSetup({ view, save, clear }: { view: ServiceView; save: A
           <div className="grid gap-3 md:grid-cols-3">
             <label className="flex flex-col gap-1 text-[13px]" htmlFor={`${id}-project`}>
               Project ID
-              <input id={`${id}-project`} name="projectId" defaultValue={view.projectId ?? ""} placeholder="proj_…" autoComplete="off" spellCheck={false} required className={cx(inputClass, "min-h-11 md:min-h-10")} />
+              <input id={`${id}-project`} name="projectId" defaultValue={typed?.projectId ?? view.projectId ?? ""} placeholder="proj_…" autoComplete="off" spellCheck={false} required className={cx(inputClass, "min-h-11 md:min-h-10")} />
             </label>
             <label className="flex flex-col gap-1 text-[13px]" htmlFor={`${id}-client`}>
               Client ID
-              <input id={`${id}-client`} name="clientId" autoComplete="off" spellCheck={false} required className={cx(inputClass, "min-h-11 md:min-h-10")} />
+              <input id={`${id}-client`} name="clientId" defaultValue={typed?.clientId ?? ""} autoComplete="off" spellCheck={false} required className={cx(inputClass, "min-h-11 md:min-h-10")} />
             </label>
             <label className="flex flex-col gap-1 text-[13px]" htmlFor={`${id}-secret`}>
               Client secret
@@ -90,11 +96,11 @@ export function ServiceSetup({ view, save, clear }: { view: ServiceView; save: A
           <fieldset className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[14px]">
             <legend className="sr-only">Who can connect</legend>
             <label className="flex min-h-11 items-center gap-2 md:min-h-8">
-              <input type="radio" name="environment" value="development" defaultChecked={view.environment !== "production"} className="size-4 accent-[var(--accent)]" />
+              <input type="radio" name="environment" value="development" defaultChecked={environment !== "production"} className="size-4 accent-[var(--accent)]" />
               Testing: just me, free (sign in to Pipedream in this browser first)
             </label>
             <label className="flex min-h-11 items-center gap-2 md:min-h-8">
-              <input type="radio" name="environment" value="production" defaultChecked={view.environment === "production"} className="size-4 accent-[var(--accent)]" />
+              <input type="radio" name="environment" value="production" defaultChecked={environment === "production"} className="size-4 accent-[var(--accent)]" />
               Live: everyone (Pipedream&apos;s paid plan)
             </label>
           </fieldset>

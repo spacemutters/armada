@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import type { FormResult } from "@/components/connect/cj-connect";
+import type { ServiceResult } from "@/components/connect/service-setup";
 import { connectCj, describeCjError, disconnectCj } from "@/connectors/cj/client";
 import { clearPdSettings, savePdSettings } from "@/connectors/pipedream/client";
 import { disconnectShopify } from "@/connectors/shopify/client";
@@ -103,10 +104,11 @@ async function audit(workspaceId: string, memberId: string, action: string, deta
 }
 
 /** Platform admins only: switches on one-click connections by saving the connection service's settings. */
-export async function saveServiceHere(_prev: FormResult | null, formData: FormData): Promise<FormResult> {
+export async function saveServiceHere(_prev: ServiceResult | null, formData: FormData): Promise<ServiceResult> {
   const session = await requireSession();
   if (!(await isPlatformAdmin(session.memberId))) return { ok: false, message: "Only Armada's admin can change this." };
   const environment = formData.get("environment") === "production" ? "production" : "development";
+  const typed = { projectId: String(formData.get("projectId") ?? "").slice(0, 80), clientId: String(formData.get("clientId") ?? "").slice(0, 200), environment } as const;
   const problem = await savePdSettings(
     {
       clientId: String(formData.get("clientId") ?? ""),
@@ -116,7 +118,7 @@ export async function saveServiceHere(_prev: FormResult | null, formData: FormDa
     },
     session.memberId,
   );
-  if (problem) return { ok: false, message: problem };
+  if (problem) return { ok: false, message: problem, typed };
   await withWorkspace(
     session.workspaceId,
     (tx) => tx`
@@ -127,7 +129,7 @@ export async function saveServiceHere(_prev: FormResult | null, formData: FormDa
   return { ok: true, message: "Switched on. Shopify and eBay now connect in one press." };
 }
 
-export async function clearServiceHere(): Promise<FormResult> {
+export async function clearServiceHere(): Promise<ServiceResult> {
   const session = await requireSession();
   if (!(await isPlatformAdmin(session.memberId))) return { ok: false, message: "Only Armada's admin can change this." };
   await clearPdSettings();
