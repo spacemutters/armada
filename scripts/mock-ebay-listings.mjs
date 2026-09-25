@@ -51,7 +51,7 @@ const CATEGORIES = [
     categoryId: "20698",
     categoryName: "Other Kitchen Tools & Gadgets",
     ancestors: ["Kitchen Tools & Gadgets", "Kitchen, Dining & Bar", "Home & Garden"],
-    aspects: [brand, { localizedAspectName: "Type", aspectConstraint: { aspectRequired: true, aspectMode: "SELECTION_ONLY", itemToAspectCardinality: "SINGLE", aspectUsage: "RECOMMENDED" }, aspectValues: values("Kitchen Scale", "Kitchen Timer") }],
+    aspects: [brand, { localizedAspectName: "Type", aspectConstraint: { aspectRequired: true, aspectMode: "SELECTION_ONLY", itemToAspectCardinality: "SINGLE", aspectUsage: "RECOMMENDED" }, aspectValues: values("Kitchen Scale", "Kitchen Timer", "Spatula", "Whisk") }],
   },
 ];
 

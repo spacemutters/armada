@@ -11,9 +11,9 @@ import type { LaunchKit } from "@/lib/launch/core";
 
 function Row({ label, value, hint, action, picture }: { label: string; value?: string; hint?: string; action: ReactNode; picture?: ReactNode }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+    <li className="flex items-center gap-3 py-2.5">
       {picture}
-      <div className="min-w-0 flex-1 basis-48">
+      <div className="min-w-0 flex-1">
         <div className="text-[13px] text-muted">{label}</div>
         {value ? <div className="text-[14px] break-words whitespace-pre-line">{value}</div> : null}
         {hint ? <div className="tabular text-[12px] text-muted">{hint}</div> : null}

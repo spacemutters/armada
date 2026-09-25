@@ -231,7 +231,7 @@ async function ebayStep(c: Ctx, prev: LaunchStep): Promise<Outcome> {
     return {
       state: "needs-you",
       ask: "Connect eBay",
-      note: `Connect your eBay account and Armada lists ${real.length === 1 ? "the product" : `the ${real.length} products`} there. eBay's own page asks you to sign in, or to make an account.`,
+      note: "Connect your eBay account and Armada lists the shop's supplier products there. eBay's own page asks you to sign in, or to make an account.",
       actions: [{ label: "Connect eBay", href: "/api/connect/ebay/start?purpose=connect", external: true, primary: true }],
     };
   }

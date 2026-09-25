@@ -86,6 +86,17 @@ social posts, and a practice fleet that behaves like real stores without real mo
   practice shops only (checked in code, by a database trigger and by preflight `honest-pictures`).
   Ads go to the platform with the same composed pictures (`/api/ads/picture/...`). About 45 s per
   picture, two at a time; an ad set usually needs 4 to 8, a post at most 2 plus any practice items.
+- **Launch** (`lib/launch`, the card on a ready shop's page, `armada.shop_launches`): one press sets up
+  everything around a shop. Real supplier products (CJ, AliExpress; never practice items) are listed on
+  the connected eBay account for real (`connectors/ebay/listing.ts`: eBay's suggested category, required
+  item details filled from the product's own facts only, item, offer with the account's policies and
+  ship-from place, publish), as one approved change in the changes engine (one-listing rule, selling
+  limit, undo ends each listing on eBay). Facebook Page and Instagram: practice accounts for practice
+  shops; otherwise one press to the platform's own sign-up page with the profile kit beside it, then
+  Connect it. Then the first week of posts, scheduled, and the ads, created switched off. The progress
+  view runs the passes itself; the helper's sweep carries on unwatched launches. Checks:
+  `check-launch.mjs`, preflight `real-items-only`, `no-auto-signup`. Tested against the eBay stand-in
+  (`e2e-launch-ebay.mjs`); `scripts/live-ebay-listing.mjs` is the live check (reads only unless `--publish`).
 - **Look**: the app's own tokens in `app/globals.css`, following the system light/dark setting.
   Glass (Apple's Liquid Glass rules) only on what floats above content: the sidebar, the phone's
   bars, sticky action bars and menus; solid when the system asks for less transparency or more
@@ -103,6 +114,8 @@ vercel deploy --prod --yes --scope spacemutters-projects                   # dep
 node --env-file=.env.local scripts/check-live-pages.mjs https://armada-pi.vercel.app   # the signed-in pages, live (delete "Pages check" after)
 node --env-file=.env.local scripts/e2e.mjs https://armada-pi.vercel.app --price luxury   # a premium brand shop, chooser included
 node scripts/shoot-glass.mjs <url>             # screenshots of the glass layer, light and dark, desktop and phone
+node --env-file=.env.local scripts/e2e-launch.mjs https://armada-pi.vercel.app   # Launch on a practice shop, live (delete "Launch check" after)
+node --env-file=.env.local scripts/live-ebay-listing.mjs --store <id>   # a real eBay account: can it sell, and what a listing would say (--publish lists one)
 ```
 
 Deploy from the `projects/armada-verify` worktree so only committed work ships: commit (this repo

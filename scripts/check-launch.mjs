@@ -117,6 +117,8 @@ check(!("Color" in r.aspects), "a single-value detail with two different matches
 check(!("Material" in r.aspects), "no materials from the supplier: no Material");
 r = L.aspectsFromFacts([A("Color", false, "FREE_TEXT", "MULTI", ["Black", "White", "Blue"])], facts({ title: "Black and White Mug", variant: null }));
 check(eq(r.aspects.Color, ["Black", "White"]), "a multi-value detail takes every value the title names", r.aspects);
+r = L.aspectsFromFacts([A("Set Includes", false, "FREE_TEXT", "MULTI", ["Mug", "Coffee Mug", "Saucer"])], facts({ title: "Ceramic coffee mug, 12 oz" }));
+check(eq(r.aspects["Set Includes"], ["Coffee Mug"]), "a multi-value detail drops a value another one already says (Mug inside Coffee Mug)", r.aspects);
 r = L.aspectsFromFacts([A("Type", true, "SELECTION_ONLY", "SINGLE", ["Mug"])], facts({ title: "Set of 4 Mugs" }));
 check(eq(r.aspects.Type, ["Mug"]), "a plain plural in the title counts (Mugs names Mug)", r.aspects);
 r = L.aspectsFromFacts([A("Type", true, "SELECTION_ONLY", "SINGLE", ["Mug"])], facts({ title: "Smuggler's Tin", category: "", description: "", bullets: [] }));

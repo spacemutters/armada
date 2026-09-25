@@ -253,7 +253,11 @@ export function aspectsFromFacts(meta: AspectMeta[], f: ListingFacts): { aspects
       const usable = listed.filter((v) => !EMPTY_VALUES.test(v));
       const inTitle = usable.filter((v) => says(title, v));
       const anywhere = usable.filter((v) => says(title, v) || says(rest, v));
-      if (multi) values = (inTitle.length ? inTitle : anywhere).slice(0, LIMITS.aspectValuesPerName);
+      if (multi) {
+        // "Mug" says nothing more once "Coffee Mug" is there.
+        const found = inTitle.length ? inTitle : anywhere;
+        values = found.filter((v) => !found.some((o) => o !== v && o.length > v.length && says(o.toLowerCase(), v))).slice(0, LIMITS.aspectValuesPerName);
+      }
       else {
         const pick = inTitle.length ? (inTitle.length === 1 ? inTitle[0] : mostSpecific(inTitle)) : anywhere.length === 1 ? anywhere[0] : anywhere.length ? mostSpecific(anywhere) : null;
         values = pick ? [pick] : [];
