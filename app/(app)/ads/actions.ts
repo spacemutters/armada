@@ -25,7 +25,11 @@ import { requireSession } from "@/lib/auth/session";
 // on, changing the budget of ads that exist, connecting an ad account) is for owners and managers.
 
 const uuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
-const shopPage = (shopId: string, extra = "") => `/ads/${shopId}${extra}`;
+/** A shop's ads page, with its data reloaded: an action that returns to the page it came from must not show the old page. */
+const shopPage = (shopId: string, extra = "") => {
+  revalidatePath(`/ads/${shopId}`);
+  return `/ads/${shopId}${extra}`;
+};
 const withProblem = (path: string, message: string) => `${path}${path.includes("?") ? "&" : "?"}problem=${encodeURIComponent(message)}`;
 
 async function editor() {
