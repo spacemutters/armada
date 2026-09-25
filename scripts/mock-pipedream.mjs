@@ -9,6 +9,8 @@
 // GET /__stats shows what arrived; /__deny-next makes the next connect page fail like a decline.
 import http from "node:http";
 import crypto from "node:crypto";
+// eBay's listing calls (Taxonomy and Inventory), for Launch's real eBay listings.
+import { ebayListingAnswer, ebayListingStats, rememberPolicy } from "./mock-ebay-listings.mjs";
 
 const PORT = Number(process.argv[2] || 4610);
 const CLIENT = { id: "mock-client", secret: "mock-secret" };
@@ -77,7 +79,9 @@ function ebayAnswer(method, url) {
   if (method === "POST" && /_policy$/.test(p)) {
     const kind = p.split("/").pop();
     const idKey = { fulfillment_policy: "fulfillmentPolicyId", payment_policy: "paymentPolicyId", return_policy: "returnPolicyId" }[kind] ?? "id";
-    return { [idKey]: `${kind}-${crypto.randomUUID().slice(0, 6)}`, name: "Armada" };
+    const id = `${kind}-${crypto.randomUUID().slice(0, 6)}`;
+    rememberPolicy(id);
+    return { [idKey]: id, name: "Armada" };
   }
   return null;
 }
@@ -86,7 +90,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const body = await readBody(req);
 
-  if (url.pathname === "/__stats") return send(res, 200, { ...stats, accounts });
+  if (url.pathname === "/__stats") return send(res, 200, { ...stats, accounts, ebayListings: ebayListingStats() });
   if (url.pathname === "/__deny-next") {
     denyNext = true;
     return send(res, 200, { ok: true });
@@ -195,6 +199,8 @@ const server = http.createServer(async (req, res) => {
       stats.badTargets.push(target);
       return send(res, 403, { error: "domain not allowed" });
     }
+    const listed = ebayListingAnswer(req.method, t, req.headers, body);
+    if (listed) return listed.status === 204 ? send(res, 204) : send(res, listed.status, listed.body);
     const answer = ebayAnswer(req.method, t);
     if (answer === null) return send(res, 204);
     return send(res, 200, answer);

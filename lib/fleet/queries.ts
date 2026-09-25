@@ -1,5 +1,6 @@
 import "server-only";
 import { withWorkspace } from "@/lib/db";
+import { launchNeed, type LaunchStep } from "@/lib/launch/core";
 import type { Store } from "@/lib/types";
 
 // Profit here is always: sales, minus supplier cost, minus platform fees, minus refunds.
@@ -118,6 +119,15 @@ export async function homeSummary(workspaceId: string) {
         body: `The AI found ${s.offered}. Pick the ${pick} you want and the build carries on.`,
         href: `/builder/${s.id}`,
       });
+    }
+    // Launches waiting on one press (making the Facebook Page, connecting eBay, trying a step again).
+    const launches = await tx<{ shopId: string; name: string; steps: LaunchStep[] }[]>`
+      select l.shop_id, coalesce(s.blueprint -> 'brand' ->> 'name', s.niche) as name, l.steps
+      from armada.shop_launches l join armada.shops s on s.id = l.shop_id
+      where l.status = 'needs_you' order by l.updated_at desc limit 3`;
+    for (const l of launches) {
+      const need = launchNeed(l.name, l.steps ?? []);
+      if (need) needs.push({ kind: "shop", title: need.title, body: need.body, href: `/builder/${l.shopId}#launch` });
     }
 
     const [counts] = await tx<{ stores: number; practice: number; shops: number; building: number }[]>`

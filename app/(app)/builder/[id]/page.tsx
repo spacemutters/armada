@@ -2,6 +2,9 @@ import { ExternalLink } from "lucide-react";
 import { createElement } from "react";
 import { notFound } from "next/navigation";
 import { buildAgain, chooseProducts, letAiPick, putInPracticeStore } from "./actions";
+import { launchShop } from "./launch-actions";
+import { LaunchSection } from "@/components/launch/launch-section";
+import { launchable, launchView } from "@/lib/launch/run";
 import { iconFor, ProductArt } from "@/components/product-art";
 import { PendingButton } from "@/components/fx/pending-button";
 import { ProductChooser, type ChooserCard } from "@/components/product-chooser";
@@ -114,10 +117,13 @@ export default async function ShopPage({ params, searchParams }: PageProps<"/bui
     );
   }
 
-  const [products, tests] = await Promise.all([
+  const [products, tests, launch] = await Promise.all([
     getShopProducts(session.workspaceId, (bp.products ?? []).map((p) => p.productId)),
     testsForShop(session.workspaceId, shop.id),
+    launchView(session.workspaceId, shop.id),
   ]);
+  const canLaunch = session.role !== "viewer" && launchable(shop);
+  const launchAction = launchShop.bind(null, shop.id);
   const openTest = tests.find((t) => ["writing", "choosing", "running"].includes(t.status));
   const byId = new Map(products.map((p) => [p.id, p]));
   const palette = bp.theme!.palette;
@@ -139,14 +145,23 @@ export default async function ShopPage({ params, searchParams }: PageProps<"/bui
               Open the shop <ExternalLink aria-hidden className="size-4" />
             </ButtonLink>
             {shop.status === "published" && shop.storeId ? (
-              <ButtonLink href={`/stores/${shop.storeId}`}>Go to its store</ButtonLink>
+              <ButtonLink href={`/stores/${shop.storeId}`} variant="secondary">
+                Go to its store
+              </ButtonLink>
             ) : (
               <form action={putInPracticeStore.bind(null, shop.id)}>
-                <PendingButton pendingLabel="Setting up the store…" className={buttonClass("primary")}>
+                <PendingButton pendingLabel="Setting up the store…" variant="secondary" className={buttonClass("secondary")}>
                   Put it in a practice store
                 </PendingButton>
               </form>
             )}
+            {!launch && canLaunch ? (
+              <form action={launchAction}>
+                <PendingButton pendingLabel="Launching…" className={buttonClass("primary")}>
+                  Launch
+                </PendingButton>
+              </form>
+            ) : null}
           </>
         }
       />
@@ -159,6 +174,15 @@ export default async function ShopPage({ params, searchParams }: PageProps<"/bui
           {(bp.collections ?? []).length} collections · built from “{shop.niche}”
         </span>
       </div>
+
+      <LaunchSection
+        brand={bp.brand?.name ?? shop.niche}
+        practice={shop.brief?.source === "practice"}
+        view={launch}
+        launch={launchAction}
+        canLaunch={canLaunch}
+        problem={typeof problem === "string" ? problem.slice(0, 300) : null}
+      />
 
       <Card className="mb-6 flex flex-wrap items-center gap-4 p-5">
         <div className="min-w-0 flex-1">

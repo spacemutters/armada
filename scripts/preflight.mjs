@@ -10,6 +10,8 @@ import path from "node:path";
 
 const ROOT = process.cwd();
 const args = new Set(process.argv.slice(2));
+// --only=<check> runs just that check (and, with --selftest, just its planted breaks).
+const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7) ?? null;
 
 // ---------- file helpers ----------
 function walk(dir, out = []) {
@@ -37,11 +39,15 @@ const checks = {
     },
   },
   "ads-start-off": {
-    what: "No code creates an ad, ad set or campaign that is already switched on",
+    what: "No code creates an ad, ad set or campaign that is already switched on, and Launch never switches ads on",
     run(root) {
       const re = /(status|effective_status|configured_status)\s*[:=]\s*["'`](ACTIVE|ENABLED|RUNNING|ENABLE)["'`]/;
-      const bad = sourceFiles(root).filter((p) => re.test(fs.readFileSync(p, "utf8")));
-      return bad.length ? `an ad created switched on in: ${bad.map((p) => rel(root, p)).join(", ")}` : null;
+      const bad = sourceFiles(root).filter((p) => re.test(fs.readFileSync(p, "utf8"))).map((p) => `an ad created switched on in ${rel(root, p)}`);
+      // Launch prepares ads switched off; only a person's press in Ads switches them on.
+      for (const p of walk(path.join(root, "lib", "launch")).filter((x) => /\.(ts|tsx)$/.test(x))) {
+        if (/\bswitchOn\b/.test(stripComments(fs.readFileSync(p, "utf8")))) bad.push(`${rel(root, p)} switches ads on`);
+      }
+      return bad.length ? bad.join("; ") : null;
     },
   },
   "before-values": {
@@ -75,7 +81,54 @@ const checks = {
       const t = fs.existsSync(f) ? fs.readFileSync(f, "utf8") : "";
       if (!/ebaySeller\.has\(key\)/.test(t) || !/eBay allows one/.test(t)) return "the listing planner no longer enforces one eBay listing per seller";
       if (!/eBay doesn't allow dropshipping from retail sites/.test(t)) return "the listing planner no longer refuses retail sources for eBay";
+      // Launch lists on eBay only through the planner, so the same rules hold there.
+      const launch = walk(path.join(root, "lib", "launch")).filter((x) => /\.ts$/.test(x));
+      const text = launch.map((f) => stripComments(fs.readFileSync(f, "utf8"))).join("\n");
+      if (launch.length && !/\bplanListing\(/.test(text)) return "Launch no longer lists on eBay through the listing planner (planListing)";
+      if (/insert into armada\.listings/.test(text)) return "Launch writes listings itself instead of through the changes engine";
       return null;
+    },
+  },
+  "real-items-only": {
+    what: "Only real supplier products (CJ, AliExpress) are ever published to a real marketplace; practice items never are",
+    run(root) {
+      const problems = [];
+      const lf = path.join(root, "connectors", "ebay", "listing.ts");
+      const fn = (fs.existsSync(lf) ? stripComments(fs.readFileSync(lf, "utf8")) : "").match(/export async function publishEbayListing[\s\S]*?\n}/)?.[0] ?? "";
+      if (!fn) problems.push("connectors/ebay/listing.ts no longer has publishEbayListing");
+      else {
+        const guard = fn.search(/const blocked = listingBlocker\(facts\);\s*if \(blocked\) throw/);
+        const firstCall = fn.search(/\b(call|ebayCall|planEbayListing)(<[^>]*>)?\(/);
+        if (guard < 0 || (firstCall >= 0 && firstCall < guard)) problems.push("publishEbayListing no longer refuses non-supplier products before it calls eBay");
+      }
+      const core = path.join(root, "connectors", "ebay", "listing-core.ts");
+      const c = fs.existsSync(core) ? stripComments(fs.readFileSync(core, "utf8")) : "";
+      if (!/REAL_SOURCES = \["cj", "aliexpress"\] as const/.test(c)) problems.push("the list of real suppliers changed (only CJ and AliExpress products are real)");
+      if (!/if \(!isRealSupplierProduct\(f\)\) return PRACTICE_OFF_EBAY;/.test(c)) problems.push("listingBlocker no longer refuses practice items first");
+      if (!/return !f\.imagined && /.test(c)) problems.push("isRealSupplierProduct no longer refuses imagined items");
+      const engine = path.join(root, "lib", "changes", "engine.ts");
+      const e = fs.existsSync(engine) ? stripComments(fs.readFileSync(engine, "utf8")) : "";
+      const live = e.match(/export async function applyLiveEbayItems[\s\S]*?\n}/)?.[0] ?? "";
+      if (!live || live.search(/listingBlocker\(facts\)/) < 0 || live.search(/listingBlocker\(facts\)/) > live.search(/publishEbayListing\(/)) problems.push("the changes engine no longer checks each product before publishing it to eBay");
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
+  "no-auto-signup": {
+    what: "Armada never makes platform accounts itself: sign-up pages are only links a person presses, and the app has no browser robot or captcha solver",
+    run(root) {
+      const bad = [];
+      const SIGNUP = /(instagram\.com\/accounts\/emailsignup|facebook\.com\/pages\/creat|SIGN_UP_PAGES|META_CREATE_PAGE_URL|signup\.ebay\.com|reg\.ebay\.com)/;
+      for (const p of sourceFiles(root)) {
+        const text = stripComments(fs.readFileSync(p, "utf8"));
+        for (const m of text.matchAll(/\b(fetch|ebayCall|ebayRequest|ebayRequestVia|relay|send)\s*(<[^>]*>)?\s*\(/g)) {
+          const args = balanced(text, m.index + m[0].length - 1)?.inner ?? "";
+          if (SIGNUP.test(args)) bad.push(`${rel(root, p)} sends a request to a sign-up page`);
+        }
+        if (/from\s+["'](puppeteer|puppeteer-core|playwright|playwright-core|selenium-webdriver|2captcha|@2captcha\/[\w-]+|anticaptcha|capsolver)["']/.test(text)) bad.push(`${rel(root, p)} drives a browser or solves captchas`);
+      }
+      const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+      for (const d of Object.keys(pkg.dependencies ?? {})) if (/^(puppeteer|playwright|selenium|2captcha|@2captcha|anticaptcha|capsolver)/.test(d)) bad.push(`the app ships ${d}`);
+      return bad.length ? [...new Set(bad)].join("; ") : null;
     },
   },
   "locked-keys": {
@@ -161,16 +214,20 @@ const checks = {
   "plain-words": {
     what: "Main screens use plain words; technical terms live under Settings > Advanced",
     run(root) {
-      const MAIN = ["app/(app)/page.tsx", "app/(app)/stores", "app/(app)/builder", "app/(app)/products", "app/(app)/orders", "app/(app)/ads", "app/(app)/changes", "components/fleet-map.tsx", "components/shop-progress.tsx", "components/app-nav.tsx", "app/welcome", "app/setup", "components/passkey-setup.tsx", "components/passkey-sign-in.tsx", "app/(app)/social", "components/social-connect", "components/social"];
+      const MAIN = ["app/(app)/page.tsx", "app/(app)/stores", "app/(app)/builder", "app/(app)/products", "app/(app)/orders", "app/(app)/ads", "app/(app)/changes", "components/fleet-map.tsx", "components/shop-progress.tsx", "components/app-nav.tsx", "app/welcome", "app/setup", "components/passkey-setup.tsx", "components/passkey-sign-in.tsx", "app/(app)/social", "components/social-connect", "components/social", "components/launch", "lib/launch", "connectors/ebay/listing-core.ts"];
+      // Code files whose sentences reach the screen as they are (Launch's step notes, eBay's refusals).
+      const SPOKEN = ["lib/launch", "connectors/ebay/listing-core.ts"];
       const banned = /\b(API|APIs|OAuth|webhooks?|GraphQL|JSON|endpoints?|schema|SQL|env var|tokens?|CLI|RLS|row-level|UUID|payload|backend)\b/;
       const bad = [];
       for (const m of MAIN) {
         const target = path.join(root, m);
         const files = fs.existsSync(target) && fs.statSync(target).isDirectory() ? walk(target) : [target];
-        for (const f of files.filter((x) => fs.existsSync(x) && x.endsWith(".tsx"))) {
+        for (const f of files.filter((x) => fs.existsSync(x) && (x.endsWith(".tsx") || (SPOKEN.includes(m) && x.endsWith(".ts"))))) {
           const text = fs.readFileSync(f, "utf8");
           // Only words a person reads: JSX text and quoted sentences with spaces.
-          const visible = [...text.matchAll(/(?<![=\-])>([^<>{}]+)(?=[<{])/g)].map((x) => x[1]).concat([...text.matchAll(/"([^"\n]*\s[^"\n]*)"/g)].map((x) => x[1]).filter((s) => !/^[\w-]+(\s[\w-]+)*$/.test(s) || /[A-Z][a-z]/.test(s)));
+          const visible = f.endsWith(".ts")
+            ? spokenLiterals(text)
+            : [...text.matchAll(/(?<![=\-])>([^<>{}]+)(?=[<{])/g)].map((x) => x[1]).concat([...text.matchAll(/"([^"\n]*\s[^"\n]*)"/g)].map((x) => x[1]).filter((s) => !/^[\w-]+(\s[\w-]+)*$/.test(s) || /[A-Z][a-z]/.test(s)));
           for (const v of visible) {
             if (/className|text-\[|px-|py-|min-h|grid-cols|rounded|flex|border|bg-|hover:|sf-/.test(v)) continue;
             const hit = v.match(banned);
@@ -363,7 +420,7 @@ const checks = {
     run(root) {
       // Suites that need the live site, a real account or the database run by hand, not here.
       const LIVE_ONLY = new Set(["check-cj-live.mjs", "check-live-pages.mjs", "check-ebay-deletion.mjs", "check-abtest-math.mjs"]);
-      const REQUIRED = ["check-ads.mjs", "check-aliexpress.mjs", "check-engines.mjs", "check-password.mjs", "check-shopify.mjs", "check-store-openers.mjs", "check-stripe.mjs"];
+      const REQUIRED = ["check-ads.mjs", "check-aliexpress.mjs", "check-engines.mjs", "check-launch.mjs", "check-password.mjs", "check-shopify.mjs", "check-store-openers.mjs", "check-stripe.mjs"];
       const dir = path.join(root, "scripts");
       const present = fs.readdirSync(dir).filter((f) => /^check-.*\.mjs$/.test(f));
       const problems = REQUIRED.filter((f) => !present.includes(f)).map((f) => `scripts/${f} is missing`);
@@ -400,6 +457,19 @@ const checks = {
     },
   },
 };
+
+// The sentences in a code file, read literal by literal in order (so quotes never pair up wrongly):
+// double- and single-quoted strings and untagged template literals with a space in them. Tagged
+// templates (database queries) and comments are left out.
+function spokenLiterals(text) {
+  const out = [];
+  for (const m of stripComments(text).matchAll(/"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|([\w$]?)`((?:[^`\\]|\\.)*)`/g)) {
+    if (m[3]) continue;
+    const s = (m[1] ?? m[2] ?? m[4] ?? "").replace(/\$\{[^}]*\}/g, " ");
+    if (/\s/.test(s.trim()) && /[A-Za-z]{2}/.test(s)) out.push(s);
+  }
+  return out;
+}
 
 // ---------- source-reading helpers for the headline-test checks ----------
 // Drops comments so words inside them don't count. Leaves "https://" in strings alone.
@@ -479,6 +549,7 @@ const liveChecks = {
 async function runAll(root, { live = false, quiet = false } = {}) {
   let failed = 0;
   for (const [name, c] of Object.entries(checks)) {
+    if (only && name !== only) continue;
     const problem = c.run(root);
     if (problem) failed++;
     if (!quiet) console.log(`${problem ? "FAIL" : "ok  "} ${name.padEnd(18)} ${problem ?? c.what}`);
@@ -513,6 +584,38 @@ const PLANTS = {
   "ebay-one-listing": (dir) => {
     const f = path.join(dir, "lib", "changes", "engine.ts");
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("ebaySeller.has(key)", "false"));
+  },
+  "ebay-one-listing/launch": (dir) => {
+    // Launch plans its eBay listings some other way, skipping the one-listing rule.
+    const f = path.join(dir, "lib", "launch", "run.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("await planListing(tx,", "await planDirect(tx,"));
+  },
+  "ads-start-off/launch": (dir) =>
+    fs.writeFileSync(path.join(dir, "lib", "launch", "planted.ts"), `import { switchOn } from "@/lib/ads/sets";\nexport const go = (w: string, m: string, s: string) => switchOn(w, m, s);\n`),
+  "real-items-only": (dir) => {
+    // The connector stops checking what it's given before calling eBay.
+    const f = path.join(dir, "connectors", "ebay", "listing.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('  const blocked = listingBlocker(facts);\n  if (blocked) throw new ListingProblem("item", blocked);\n', ""));
+  },
+  "real-items-only/practice": (dir) => {
+    const f = path.join(dir, "connectors", "ebay", "listing-core.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("if (!isRealSupplierProduct(f)) return PRACTICE_OFF_EBAY;", 'if (f.source === "none") return PRACTICE_OFF_EBAY;'));
+  },
+  "real-items-only/engine": (dir) => {
+    const f = path.join(dir, "lib", "changes", "engine.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('const blocked = facts ? listingBlocker(facts) : "This product isn\'t in Armada any more";', 'const blocked = facts ? null : "This product isn\'t in Armada any more";'));
+  },
+  "no-auto-signup": (dir) =>
+    fs.writeFileSync(path.join(dir, "lib", "planted.ts"), `import { SIGN_UP_PAGES } from "@/lib/launch/core";\nexport const signUp = () => fetch(SIGN_UP_PAGES.instagram, { method: "POST", body: "email=x" });\n`),
+  "no-auto-signup/robot": (dir) => fs.writeFileSync(path.join(dir, "lib", "planted.ts"), `import puppeteer from "puppeteer-core";\nexport const robot = puppeteer;\n`),
+  "suites/launch": (dir) => {
+    // eBay's selling limit counted at double: check-launch.mjs must notice.
+    const f = path.join(dir, "connectors", "ebay", "listing-core.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("(limit.quantity && q > limit.quantity)", "(limit.quantity && q > limit.quantity * 2)"));
+  },
+  "plain-words/launch": (dir) => {
+    const f = path.join(dir, "lib", "launch", "run.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('"The AI is writing the ads."', '"The AI is writing the ads through the API."'));
   },
   "locked-keys": (dir) => fs.writeFileSync(path.join(dir, "lib", "planted.ts"), `export const k = "shpat_0123456789abcdef0123456789abcdef";\n`),
   "cj-lane": (dir) => {
@@ -612,6 +715,7 @@ function copyTree(src, dst) {
 if (args.has("--selftest")) {
   let missed = 0;
   for (const [name, plant] of Object.entries(PLANTS)) {
+    if (only && name.split("/")[0] !== only) continue;
     const check = checks[name.split("/")[0]];
     // Inside the project, so the copy's test suites find the project's installed packages.
     const dir = fs.mkdtempSync(path.join(ROOT, ".selftest-"));

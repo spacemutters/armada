@@ -13,6 +13,9 @@ import { timeAgo } from "@/lib/text";
 
 export const metadata = { title: "Change" };
 
+// Approving new listings on a real eBay account publishes them after the page is sent back.
+export const maxDuration = 300;
+
 interface Item {
   id: string;
   storeName: string | null;

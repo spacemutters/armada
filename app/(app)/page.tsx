@@ -53,6 +53,26 @@ function SocialMedia({ shops }: { shops: ShopRow[] }) {
   );
 }
 
+/** The things only the person can do, each one press away. */
+function NeedsList({ needs }: { needs: { title: string; body: string; href: string }[] }) {
+  return (
+    <ul className="flex flex-col divide-y divide-line">
+      {needs.map((n, i) => (
+        <li key={i}>
+          <Link href={n.href} className="group flex items-start gap-3 py-3">
+            <span aria-hidden className="mt-1.5 size-2 shrink-0 rotate-45 bg-attention" />
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium group-hover:underline">{n.title}</span>
+              <span className="block text-[13px] text-muted">{n.body}</span>
+            </span>
+            <ArrowRight aria-hidden className="mt-1 size-4 shrink-0 text-muted" />
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export const metadata = { title: "Home" };
 
 export default async function HomePage() {
@@ -101,6 +121,11 @@ export default async function HomePage() {
             </form>
           </Card>
         </div>
+        {needs.length ? (
+          <Section title="Needs you" className="mt-4">
+            <NeedsList needs={needs} />
+          </Section>
+        ) : null}
         <SocialMedia shops={shops} />
       </>
     );
@@ -149,20 +174,7 @@ export default async function HomePage() {
 
         <Section title={needs.length ? "Needs you" : "All clear"}>
           {needs.length ? (
-            <ul className="flex flex-col divide-y divide-line">
-              {needs.map((n, i) => (
-                <li key={i}>
-                  <Link href={n.href} className="group flex items-start gap-3 py-3">
-                    <span aria-hidden className="mt-1.5 size-2 shrink-0 rotate-45 bg-attention" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-medium group-hover:underline">{n.title}</span>
-                      <span className="block text-[13px] text-muted">{n.body}</span>
-                    </span>
-                    <ArrowRight aria-hidden className="mt-1 size-4 shrink-0 text-muted" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <NeedsList needs={needs} />
           ) : (
             <p className="text-muted">Nothing needs you. Every store is connected, stocked and shipping on time.</p>
           )}
