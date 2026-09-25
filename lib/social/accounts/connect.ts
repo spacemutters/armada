@@ -12,6 +12,9 @@ import {
 } from "@/connectors/social-accounts/meta";
 import { describeTikTokError, exchangeTikTokCode, tiktokLoginUrl, tiktokProfileUrl, tiktokUser, TIKTOK_SCOPES } from "@/connectors/social-accounts/tiktok";
 import type { Session } from "@/lib/auth/session";
+import { pagesViaService } from "@/connectors/pipedream/social";
+import type { ViaService } from "@/connectors/pipedream/core";
+import { serviceOn, startViaService } from "@/lib/connections/service";
 import { consumeState, createState } from "@/lib/connections/state";
 import { appOrigin, type Provider } from "@/lib/connections/types";
 import { withWorkspace } from "@/lib/db";
@@ -78,8 +81,14 @@ type ChoiceSecret = { userToken: string; pages: { id: string; name: string; user
 
 const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
-/** Saves the shop's Facebook Page (and the Instagram account linked to it), then fills the Page in from the kit. */
+/**
+ * Saves the shop's Facebook Page (and the Instagram account linked to it), then fills the Page in from
+ * the kit. A Page connected through the connection service has no user access of Armada's (userToken
+ * ""): that app may post to the Page but not publish to Instagram or change the Page's details, so
+ * those two steps are skipped for it.
+ */
 async function connectPage(session: { workspaceId: string; memberId: string | null }, shop: ShopRow, page: ChoiceSecret["pages"][number], userToken: string): Promise<void> {
+  const ownApp = Boolean(userToken);
   const ws = session.workspaceId;
   const fbId = await withWorkspace(ws, async (tx) => {
     const id = await saveRealAccount(tx, ws, {
@@ -89,10 +98,10 @@ async function connectPage(session: { workspaceId: string; memberId: string | nu
       handle: page.username,
       externalId: page.id,
       secret: { pageToken: page.token, userToken },
-      meta: { pageId: page.id, pageName: page.name, link: page.link, instagramLinked: Boolean(page.instagram) },
+      meta: { pageId: page.id, pageName: page.name, link: page.link, instagramLinked: Boolean(page.instagram), ...(ownApp ? {} : { viaService: true }) },
       memberId: session.memberId,
     });
-    if (page.instagram) {
+    if (page.instagram && ownApp) {
       await saveRealAccount(tx, ws, {
         shopId: shop.id,
         platform: "instagram",
@@ -106,7 +115,7 @@ async function connectPage(session: { workspaceId: string; memberId: string | nu
     }
     return id;
   });
-  await fillPage(ws, shop, fbId, page.id, page.token, false);
+  if (ownApp) await fillPage(ws, shop, fbId, page.id, page.token, false);
 }
 
 /** Fills the Page's description, website, picture and cover from the kit. Only what's empty, unless `overwrite`. */
@@ -132,7 +141,13 @@ export async function metaStart(session: Session, route: "facebook_page" | "inst
   const shop = await getShop(session.workspaceId, shopId);
   if (!shop) return backTo(null, { problem: "shop" });
   if (!canConnect(session)) return backTo(shop.id, { problem: "role" });
-  if (!metaReady()) return backTo(shop.id, { problem: "off" });
+  if (!metaReady()) {
+    // No Meta app of Armada's own: a Page connects through the connection service's approved app.
+    if (route === "facebook_page" && (await serviceOn())) {
+      return startViaService({ workspaceId: session.workspaceId, memberId: session.memberId, provider: "facebook_page", purpose: "connect", returnTo: backTo(shop.id), detail: { shopId: shop.id } });
+    }
+    return backTo(shop.id, { problem: "off" });
+  }
 
   if (route === "instagram") {
     const found = await instagramFromConnectedPage(session, shop);
@@ -225,6 +240,34 @@ export async function metaFinish(route: "facebook_page" | "instagram", url: URL,
     return backTo(shop.id, { choose: wanted });
   } catch (e) {
     return backTo(shop.id, { problem: "platform", p: wanted, ...signedNote(describeMetaError(e, wanted).problem ?? "") });
+  }
+}
+
+/** Finishes a Facebook Page connected through the connection service. Returns where to send the person next. */
+export async function metaFinishViaService(state: { workspaceId: string; memberId: string | null; shopId: string }, via: ViaService): Promise<string> {
+  const shop = await getShop(state.workspaceId, state.shopId);
+  if (!shop) return backTo(null, { problem: "shop" });
+  try {
+    const pages = (await pagesViaService(via)).filter((p) => !p.tasks.length || p.tasks.includes("CREATE_CONTENT") || p.tasks.includes("MANAGE"));
+    if (!pages.length) return backTo(shop.id, { problem: "nopage", p: "facebook" });
+    const brand = norm(shop.blueprint.brand?.name);
+    const named = pages.filter((p) => brand && norm(p.name) === brand);
+    const pick = pages.length === 1 ? pages[0] : named.length === 1 ? named[0] : null;
+    const asChoice = (p: MetaPage) => ({ id: p.id, name: p.name, username: p.username, link: p.link, token: p.accessToken, instagram: p.instagram });
+    if (pick) {
+      await connectPage({ workspaceId: state.workspaceId, memberId: state.memberId }, shop, asChoice(pick), "");
+      return backTo(shop.id, { done: "facebook" });
+    }
+    await savePageChoices(state.workspaceId, {
+      shopId: shop.id,
+      memberId: state.memberId,
+      wanted: "facebook",
+      secret: { userToken: "", pages: pages.map(asChoice) } satisfies ChoiceSecret,
+      choices: pages.map((p) => ({ id: p.id, name: p.name, instagram: null })),
+    });
+    return backTo(shop.id, { choose: "facebook" });
+  } catch (e) {
+    return backTo(shop.id, { problem: "platform", p: "facebook", ...signedNote(describeMetaError(e, "facebook").problem ?? "") });
   }
 }
 

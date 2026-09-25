@@ -1,12 +1,12 @@
 import "server-only";
 import { connectPage, forgetServiceAccount, pdSettings } from "@/connectors/pipedream/client";
-import { externalUserFor, isViaService, type PdProvider, type ViaService } from "@/connectors/pipedream/core";
+import { externalUserFor, isViaService, type PdAccountProvider, type PdProvider, type ViaService } from "@/connectors/pipedream/core";
 import { accountName } from "@/connectors/pipedream/identity";
 import { seal } from "@/lib/crypto";
 import { open } from "@/lib/crypto";
 import { withWorkspace } from "@/lib/db";
 import { CREDENTIAL_PROVIDER } from "./status";
-import { appOrigin } from "./types";
+import { appOrigin, type Provider } from "./types";
 import { createState } from "./state";
 
 // Connecting a platform through the connection service (connectors/pipedream): the Connect press
@@ -30,7 +30,8 @@ export async function startViaService(input: {
   returnTo: string;
   detail?: Record<string, string>;
 }): Promise<string> {
-  const state = await createState(input.workspaceId, input.memberId, input.provider, input.purpose, {
+  // Kept under the service's platform name, which a shop's Facebook Page shares with no Connections card.
+  const state = await createState(input.workspaceId, input.memberId, input.provider as Provider, input.purpose, {
     returnTo: input.returnTo,
     via: "service",
     ...(input.detail ?? {}),
@@ -81,7 +82,7 @@ export async function forgetViaService(workspaceId: string, provider: string, la
  * Finishes a supplier or ad account connected through the service: its credential holds only which
  * account it is at the service (sealed, never a key), named by what the platform says it's called.
  */
-export async function completeViaService(input: { workspaceId: string; memberId: string | null; provider: PdProvider; via: ViaService; fallbackName: string | null }): Promise<void> {
+export async function completeViaService(input: { workspaceId: string; memberId: string | null; provider: PdAccountProvider; via: ViaService; fallbackName: string | null }): Promise<void> {
   const name = (await accountName(input.provider, input.via)) ?? input.fallbackName;
   const credProvider = CREDENTIAL_PROVIDER[input.provider];
   const meta = { account: name, via: "service", connectedAt: new Date().toISOString(), connectedBy: input.memberId };

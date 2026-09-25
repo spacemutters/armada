@@ -32,10 +32,15 @@ export const PD_APPS = {
   google_ads: "google_ads",
   printful: "printful_oauth",
   printify: "printify",
+  // A shop's Facebook Page (posting only; this app can't publish to Instagram).
+  facebook_page: "facebook_pages",
 } as const;
 
 /** Platforms with a store or special finishing of their own; the rest are finished the same simple way. */
 export const PD_STORE_PROVIDERS = new Set<string>(["shopify", "ebay"]);
+
+/** Suppliers and ad accounts: kept as a credential, finished the same simple way. */
+export type PdAccountProvider = "tiktok_ads" | "google_ads" | "printful" | "printify";
 export type PdProvider = keyof typeof PD_APPS;
 
 export const isPdProvider = (p: string): p is PdProvider => Object.hasOwn(PD_APPS, p);

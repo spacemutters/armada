@@ -1,4 +1,5 @@
 import { applyKit, makePracticeAccount, pickPage, removeSocialAccount, skipPageChoice } from "./actions";
+import { serviceOn } from "@/lib/connections/service";
 import { isPlatformAdmin } from "@/app/(app)/admin/access";
 import { ShopChooser, type ShopChoice } from "@/components/social-connect/shop-list";
 import { SocialConnectView, type Note, type OwnerInfo } from "@/components/social-connect/view";
@@ -134,7 +135,7 @@ export default async function SocialConnectPage({ searchParams }: { searchParams
       choice={choice}
       rows={rows}
       practice={practice}
-      ready={{ instagram: metaReady(), facebook: metaReady(), tiktok: tiktokReady() }}
+      ready={{ instagram: metaReady(), facebook: metaReady() || (await serviceOn()), tiktok: tiktokReady() }}
       canConnect={canConnect(session)}
       canPractice={session.role !== "viewer"}
       practiceShop={shop.brief?.source === "practice"}

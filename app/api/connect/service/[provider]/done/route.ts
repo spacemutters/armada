@@ -6,7 +6,9 @@ import { externalUserFor, isPdProvider, pickNewAccount, type ViaService } from "
 import { completeShopifyViaService, ShopifyProblem } from "@/connectors/shopify/client";
 import { getSession } from "@/lib/auth/session";
 import { completeViaService, knownServiceAccounts } from "@/lib/connections/service";
+import { metaFinishViaService } from "@/lib/social/accounts/connect";
 import { consumeState } from "@/lib/connections/state";
+import type { Provider } from "@/lib/connections/types";
 import { asSystem } from "@/lib/db";
 import { safeReturnPath, withProblem } from "../../../facebook/bridge";
 
@@ -23,8 +25,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const go = (path: string) => NextResponse.redirect(new URL(path, request.url), 303);
   if (!isPdProvider(provider)) return go("/connections");
 
-  const state = await consumeState(q.get("state"), provider);
-  const fallback = provider === "ebay" ? "/stores/new" : "/connections";
+  // The one-time state is kept under the service's platform name (a shop's Facebook Page included).
+  const state = await consumeState(q.get("state"), provider as Provider);
+  const fallback = provider === "ebay" ? "/stores/new" : provider === "facebook_page" ? "/social/connect" : "/connections";
   if (!state) return go(withProblem(`${fallback}${fallback === "/connections" ? `?provider=${provider}` : ""}`, "expired"));
   const back = safeReturnPath(state.detail.returnTo, fallback);
   const onConnections = back.startsWith("/connections");
@@ -55,6 +58,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return problem("failed");
     }
     const via: ViaService = { via: "pipedream", accountId: account.id, externalUserId };
+    if (provider === "facebook_page") {
+      // A shop's Facebook Page: back to that shop's social media page.
+      return go(await metaFinishViaService({ workspaceId: state.workspaceId, memberId: state.memberId, shopId: String(state.detail.shopId ?? "") }, via));
+    }
     if (provider !== "shopify" && provider !== "ebay") {
       // Suppliers and ad accounts: keep which account it is (never a key) and name it.
       await completeViaService({ workspaceId: state.workspaceId, memberId: state.memberId, provider, via, fallbackName: account.name });
