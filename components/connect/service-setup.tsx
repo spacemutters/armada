@@ -45,13 +45,15 @@ export function ServiceSetup({ view, save, clear }: { view: ServiceView; save: A
             <StatusPill tone={view.on ? "ok" : "off"}>{view.on ? (view.environment === "development" ? "On, testing" : "On") : "Off"}</StatusPill>
             <span className="text-[12px] text-muted">Only you see this</span>
           </div>
-          <p className="mt-1 max-w-3xl text-[14px] text-muted">
-            Pipedream already has approved apps with Shopify and eBay. With it switched on, anyone presses Connect, approves on Shopify&apos;s or
-            eBay&apos;s own page, and comes straight back connected, without Armada needing its own app on either. The approval page names
-            Pipedream until Armada has its own. Free while testing, for up to 10 fleets; about $150 a month once customers use it.
-          </p>
+          <p className="mt-1 max-w-3xl text-[14px] text-muted">Platforms connect in one press through Pipedream&apos;s approved apps.</p>
         </div>
       </div>
+
+      {/* Once it's on there's nothing to do here, so the settings fold away. */}
+      <details open={!view.on} className="group">
+        <summary className="mt-3 inline-flex min-h-11 cursor-pointer list-none items-center text-[13px] text-accent hover:underline md:min-h-8 [&::-webkit-details-marker]:hidden">
+          {view.on ? "Change" : "Set up"}
+        </summary>
 
       {view.from === "settings" ? (
         <p className="mt-4 text-[13px] text-muted">It&apos;s switched on from the server settings (project {view.projectId}), so there&apos;s nothing to paste here.</p>
@@ -116,6 +118,7 @@ export function ServiceSetup({ view, save, clear }: { view: ServiceView; save: A
           </div>
         </form>
       )}
+      </details>
       {view.from === "pasted" ? (
         <form action={clearAction} className="mt-3">
           <Button type="submit" variant="quiet" className="min-h-11 md:min-h-9">

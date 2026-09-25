@@ -42,7 +42,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
     <>
       <PageHeader
         title="Connections"
-        subtitle="Connect your stores, your supplier and your ads. Each one is a single approval on the platform's own site, and you can disconnect any time."
+        subtitle="Press Connect, approve, done."
       />
 
       {connected ? (

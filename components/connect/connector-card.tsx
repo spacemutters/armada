@@ -159,7 +159,7 @@ export function ConnectorGroup({
           <h2 id={`group-${kind}`} className="text-[17px] font-semibold tracking-tight">
             {title}
           </h2>
-          <p className="text-[13px] text-muted">{about}</p>
+          {about ? <p className="text-[13px] text-muted">{about}</p> : null}
         </div>
         {count ? (
           <p className="tabular text-[13px] text-muted">
@@ -231,7 +231,7 @@ export function ConnectorCard({
             <StatusPill tone={state.tone}>{state.label}</StatusPill>
           </div>
           {headline}
-          <p className={cx("mt-1 text-muted", headline ? "text-[13px]" : "text-[14px]")}>{c.blurb}</p>
+          {!headline && s.state === "not_connected" ? <p className="mt-1 line-clamp-1 text-[13px] text-muted">{c.blurb}</p> : null}
         </div>
       </div>
 
@@ -245,7 +245,7 @@ export function ConnectorCard({
 
       <Actions s={s} canManage={canManage} typedShop={typedShop} noun={noun} connectCj={actions.connectCj} />
 
-      {admin && (!s.available || c.method !== "key") ? <AdminSetup c={c} origin={origin} open={!s.available} saveKeys={actions.saveKeys} /> : null}
+      {admin && (!s.available || c.method !== "key") ? <AdminSetup c={c} origin={origin} open={false} saveKeys={actions.saveKeys} /> : null}
     </CardShell>
   );
 }
@@ -299,7 +299,7 @@ function AccountRow({ s, a, canManage, disconnect }: { s: ProviderStatus; a: Con
 function Actions({ s, canManage, typedShop, noun, connectCj }: { s: ProviderStatus; canManage: boolean; typedShop: string; noun: string; connectCj: FormAction }) {
   const c = s.connector;
   if (!s.available) {
-    return <p className="mt-5 text-[13px] text-muted">It switches on here by itself when it&apos;s ready.</p>;
+    return null;
   }
   if (!canManage) return null;
 
@@ -348,8 +348,8 @@ function AdminSetup({ c, origin, open, saveKeys }: { c: Connector; origin: strin
     <details open={open} className="mt-5 rounded-xl border border-dashed border-line-strong">
       <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-2 px-4 py-2 text-[13px] font-medium [&::-webkit-details-marker]:hidden">
         <ShieldCheck aria-hidden className="size-4 text-muted" strokeWidth={1.75} />
-        {open ? `What switches ${c.name} on` : "Setup details"}
-        <span className="font-normal text-muted">Only platform admins see this.</span>
+        {open ? `What switches ${c.name} on` : "Setup"}
+        <span className="font-normal text-muted">Admin</span>
       </summary>
       <div className="flex flex-col gap-4 px-4 pb-4">
         <p className="text-[13px] text-muted">{c.ownerSetup}</p>

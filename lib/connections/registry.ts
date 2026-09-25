@@ -23,9 +23,9 @@ export const STORE_OPENERS = CONNECTORS.filter((c) => c.kind === "store" && c.ca
 
 /** The groups on the Connections page, in order. */
 export const CONNECTOR_GROUPS: { kind: Connector["kind"]; title: string; about: string }[] = [
-  { kind: "store", title: "Stores", about: "Where you sell. Each store you connect appears in Stores, ready to list products." },
-  { kind: "supplier", title: "Supplier", about: "Where your products come from: real costs, photos and shipping times." },
-  { kind: "ads", title: "Ads", about: "Where you find buyers." },
+  { kind: "store", title: "Stores", about: "" },
+  { kind: "supplier", title: "Suppliers", about: "" },
+  { kind: "ads", title: "Ads", about: "" },
 ];
 
 /**
