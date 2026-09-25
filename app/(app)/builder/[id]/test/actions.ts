@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import {
@@ -16,7 +17,11 @@ import {
 import { clip } from "@/lib/text";
 
 const uuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
-const page = (shopId: string, extra = "") => `/builder/${shopId}/test${extra}`;
+/** The test page, with its data reloaded: every action here returns to the page it came from. */
+const page = (shopId: string, extra = "") => {
+  revalidatePath(`/builder/${shopId}/test`);
+  return `/builder/${shopId}/test${extra}`;
+};
 
 /** Viewers can look at a test but not change it. */
 async function editor() {

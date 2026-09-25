@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { makeStoreIcon, setStoreIcon } from "@/lib/stores/icon";
@@ -17,11 +18,14 @@ export async function chooseIconAction(storeId: string, formData: FormData) {
   const session = await editor();
   const icon = String(formData.get("icon") ?? "");
   if (uuid(storeId)) await setStoreIcon(session.workspaceId, storeId, icon === "none" ? null : icon);
+  // Same page, so reload its data; a redirect to the same address alone would keep the old page.
+  revalidatePath(`/stores/${storeId}`);
   redirect(`/stores/${storeId}#icon`);
 }
 
 export async function makeIconAction(storeId: string) {
   const session = await editor();
   if (uuid(storeId)) await makeStoreIcon(session.workspaceId, storeId);
+  revalidatePath(`/stores/${storeId}`);
   redirect(`/stores/${storeId}#icon`);
 }

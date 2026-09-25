@@ -1,6 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSession, startSession } from "@/lib/auth/session";
 import { createInvite } from "@/lib/auth/invites";
@@ -47,6 +48,7 @@ export async function removePasskey(passkeyId: string) {
     if (n <= 1) return; // never remove the last way in
     await tx`delete from armada.passkeys where id = ${passkeyId} and member_id = ${session.memberId}`;
   });
+  revalidatePath("/settings");
   redirect("/settings#devices");
 }
 
