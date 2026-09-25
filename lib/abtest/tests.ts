@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { enqueueJob, onJobFinished } from "@/lib/ai/jobs";
 import { asSystem, withWorkspace, type Tx } from "@/lib/db";
+import { withCraft } from "@/lib/shops/craft";
 import type { ShopRow } from "@/lib/shops/types";
 import { clip } from "@/lib/text";
 import type { AiJob } from "@/lib/types";
@@ -53,7 +54,7 @@ async function askForVersions(tx: Tx, shop: ShopRow, testId: string, current: He
   await enqueueJob(tx, {
     workspaceId: shop.workspaceId,
     kind: "ab.variants",
-    input: { system: SYSTEM, prompt: variantsPrompt(shop.blueprint, current, await productTitles(tx, shop), earlier), schema: variantsSchema as never, timeoutMs: TIMEOUT_MS },
+    input: { system: withCraft(SYSTEM, ["conversion"]), prompt: variantsPrompt(shop.blueprint, current, await productTitles(tx, shop), earlier), schema: variantsSchema as never, timeoutMs: TIMEOUT_MS },
     parent: { type: "ab_test", id: testId },
   });
 }

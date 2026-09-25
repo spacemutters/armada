@@ -24,6 +24,8 @@ import {
   productsAsk,
   text,
 } from "./prompts";
+import { withCraft } from "./craft";
+import { startShopImages } from "./images";
 import { ART_ICONS, BODY_FONTS, DISPLAY_FONTS } from "./style";
 import { aiPicks, checkChoice, chooseCount, proposalTarget, stalledCjStep } from "./types";
 import type { Blueprint, ProgressStep, Proposal, ShopBrief, ShopRow, StepKey } from "./types";
@@ -82,7 +84,7 @@ export async function startShopBuild(tx: Tx, workspaceId: string, brief: ShopBri
   await enqueueJob(tx, {
     workspaceId,
     kind: "shop.concept",
-    input: { system: SYSTEM, prompt: conceptPrompt(brief), schema: conceptSchema as never, timeoutMs: TIMEOUTS.concept },
+    input: { system: withCraft(SYSTEM, ["brand", "conversion"]), prompt: conceptPrompt(brief), schema: conceptSchema as never, timeoutMs: TIMEOUTS.concept },
     parent: { type: "shop", id: shop.id },
   });
   return { id: shop.id, slug };
@@ -150,7 +152,7 @@ function enqueueProducts(tx: Tx, shop: ShopRow, blueprint: Blueprint, candidates
   return enqueueJob(tx, {
     workspaceId: shop.workspaceId,
     kind: "shop.products",
-    input: { system: SYSTEM, prompt: ask.prompt, schema: ask.schema as never, timeoutMs: productsTimeout(ask.target) },
+    input: { system: withCraft(SYSTEM, ["conversion"]), prompt: ask.prompt, schema: ask.schema as never, timeoutMs: productsTimeout(ask.target) },
     parent: { type: "shop", id: shop.id },
   });
 }
@@ -377,7 +379,7 @@ async function buildWithChosen(
   await enqueueJob(tx, {
     workspaceId: shop.workspaceId,
     kind: "shop.pages",
-    input: { system: SYSTEM, prompt: pagesPrompt(next), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
+    input: { system: withCraft(SYSTEM, ["conversion"]), prompt: pagesPrompt(next), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
     parent: { type: "shop", id: shop.id },
   });
 }
@@ -435,6 +437,8 @@ async function afterPages(tx: Tx, shop: ShopRow, output: unknown) {
   };
   await saveBlueprint(tx, shop.id, blueprint, "ready");
   await setStep(tx, shop.id, "pages", "done");
+  // Brand pictures, made with ChatGPT once the collections are final (the new blueprint, not the old one).
+  await startShopImages(tx, { ...shop, blueprint });
 }
 
 // ---------- the CJ path: real products, real shipping ----------
@@ -584,7 +588,7 @@ async function cjCheckChosen(workspaceId: string, shopId: string) {
     await enqueueJob(tx, {
       workspaceId,
       kind: "shop.pages",
-      input: { system: SYSTEM, prompt: pagesPrompt(next), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
+      input: { system: withCraft(SYSTEM, ["conversion"]), prompt: pagesPrompt(next), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
       parent: { type: "shop", id: shop.id },
     });
   });

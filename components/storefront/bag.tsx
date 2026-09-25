@@ -33,7 +33,7 @@ export function AddToBag({ slug, line }: { slug: string; line: Omit<BagLine, "qt
   const [added, setAdded] = useState(false);
   return (
     <button
-      className="sf-button w-full sm:w-auto"
+      className="sf-button w-full"
       onClick={() => {
         addToBag(slug, line);
         countVisit(slug, "add");

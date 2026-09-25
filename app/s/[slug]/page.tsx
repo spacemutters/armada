@@ -2,11 +2,13 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProductArt } from "@/components/product-art";
+import { BrandPicture, CollectionTiles, TrustStrip } from "@/components/storefront/brand";
 import { ProductCard } from "@/components/storefront/product-card";
 import { CountView } from "@/components/storefront/visit";
 import type { HeroCopy } from "@/lib/abtest/prompt";
 import { runningTestForShop } from "@/lib/abtest/tests";
 import { readVisitor, versionFor, VISITOR_COOKIE } from "@/lib/abtest/visitor";
+import { storefrontImages } from "@/lib/shops/images";
 import { loadStorefront, shopBase, storeItems } from "@/lib/shops/storefront";
 
 /** The first real paragraph of a markdown page, as plain text. */
@@ -50,32 +52,58 @@ export default async function StorefrontHome({ params, searchParams }: PageProps
   const heroItem = items.find((i) => i.product.images.length) ?? items[0];
   const firstCollectionHref = collections[0] ? `${base}/collections/${collections[0].handle}` : base;
   const story = firstParagraph(bp.pages?.about);
+  const images = await storefrontImages(shop.id);
+  const brandHero = images.hero.wide ?? images.hero.tall;
+  const coverCount = collections.filter((c) => images.collections[c.handle]).length;
+
+  // The promise, one action, and the shop's true terms: everything a shopper needs above the fold.
+  const heroCopy = (
+    <div className="sf-hero-copy flex flex-col gap-7">
+      <p className="sf-label">{bp.brand?.tagline}</p>
+      <h1 className="sf-display" style={{ fontSize: "var(--text-display)" }}>
+        {hero?.headline}
+      </h1>
+      <p className="sf-lead sf-muted max-w-[36ch]">{hero?.subhead}</p>
+      <div>
+        <Link href={firstCollectionHref} className="sf-button">
+          {hero?.cta || "Shop the range"}
+        </Link>
+      </div>
+      {count ? <CountView slug={slug} /> : null}
+    </div>
+  );
 
   return (
     <>
-      {/* Hero: 7/5 split, the one moving moment on the page */}
-      <section className="sf-wrap grid items-end gap-10 pt-[clamp(2.5rem,6vw,5.5rem)] pb-[var(--s-section)] lg:grid-cols-[7fr_5fr]">
-        <div className="sf-hero-copy flex flex-col gap-7">
-          <p className="sf-label">{bp.brand?.tagline}</p>
-          <h1 className="sf-display" style={{ fontSize: "var(--text-display)" }}>
-            {hero?.headline}
-          </h1>
-          <p className="sf-lead sf-muted max-w-[36ch]">{hero?.subhead}</p>
-          <div>
-            <Link href={firstCollectionHref} className="sf-button">
-              {hero?.cta || "Shop the range"}
+      {brandHero ? (
+        // Hero with the brand picture: full-bleed behind the copy on large screens, with a veil of the
+        // shop's own paper color under the words so they keep their contrast over any picture; on
+        // phones the words come first and the picture follows. The one moving moment on the page.
+        <section className="sf-hero sf-hero-over">
+          <div className="sf-wrap sf-hero-inner">{heroCopy}</div>
+          <BrandPicture wide={images.hero.wide} tall={images.hero.tall} alt={brandHero.alt} priority className="sf-hero-media sf-hero-picture" />
+          <div className="sf-hero-veil" aria-hidden />
+        </section>
+      ) : (
+        // No brand picture yet: the shop's best product photo beside the copy, 7/5.
+        <section className="sf-wrap grid items-end gap-10 pt-[clamp(2.5rem,6vw,5.5rem)] pb-[var(--s-section)] lg:grid-cols-[7fr_5fr]">
+          {heroCopy}
+          {heroItem ? (
+            <Link href={`${base}/products/${heroItem.handle}`} className="sf-hero-media sf-card block overflow-hidden rounded-[var(--s-radius)]">
+              <div className="sf-card-media" style={{ aspectRatio: "4 / 5" }}>
+                <ProductArt images={heroItem.product.images} icon={heroItem.product.art?.icon} title={heroItem.product.title} sizes="(min-width: 1024px) 40vw, 100vw" />
+              </div>
             </Link>
-          </div>
-          {count ? <CountView slug={slug} /> : null}
-        </div>
-        {heroItem ? (
-          <Link href={`${base}/products/${heroItem.handle}`} className="sf-hero-media sf-card block overflow-hidden rounded-[var(--s-radius)]">
-            <div className="sf-card-media" style={{ aspectRatio: "4 / 5" }}>
-              <ProductArt images={heroItem.product.images} icon={heroItem.product.art?.icon} title={heroItem.product.title} sizes="(min-width: 1024px) 40vw, 100vw" />
-            </div>
-          </Link>
-        ) : null}
-      </section>
+          ) : null}
+        </section>
+      )}
+
+      <TrustStrip facts={bp.facts} base={base} />
+
+      {/* The range at a glance, when the collections have their covers */}
+      {collections.length >= 2 && coverCount >= 2 ? (
+        <CollectionTiles collections={collections} items={items} covers={images.collections} base={base} />
+      ) : null}
 
       {/* What the shop promises */}
       {bp.valueProps?.length ? (
@@ -131,6 +159,18 @@ export default async function StorefrontHome({ params, searchParams }: PageProps
           </section>
         );
       })}
+
+      {/* The everyday moment the range is for, when the shop has that picture */}
+      {images.lifestyle.wide || images.lifestyle.tall ? (
+        <section className="sf-line border-t">
+          <BrandPicture
+            wide={images.lifestyle.wide}
+            tall={images.lifestyle.tall}
+            alt={(images.lifestyle.wide ?? images.lifestyle.tall)!.alt}
+            className="sf-band"
+          />
+        </section>
+      ) : null}
 
       {/* The shop in its own words */}
       {story ? (

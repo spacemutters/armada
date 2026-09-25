@@ -4,3 +4,4 @@ import "@/lib/abtest/tests";
 import "@/lib/stores/icon";
 import "@/lib/ads/jobs";
 import "@/lib/social/posts/jobs";
+import "@/lib/shops/images";

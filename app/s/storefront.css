@@ -257,9 +257,306 @@
   animation-delay: 270ms;
 }
 
+/* Focus rings in the shop's own ink, not Armada's accent. */
+.sf :focus-visible {
+  outline-color: var(--s-ink);
+}
+
+/* ---------- brand pictures ----------
+   Mood pictures made for the shop (hero, collection covers, the lifestyle band). They never appear
+   on product cards or product pages: those show the supplier's real photos. */
+
+.sf picture {
+  display: block;
+  overflow: hidden;
+  background: var(--s-surface);
+}
+
+.sf picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Hero with a brand picture. Phones: the words on paper, then the picture (4:5) full-bleed below.
+   Large screens: the picture fills the section behind the words, and a veil of the shop's own paper
+   color sits under the words. The words' column ends at 42-45% of the width, where the veil is still
+   72-80% paper, so ink keeps about 6:1 or better even over the darkest possible pixel for a light shop
+   (the lightest for a dark one); measured 9.0:1 at 1440 px for a real shop (.shots/brand/harness).
+   The picture shows clear from about 60%. */
+.sf-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.sf-hero-inner {
+  padding-block: clamp(2.5rem, 6vw, 5.5rem) 2.5rem;
+}
+
+.sf-hero-picture {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  max-height: 82svh;
+}
+
+.sf-hero-veil {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .sf-hero {
+    display: flex;
+    align-items: center;
+    min-height: clamp(560px, 84svh, 880px);
+  }
+
+  .sf-hero-inner {
+    padding-block: 5rem;
+  }
+
+  .sf-hero-over .sf-hero-copy {
+    max-width: min(38rem, 42%);
+    --text-display: clamp(2.6rem, 1rem + 4.2vw, 5.75rem);
+  }
+
+  /* Over the veil every word is in ink: muted grey is kept for plain paper. */
+  .sf-hero-over .sf-hero-copy .sf-muted,
+  .sf-hero-over .sf-hero-copy .sf-label {
+    color: var(--s-ink);
+  }
+
+  .sf-hero-picture {
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    aspect-ratio: auto;
+    max-height: none;
+    height: 100%;
+  }
+
+  .sf-hero-veil {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--s-bg) 94%, transparent) 0%,
+      color-mix(in srgb, var(--s-bg) 88%, transparent) 40%,
+      color-mix(in srgb, var(--s-bg) 35%, transparent) 56%,
+      transparent 72%
+    );
+  }
+}
+
+/* The shop's true delivery and returns terms, right under the hero. */
+.sf-trust {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.sf-trust > li + li {
+  border-top: 1px solid var(--s-line);
+}
+
+.sf-trust-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-height: 44px;
+  padding-block: 0.85rem;
+}
+
+.sf-trust-item:hover > span:last-child {
+  text-decoration: underline;
+  text-decoration-color: var(--s-line-strong);
+  text-underline-offset: 3px;
+}
+
+@media (min-width: 768px) {
+  .sf-trust {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sf-trust > li + li {
+    border-top: 0;
+    border-left: 1px solid var(--s-line);
+    padding-left: 1.5rem;
+  }
+
+  .sf-trust-item {
+    padding-block: 1.25rem;
+  }
+}
+
+/* Shop by collection: covers in a grid, a swipeable row on phones. */
+.sf-tiles {
+  display: grid;
+  gap: 2.5rem 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.sf-tile-media {
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: var(--s-radius);
+  background: var(--s-surface);
+  --art-bg: var(--s-surface);
+  --art-fg: var(--s-accent);
+}
+
+.sf-tile-media > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sf-card:hover .sf-tile-media > img {
+  transform: scale(1.04);
+}
+
+/* A collection with no cover and no product photo: its initial, large and quiet. */
+.sf-tile-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: clamp(5rem, 12vw, 9rem);
+  color: color-mix(in srgb, var(--s-ink) 22%, var(--s-surface));
+}
+
+@media (max-width: 767.98px) {
+  .sf-tiles {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    gap: 1rem;
+    margin-inline: calc(var(--s-gutter) * -1);
+    padding-inline: var(--s-gutter);
+    scroll-padding-inline: var(--s-gutter);
+    scrollbar-width: none;
+  }
+
+  .sf-tiles::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sf-tiles > li {
+    flex: 0 0 78%;
+    scroll-snap-align: start;
+  }
+}
+
+/* The lifestyle band: 4:5 on phones, a wide 21:9 strip on large screens. */
+.sf-band {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  max-height: 85svh;
+}
+
+@media (min-width: 1024px) {
+  .sf-band {
+    aspect-ratio: 21 / 9;
+    max-height: 78svh;
+  }
+}
+
+/* A collection page's cover beside its title. */
+.sf-cover {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--s-radius);
+  background: var(--s-surface);
+}
+
+.sf-cover > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (min-width: 1024px) {
+  .sf-cover {
+    aspect-ratio: 4 / 3;
+  }
+}
+
+/* Product page: the details a shopper decides on, as scannable rows. */
+.sf-facts {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--s-line);
+}
+
+.sf-facts > div {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 1rem;
+  padding-block: 0.8rem;
+  border-bottom: 1px solid var(--s-line);
+  font-size: 0.9375rem;
+}
+
+.sf-points > li {
+  display: flex;
+  gap: 0.75rem;
+  padding-block: 0.6rem;
+  border-bottom: 1px solid var(--s-line);
+}
+
+.sf-points > li:first-child {
+  border-top: 1px solid var(--s-line);
+}
+
+/* Phones: the add-to-bag bar that stays in reach once the main button scrolls away. */
+.sf-sticky-buy {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem var(--s-gutter) calc(0.75rem + env(safe-area-inset-bottom));
+  background: var(--s-bg);
+  border-top: 1px solid var(--s-line-strong);
+  transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sf-sticky-buy[data-shown="false"] {
+  transform: translateY(110%);
+  visibility: hidden;
+  transition: transform 260ms cubic-bezier(0.4, 0, 1, 1), visibility 0s linear 260ms;
+}
+
+@media (min-width: 1024px) {
+  .sf-sticky-buy {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sf-hero-media > *,
   .sf-hero-copy > * {
     animation: none;
+  }
+
+  .sf-card-media img,
+  .sf-tile-media > img,
+  .sf-button,
+  .sf-sticky-buy,
+  .sf-sticky-buy[data-shown="false"] {
+    transition: none;
+  }
+
+  .sf-card:hover .sf-card-media img,
+  .sf-card:hover .sf-tile-media > img {
+    transform: none;
   }
 }

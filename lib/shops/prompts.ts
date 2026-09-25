@@ -99,7 +99,7 @@ audience: one sentence naming who buys and why.
 palette: six hex colors (like #1f2a24), taken from the materials and setting of what this shop sells (for example raw oak and linen for home goods, chalk and rubber for a gym brand). background and surface are light unless the look asks for dark. ink must read on background at 7:1 contrast or better, muted at 4.5:1, and accentInk on accent at 4.5:1. The accent colors buttons and links only. Avoid these overused looks: warm cream with a terracotta accent and a high-contrast serif; near-black with an acid-green or vermilion accent; beige on beige.
 fonts: one display font and one body font from the allowed lists that suit the brand.
 hero: headline of at most 8 words, subhead of at most 20 words, cta (button label) of at most 3 words.
-valueProps: three promises a dropshipping shop can actually keep, such as a tight, well-chosen range, clear returns within the stated window, or secure checkout. Never promise fast shipping, handmade goods, local production, testing, certifications or guarantees.
+valueProps: three promises a dropshipping shop can actually keep, such as a tight, well-chosen range, what the products make easier, or clear returns within the stated window. Not "secure checkout": checkout may not be switched on. Never promise fast shipping, handmade goods, local production, testing, certifications or guarantees.
 collections: 3 or 4 collections that organize ${b.productCount} products. Each has a title of at most 3 words, a one-sentence description, and 2-6 keywords.
 searchTerms: 4-12 short, plain product words to search a supplier catalog with (for example "dog harness", "slow feeder bowl"). No brand names.
 monogramIcon: the one icon from the list that best stands for the shop.`;

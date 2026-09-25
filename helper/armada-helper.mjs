@@ -2,14 +2,15 @@
 // Runs Armada's AI jobs on this computer through the owner's own command-line AI tools: the Claude
 // tool on his Claude login, and OpenAI's Codex tool on his ChatGPT login (each job says which, see
 // engines.mjs). It asks Armada for work, runs each job with every tool switched off (the AI can only
-// write text back, never touch files or run commands), and sends the answer back.
+// write text back, never touch files or run commands), and sends the answer back. Image jobs are the
+// one exception: ChatGPT's image maker is switched on for them, and nothing else (engines.mjs).
 import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { engineOf, findClaude, findCodex, runJob } from "./engines.mjs";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const config = loadConfig(path.join(here, ".env"));
 const ARMADA_URL = (process.env.ARMADA_URL || config.ARMADA_URL || "").replace(/\/$/, "");
@@ -41,16 +42,40 @@ function log(message) {
   } catch {}
 }
 
-// Every request gives up after 30 seconds, so a laptop waking from sleep (with dead connections)
-// never leaves the helper stuck waiting.
-async function post(route, body) {
+// Every request gives up after 30 seconds (a minute for pictures), so a laptop waking from sleep
+// (with dead connections) never leaves the helper stuck waiting.
+async function post(route, body, timeoutMs = 30_000) {
   const res = await fetch(`${ARMADA_URL}${route}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   return res;
+}
+
+/**
+ * Hands a result back, trying a few times. Pictures go to their own door (/api/helper/image), which
+ * stores them and finishes the job in one go; everything else goes to /api/helper/complete.
+ * Returns false only when Armada couldn't be reached or refused the result.
+ */
+async function handBack(job, result) {
+  const { files, ...rest } = result;
+  const route = files ? "/api/helper/image" : "/api/helper/complete";
+  const body = files ? { helperId, jobId: job.id, output: rest.output, usage: rest.usage, files } : { helperId, jobId: job.id, ...rest };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await post(route, body, files ? 60_000 : 30_000);
+      if (res.ok) return true;
+      log(`${files ? "image hand-back" : "complete"} answered ${res.status}`);
+      // A picture Armada won't take (the job was taken back, or the upload is wrong) won't improve on a retry.
+      if (files && (res.status === 400 || res.status === 401 || res.status === 409 || res.status === 413)) return false;
+    } catch (e) {
+      log(`couldn't reach Armada to hand back ${job.id}: ${e.message}`);
+    }
+    await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+  }
+  return false;
 }
 
 /** Each engine's tool. Codex is looked up again for every job: its folder changes when it updates. */
@@ -64,16 +89,12 @@ async function work(claudeExe, job) {
   log(`start ${job.kind} ${job.id}${engine === "claude" ? "" : ` on ${engine}`}`);
   try {
     const result = await runJob(toolsNow(claudeExe), job.input);
-    log(`${result.ok ? "done" : "failed"} ${job.kind} ${job.id} in ${Math.round((result.usage?.ms ?? 0) / 1000)}s${result.ok ? "" : ` (${result.error})`}`);
-    for (let attempt = 0; attempt < 5; attempt++) {
-      try {
-        const res = await post("/api/helper/complete", { helperId, jobId: job.id, ...result });
-        if (res.ok) break;
-        log(`complete answered ${res.status}`);
-      } catch (e) {
-        log(`couldn't reach Armada to hand back ${job.id}: ${e.message}`);
-      }
-      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    const sizes = result.files ? ` (${result.files.map((f) => `${f.name} ${f.width}x${f.height} ${Math.round(f.bytes / 1024)} KB`).join(", ")})` : "";
+    log(`${result.ok ? "done" : "failed"} ${job.kind} ${job.id} in ${Math.round((result.usage?.ms ?? 0) / 1000)}s${result.ok ? sizes : ` (${result.error})`}`);
+    const delivered = await handBack(job, result);
+    if (!delivered && result.files) {
+      // The picture didn't get through: report a plain failure so the job is tried again or closed.
+      await handBack(job, { ok: false, error: "The picture was made but couldn't be handed back to Armada.", usage: result.usage });
     }
   } finally {
     running--;

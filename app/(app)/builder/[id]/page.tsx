@@ -5,6 +5,7 @@ import { buildAgain, chooseProducts, letAiPick, putInPracticeStore } from "./act
 import { iconFor, ProductArt } from "@/components/product-art";
 import { PendingButton } from "@/components/fx/pending-button";
 import { ProductChooser, type ChooserCard } from "@/components/product-chooser";
+import { ShopImages } from "@/components/shop-images";
 import { BuildSteps, ShopProgress } from "@/components/shop-progress";
 import { Button, buttonClass, ButtonLink, Card, PageHeader, ScoreBadge, Section, StatusPill } from "@/components/ui";
 import { testsForShop } from "@/lib/abtest/tests";
@@ -247,6 +248,10 @@ export default async function ShopPage({ params, searchParams }: PageProps<"/bui
             </div>
           </div>
         </Section>
+      </div>
+
+      <div className="mt-4">
+        <ShopImages workspaceId={session.workspaceId} shopId={shop.id} canEdit={session.role !== "viewer"} />
       </div>
 
       <div className="mt-4 flex flex-col gap-4">

@@ -1,19 +1,53 @@
+import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import "../storefront.css";
 import { BagLink } from "@/components/storefront/bag";
+import { storefrontImages } from "@/lib/shops/images";
 import { loadStorefront, shopBase, storefrontVars } from "@/lib/shops/storefront";
 import { googleFontsHref } from "@/lib/shops/style";
 
-export async function generateMetadata({ params }: LayoutProps<"/s/[slug]">) {
+/** This request's own origin, so link previews get absolute picture addresses on any domain. */
+async function origin(): Promise<URL | null> {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  if (!host || !/^[a-z0-9.:-]+$/i.test(host)) return null;
+  const proto = h.get("x-forwarded-proto") === "http" || /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host) ? "http" : "https";
+  try {
+    return new URL(`${proto}://${host}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function generateMetadata({ params }: LayoutProps<"/s/[slug]">): Promise<Metadata> {
   const { slug } = await params;
   const data = await loadStorefront(slug);
   if (!data) return { title: "Shop not found" };
   const bp = data.shop.blueprint;
+  const title = bp.seo?.title || `${bp.brand?.name} · ${bp.brand?.tagline}`;
+  const description = bp.seo?.description;
+  // The link preview uses the hero picture's 1200x630 cut (a mood picture, never a product).
+  const og = (await storefrontImages(data.shop.id)).og;
+  const base = og ? await origin() : null;
   return {
-    title: { absolute: bp.seo?.title || `${bp.brand?.name} · ${bp.brand?.tagline}` },
-    description: bp.seo?.description,
+    title: { absolute: title },
+    description,
     robots: { index: false, follow: false },
+    ...(og && base
+      ? {
+          metadataBase: base,
+          openGraph: {
+            type: "website",
+            siteName: bp.brand?.name,
+            title,
+            description,
+            images: [{ url: `/api/img/${og.id}`, width: og.width, height: og.height, alt: og.alt || `${bp.brand?.name}` }],
+          },
+          twitter: { card: "summary_large_image", title, description, images: [`/api/img/${og.id}`] },
+        }
+      : {}),
   };
 }
 
