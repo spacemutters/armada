@@ -295,8 +295,9 @@ async function ebayStep(c: Ctx, prev: LaunchStep): Promise<Outcome> {
 
   const [counts] = await withWorkspace(
     c.workspaceId,
-    (tx) => tx<{ total: number; done: number; pending: number; notListed: number; reason: string | null }[]>`
+    (tx) => tx<{ total: number; done: number; pending: number; notListed: number; reason: string | null; undone: boolean }[]>`
       select count(*)::int as total, count(*) filter (where status = 'done')::int as done,
+             exists (select 1 from armada.change_sets where id = ${changeSetId} and status = 'undone') as undone,
              count(*) filter (where status = 'pending')::int as pending,
              count(*) filter (where status in ('failed', 'skipped'))::int as not_listed,
              (select error from armada.change_items where change_set_id = ${changeSetId} and status in ('failed', 'skipped') and error is not null limit 1) as reason
@@ -304,6 +305,7 @@ async function ebayStep(c: Ctx, prev: LaunchStep): Promise<Outcome> {
   );
   const see = { label: "See the listings", href: `/changes/${changeSetId}` };
   const progress = { done: counts.done, total: counts.total };
+  if (counts.undone) return { state: "done", note: `You took these listings down with Undo, so they're off ${ready.name}.`, actions: [see] };
   if (counts.pending > 0) {
     const s = c.state.ebay.stopped;
     if (s && s.kind !== "busy") {
