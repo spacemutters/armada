@@ -104,6 +104,21 @@ export async function homeSummary(workspaceId: string) {
     for (const s of failedShops) {
       needs.push({ kind: "shop", title: `A shop build stopped`, body: `“${s.niche}”. You can build it again in one press.`, href: `/builder/${s.id}` });
     }
+    // Builds waiting for their owner to pick products.
+    const choosing = await tx<{ id: string; name: string; want: number; offered: number }[]>`
+      select id, coalesce(blueprint -> 'brand' ->> 'name', niche) as name,
+             coalesce((brief ->> 'productCount')::int, 0) as want,
+             case when jsonb_typeof(blueprint -> 'proposals') = 'array' then jsonb_array_length(blueprint -> 'proposals') else 0 end as offered
+      from armada.shops where status = 'choosing' order by updated_at limit 3`;
+    for (const s of choosing) {
+      const pick = Math.min(s.want, s.offered);
+      needs.push({
+        kind: "shop",
+        title: `Choose products for ${s.name}`,
+        body: `The AI found ${s.offered}. Pick the ${pick} you want and the build carries on.`,
+        href: `/builder/${s.id}`,
+      });
+    }
 
     const [counts] = await tx<{ stores: number; practice: number; shops: number; building: number }[]>`
       select (select count(*) from armada.stores)::int as stores,
