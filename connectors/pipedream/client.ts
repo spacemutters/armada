@@ -3,8 +3,8 @@ import { open, seal } from "@/lib/crypto";
 import { asSystem } from "@/lib/db";
 import {
   checkPdSettings,
-  connectPageUrl,
   PD_API,
+  PD_APPS,
   readAccounts,
   relayHeaders,
   relayPath,
@@ -150,6 +150,11 @@ async function need(): Promise<PdSettings> {
  * them back to `back` with ?pd=done, or ?pd=failed when something went wrong on the way.
  */
 export async function connectPage(externalUserId: string, provider: PdProvider, back: string): Promise<string> {
+  return connectPageForApp(externalUserId, PD_APPS[provider], back);
+}
+
+/** The service's connect page for any of its apps, by the service's own name for it (for the admin's checks). */
+export async function connectPageForApp(externalUserId: string, appSlug: string, back: string): Promise<string> {
   const s = await need();
   const sep = back.includes("?") ? "&" : "?";
   const r = await call(s, "POST", `/v1/connect/${encodeURIComponent(s.projectId)}/tokens`, {
@@ -160,7 +165,26 @@ export async function connectPage(externalUserId: string, provider: PdProvider, 
   });
   const link = (r.json as { connect_link_url?: string } | null)?.connect_link_url;
   if (r.status !== 200 || !link) throw new PdProblem(r.status, "The connection service couldn't start connecting. Try again in a minute.");
-  return connectPageUrl(link, provider);
+  const u = new URL(link);
+  u.searchParams.set("app", appSlug);
+  return u.toString();
+}
+
+/** The service's apps matching a search, with what the admin needs to judge them (for the admin's checks). */
+export async function searchServiceApps(q: string): Promise<unknown> {
+  const s = await need();
+  const r = await call(s, "GET", `/v1/apps?q=${encodeURIComponent(q)}&limit=20`);
+  if (r.status !== 200) throw new PdProblem(r.status, `The connection service answered ${r.status}.`);
+  return r.json;
+}
+
+/** Every account the admin's check connected, so they can be let go afterwards. */
+export async function accountsOf(externalUserId: string): Promise<PdAccount[]> {
+  const s = await need();
+  const r = await call(s, "GET", `/v1/connect/${encodeURIComponent(s.projectId)}/users/${encodeURIComponent(externalUserId)}/accounts`);
+  if (r.status === 404) return [];
+  if (r.status !== 200) throw new PdProblem(r.status, "Couldn't read the connected accounts from the connection service.");
+  return readAccounts(r.json);
 }
 
 /** The accounts a workspace has connected at the service for one platform. */
