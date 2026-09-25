@@ -90,7 +90,10 @@ try {
 
   // Create them paused, then switch on (practice).
   expect(await press("Create these ads"), "Create these ads — paused");
-  const created = await waitFor(/Switch on/, 60000);
+  // Wait for the real Switch on button (the hint under Create also says "Switch on").
+  const created = await page
+    .waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /^\s*Switch on\s*$/.test(b.textContent) && !b.disabled), { timeout: 120000 })
+    .then(() => true, () => false);
   expect(created, "the ads are created switched off, with a Switch on button");
   await shot("03-created-paused");
   expect(await press("Switch on"), "Switch on");
