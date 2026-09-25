@@ -6,6 +6,8 @@ import { asSystem, withWorkspace } from "@/lib/db";
 import type { Palette } from "@/lib/color";
 import type { ShopRow } from "@/lib/shops/types";
 import { appOrigin, type Provider } from "@/lib/connections/types";
+import { pictureIndex } from "@/lib/creative/pictures";
+import { adPictureViews, isPracticeItem, type AdPictureView } from "./pictures";
 import { loadShopProducts, type AdShopProduct } from "./sets";
 import type { AdSet, AdVariation, Totals } from "./types";
 
@@ -134,6 +136,8 @@ export interface ShopAdsView {
   set: AdSet | null;
   variations: AdVariation[];
   products: Record<string, ProductLite>;
+  /** Each ad's pictures, in the order it shows them. */
+  pictures: Record<string, AdPictureView[]>;
   totals: Totals;
   byVariation: Record<string, Totals>;
   /** Day by day, for the whole set: spend and visits. */
@@ -159,10 +163,17 @@ export async function shopAdsView(workspaceId: string, shopId: string): Promise<
       : [];
     const [store] = shop.storeId ? await tx<{ mode: string; domain: string | null }[]>`select mode, domain from armada.stores where id = ${shop.storeId}` : [];
     const domain = store?.mode === "live" && store.domain ? store.domain : new URL(appOrigin()).host;
-    return { shop, sets, set, variations, products, daily, domain };
+    const index = await pictureIndex(tx, {
+      shopId: shop.id,
+      adIds: variations.map((v) => v.id),
+      itemIds: products.filter((p) => isPracticeItem(shop, p)).map((p) => p.id),
+    });
+    const byId = new Map(products.map((p) => [p.id, p]));
+    const pictures = Object.fromEntries(variations.map((v) => [v.id, adPictureViews(shop, v, byId, index)]));
+    return { shop, sets, set, variations, products, daily, domain, pictures };
   });
   if (!data) return null;
-  const { shop, sets, set, variations, products, daily, domain } = data;
+  const { shop, sets, set, variations, products, daily, domain, pictures } = data;
   const setTotals = await totalsBy(workspaceId, sets.map((s) => s.id), "ad_set_id");
   const byVariation = set ? await totalsBy(workspaceId, [set.id], "variation_id") : new Map<string, Totals>();
   return {
@@ -171,6 +182,7 @@ export async function shopAdsView(workspaceId: string, shopId: string): Promise<
     set,
     variations,
     products: Object.fromEntries(products.map((p) => [p.id, lite(p)])),
+    pictures,
     totals: (set && setTotals.get(set.id)) ?? EMPTY,
     byVariation: Object.fromEntries(byVariation),
     daily,

@@ -13,6 +13,7 @@
 //   shop.pages    withCraft(SYSTEM, ["conversion"])
 //   ab.variants   withCraft(<its system>, ["conversion"])
 //   images.*      withCraft(<image system>, ["image"])   (lib/shops/images.ts does this itself)
+//   images.scene, images.item   withCraft(<picture system>, ["picture"])   (lib/creative/brief.ts)
 //
 // No imports, so scripts can load it offline.
 
@@ -40,29 +41,57 @@ export const CONVERSION_CRAFT = `Conversion craft (every claim still comes only 
 - FAQ: answer the questions that stop a purchase (fit or size, delivery time, returns, what's in the box, care), with the answer in the first sentence.
 - Never write reviews, ratings, customer counts, "best seller", discounts, sale or crossed-out prices, "limited", stock levels, countdowns, badges, guarantees or pressure to buy now. Trust comes from specifics and true terms.`;
 
+// The picture lines both image blocks share (brand pictures and the pictures in ads and posts), so
+// the craft is written once.
+const NO_TEXT_NO_FACES = `- Never text, letters, numbers, logos, labels, watermarks or screens. No face toward the camera: people appear only from behind, cropped, or as hands and silhouettes, so no one reads as a real customer.`;
+const ONE_IDEA = `- One idea per image: a specific place and time ("a narrow city kitchen at 7 a.m."), one subject, generous calm space. Name the surfaces, the light source and the season.`;
+const LIGHT = `- Light is what looks expensive: soft directional daylight, long gentle shadows. No flat studio light, no HDR, no lens flare.`;
+const COLOR = `- Color: from the brand palette, named as materials with their hex ("chalk-white walls #f2f1ec"); low saturation, one accent note, natural color, fine film grain.`;
+const CAMERA = `- Camera: realistic editorial photography, 35-50 mm, eye or chest height, shallow depth of field. Not illustration or 3D render unless the brand's look asks for it.`;
+const NOT_STOCK = `- Avoid the stock look: no posed smiles, thumbs up, laptops on beds, floating objects, glossy skin or surreal mashups.`;
+const ONE_SHOOT = `- A set is one shoot: the same light, palette, lens and grain in every image.`;
+
 export const IMAGE_CRAFT = `Image craft (you write the prompt for one brand image):
 - Honesty: brand images show the shop's world (place, light, materials, the moment of use). They never show a product the shop sells, any item of that kind, packaging, or anything a shopper could take for what they will receive. Product photos stay the supplier's real photos.
-- Never text, letters, numbers, logos, labels, watermarks or screens. No face toward the camera: people appear only from behind, cropped, or as hands and silhouettes, so no one reads as a real customer.
-- One idea per image: a specific place and time ("a narrow city kitchen at 7 a.m."), one subject, generous calm space. Name the surfaces, the light source and the season.
-- Light is what looks expensive: soft directional daylight, long gentle shadows. No flat studio light, no HDR, no lens flare.
-- Color: from the brand palette, named as materials with their hex ("chalk-white walls #f2f1ec"); low saturation, one accent note, natural color, fine film grain.
-- Camera: realistic editorial photography, 35-50 mm, eye or chest height, shallow depth of field. Not illustration or 3D render unless the brand's look asks for it.
+${NO_TEXT_NO_FACES}
+${ONE_IDEA}
+${LIGHT}
+${COLOR}
+${CAMERA}
 - Composition follows the slot: hero is wide 3:2, the left 40% calm and plain for a headline, one clear subject just right of center so a tall 4:5 crop keeps it; a collection cover is square, one still life or setting that says what the collection is for, readable at 300 px.
-- Avoid the stock look: no posed smiles, thumbs up, laptops on beds, floating objects, glossy skin or surreal mashups.
-- A set is one shoot: the same light, palette, lens and grain in every image.
+${NOT_STOCK}
+${ONE_SHOOT}
 - Write the prompt as short labelled lines: Scene, Subject, Light, Camera, Palette, Composition, Do not include (repeat the no-product, no-text and no-face rules and name the shop's product kinds).`;
 
-export type CraftPart = "brand" | "conversion" | "image";
+/**
+ * The same craft for the pictures in ads and social posts (lib/creative). Scenes keep the brand
+ * pictures' honesty rule: Armada places the product's real photo itself. The one exception is a
+ * practice item (an imagined product in a practice shop, never sold and never advertised for real),
+ * and only when the brief says so.
+ */
+export const PICTURE_CRAFT = `Picture craft (you write the prompt for one picture in a shop's ad or social post):
+- Honesty: a scene shows the shop's world (place, light, materials, the moment of use) and never a product the shop sells, any item of that kind, packaging, or anything a shopper could take for what they will receive; Armada places the product's real photo itself. The only exception is a brief that says "practice item": then show exactly that imagined item, nothing more.
+${NO_TEXT_NO_FACES}
+${ONE_IDEA}
+${LIGHT}
+${COLOR}
+${CAMERA}
+- Composition: tall 2:3 portrait; the subject in the middle third, so square and 9:16 crops keep it; the lower third calm, because words are set over it.
+${NOT_STOCK}
+${ONE_SHOOT}
+- Write the prompt as short labelled lines: Scene, Subject, Light, Camera, Palette, Composition, Do not include (repeat the no-text and no-face rules, and for a scene the no-product rule with the shop's product kinds).`;
 
-const BLOCKS: Record<CraftPart, string> = { brand: BRAND_CRAFT, conversion: CONVERSION_CRAFT, image: IMAGE_CRAFT };
+export type CraftPart = "brand" | "conversion" | "image" | "picture";
+
+const BLOCKS: Record<CraftPart, string> = { brand: BRAND_CRAFT, conversion: CONVERSION_CRAFT, image: IMAGE_CRAFT, picture: PICTURE_CRAFT };
 
 /**
- * The system prompt with the chosen craft blocks added, in the order brand, conversion, image.
- * They go before a closing "Answer only with JSON" line, so the output rule stays last. A block
- * already present is not added twice.
+ * The system prompt with the chosen craft blocks added, in the order brand, conversion, image,
+ * picture. They go before a closing "Answer only with JSON" line, so the output rule stays last. A
+ * block already present is not added twice.
  */
 export function withCraft(system: string, parts: CraftPart[]): string {
-  const blocks = (["brand", "conversion", "image"] as const)
+  const blocks = (["brand", "conversion", "image", "picture"] as const)
     .filter((p) => parts.includes(p))
     .map((p) => BLOCKS[p])
     .filter((b) => !system.includes(b.slice(0, b.indexOf("\n"))));

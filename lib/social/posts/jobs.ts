@@ -5,6 +5,7 @@ import type { Tx } from "@/lib/db";
 import type { ShopRow } from "@/lib/shops/types";
 import type { AiJob } from "@/lib/types";
 import { slideAlt } from "./design";
+import { dropPostPictures, ensurePostPictures } from "./pictures";
 import { POSTS_PER_PRODUCT, POSTS_PER_WEEK, readCarouselAnswer, type ReadPost } from "./schema";
 import { suggestedMoment, zoneFor } from "./time";
 import type { SocialPostRow, SocialRunRow } from "./types";
@@ -18,10 +19,12 @@ import type { SocialPostRow, SocialRunRow } from "./types";
 async function insertSlides(tx: Tx, workspaceId: string, postId: string, post: ReadPost, refs: SocialRunRow["refs"]) {
   for (const [i, s] of post.slides.entries()) {
     const ref = s.photo ? refs[s.photo] : undefined;
+    // A product's real photo, a practice item's picture (made with ChatGPT), or a ChatGPT scene.
+    const picture = ref?.item ? "item" : s.scene ? "scene" : null;
     await tx`
-      insert into armada.social_slides (post_id, workspace_id, n, headline, line, product_id, image_url, alt)
-      values (${postId}, ${workspaceId}, ${i + 1}, ${s.headline}, ${s.line}, ${ref?.productId ?? null}, ${ref?.url ?? null},
-              ${slideAlt(s.headline, s.line, ref?.title ?? null)})`;
+      insert into armada.social_slides (post_id, workspace_id, n, headline, line, product_id, image_url, picture, scene, alt)
+      values (${postId}, ${workspaceId}, ${i + 1}, ${s.headline}, ${s.line}, ${ref?.productId ?? null}, ${ref?.item ? null : (ref?.url ?? null)},
+              ${picture}, ${picture === "scene" ? (s.scene ?? "") : ""}, ${slideAlt(s.headline, s.line, ref?.title ?? null)})`;
   }
 }
 
@@ -71,6 +74,8 @@ onJobFinished("social.carousel", async (tx: Tx, job: AiJob) => {
     }
     const p = posts[0];
     await tx`delete from armada.social_slides where post_id = ${post.id}`;
+    // New words, new pictures: the old scenes described the old slides.
+    await dropPostPictures(tx, post.id);
     await insertSlides(tx, run.workspaceId, post.id, p, run.refs);
     await tx`
       update armada.social_posts
@@ -78,15 +83,20 @@ onJobFinished("social.carousel", async (tx: Tx, job: AiJob) => {
           status = 'draft', results = '{}', problem = null, edited = false, rewriting = false, run_id = ${run.id}, updated_at = now()
       where id = ${post.id}`;
     await tx`update armada.social_runs set status = 'done', count = 1, finished_at = now() where id = ${run.id}`;
+    await ensurePostPictures(tx, shop, [post.id]);
     return;
   }
 
+  const made: string[] = [];
   for (const p of posts) {
     const [row] = await tx<{ id: string }[]>`
       insert into armada.social_posts (workspace_id, shop_id, run_id, angle, caption, hashtags, suggested_at, created_by)
       values (${run.workspaceId}, ${run.shopId}, ${run.id}, ${p.angle}, ${p.caption}, ${tx.json(p.hashtags as never)}, ${when(p)}, ${run.createdBy})
       returning id`;
     await insertSlides(tx, run.workspaceId, row.id, p, run.refs);
+    made.push(row.id);
   }
   await tx`update armada.social_runs set status = 'done', count = ${posts.length}, finished_at = now() where id = ${run.id}`;
+  // The slides' pictures, once per post, now that the words are settled.
+  await ensurePostPictures(tx, shop, made);
 });

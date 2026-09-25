@@ -1,6 +1,6 @@
 import { SYSTEM } from "@/lib/shops/prompts";
 import type { Blueprint } from "@/lib/shops/types";
-import { CTAS, LIMITS } from "./schema";
+import { CARDS, CTAS, LIMITS, SCENES_PER_AD } from "./schema";
 
 // What the AI is told when it writes a shop's ads ("ads.write"). It starts from the shop builder's own
 // honesty rules (SYSTEM: nothing invented, no hype, no brands the shop doesn't own) and adds the rules
@@ -22,7 +22,10 @@ export interface AdProduct {
   title: string;
   priceCents: number;
   category: string;
-  hasPhoto: boolean;
+  /** How many of its real photos Armada can show (0 to 3). */
+  photos: number;
+  /** A practice shop's imagined item: Armada makes a picture of it, since it has no photo. */
+  practiceItem: boolean;
   bullets: string[];
   description: string;
 }
@@ -30,7 +33,7 @@ export interface AdProduct {
 export interface AdContext {
   bp: Blueprint;
   country: string;
-  /** "practice": a practice shop; "real": the ads will be real, so every product shown needs a photo. */
+  /** "practice": practice ads; "real": the ads will be real, so every product shown needs a photo. */
   target: "practice" | "real";
   products: AdProduct[];
 }
@@ -61,23 +64,28 @@ function productLines(ctx: AdContext): string {
   return ctx.products
     .map((p) => {
       const details = [p.bullets.slice(0, 4).join("; "), p.description.replace(/\s+/g, " ").slice(0, 200)].filter(Boolean).join(" | ");
-      return `${p.ref} | ${p.title} | ${money(p.priceCents)} | ${p.category || "n/a"} | photo: ${p.hasPhoto ? "yes" : "no"} | ${details}`;
+      const pictures = p.photos > 0 ? `photos: ${p.photos}` : p.practiceItem ? "photos: practice item (Armada makes its one picture)" : "photos: none";
+      return `${p.ref} | ${p.title} | ${money(p.priceCents)} | ${p.category || "n/a"} | ${pictures} | ${details}`;
     })
     .join("\n");
 }
 
 const photoRule = (ctx: AdContext) =>
-  ctx.target === "real" ? "Only show products marked photo: yes; the others can't be used in ads." : "Prefer products marked photo: yes.";
+  ctx.target === "real" ? "Only show products that have photos; the others can't be used in ads." : "Only show products that have photos or are practice items.";
 
 const perAdRules = (ctx: AdContext) => `For each ad:
 - idea: what it tries, in one plain sentence a shop owner would understand, at most 12 words.
-- format: "single" (one product photo) or "carousel" (3 to 6 cards people swipe through, one product per card).
+- format: "single" (one product, its real photo set in a scene) or "carousel" (${CARDS.min} to ${CARDS.max} cards people swipe through).
 - primaryText: the words above the picture. The first ${LIMITS.primaryShown} characters must work on their own, because that is all most people see. At most ${LIMITS.primaryText} characters in total.
 - headline: at most ${LIMITS.headline} characters.
 - description: at most ${LIMITS.description} characters: a plain fact from the list (a price, the delivery time, the returns window) or an empty string.
 - callToAction: one of ${CTAS.join(", ")}.
 - products: the refs shown (p1, p2 …). A single-photo ad shows the first one. ${photoRule(ctx)}
-- cards: for a carousel, one card per product in the order they appear: product (its ref), headline (at most ${LIMITS.cardHeadline} characters) and description (at most ${LIMITS.cardDescription} characters; the listed price is fine). For a single-photo ad, an empty list.`;
+- scene: for a single-photo ad, the setting its product photo is placed in: a specific place, surface and light in at most 20 words ("a pale oak counter by a window at 7 a.m."), with no product, no text and no faces in it. For a carousel, "".
+- cards: for a single-photo ad, an empty list. For a carousel, ${CARDS.min} to ${CARDS.max} cards in the order people swipe them. Each card is one of:
+  - a product card: show is its ref ("p2"), photo is which of its photos (1 is the first; a practice item has only 1), scene is "". The same product may appear twice only with a different photo.
+  - a scene card: show is "scene", photo is 0, scene is what its picture shows in at most 20 words: the moment or place the products are for, with no product of the shop's kinds, no text and no faces toward the camera. Armada has ChatGPT make it. At most ${SCENES_PER_AD} scene cards, and at least two product cards.
+  Every card: headline at most ${LIMITS.cardHeadline} characters, description at most ${LIMITS.cardDescription} characters (the listed price is fine on a product card). A strong carousel often opens on a scene that stops the scroll and then shows the products.`;
 
 export function adsPrompt(ctx: AdContext): string {
   return `Write paid ads for the shop "${ctx.bp.brand?.name}". They appear in Facebook and Instagram feeds and as full-screen cards between short videos, so the first line has to stop someone scrolling on its own, without tricks.
@@ -85,10 +93,12 @@ export function adsPrompt(ctx: AdContext): string {
 The shop
 ${shopLines(ctx)}
 
-Products (ref | title | price | category | photo | facts)
+Products (ref | title | price | category | photos | facts)
 ${productLines(ctx)}
 
 Write 3 to 5 ads. Each tries a genuinely different idea, for example: one standout product and what it does; a small set that belongs together, as a carousel; who it's for and the everyday moment it helps with; a concrete detail such as a material, size or what's included. Include at least one carousel and at least one single-photo ad.
+
+Pictures: a product is always shown by its own real photo (or a practice item's one picture); ChatGPT only makes the scenes you describe, which never show a product. Describe scenes the way a photographer would brief a shoot, in the shop's look.
 
 ${perAdRules(ctx)}
 
@@ -119,7 +129,7 @@ export function rewritePrompt(ctx: AdContext, replacing: ExistingAd, others: Exi
 The shop
 ${shopLines(ctx)}
 
-Products (ref | title | price | category | photo | facts)
+Products (ref | title | price | category | photos | facts)
 ${productLines(ctx)}
 
 The ad being replaced (try a different idea and different words; you may keep its format or change it):

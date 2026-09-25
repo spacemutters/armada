@@ -415,6 +415,29 @@ const checks = {
       return problems.length ? problems.join("; ") : null;
     },
   },
+  "honest-pictures": {
+    what: "Ads and posts show a product only in its real photo: ChatGPT makes scenes, and practice items' pictures in practice shops only; carousels have 4+ cards",
+    run(root) {
+      const problems = [];
+      const src = (p) => (fs.existsSync(path.join(root, p)) ? stripComments(fs.readFileSync(path.join(root, p), "utf8")) : "");
+      const queueItem = src("lib/creative/pictures.ts").match(/export async function queueItem[\s\S]*?\n}/)?.[0] ?? "";
+      const guard = queueItem.search(/!mayPictureItem\(shop, productId\)\) return false/);
+      if (guard < 0 || guard > queueItem.indexOf("enqueueJob")) problems.push("queueItem no longer refuses anything but a practice shop's imagined item before asking ChatGPT");
+      const brief = src("lib/creative/brief.ts");
+      if (!/shop\.brief\?\.source !== "practice"\) return false/.test(brief) || !/p\.imagined === true/.test(brief)) problems.push("mayPictureItem no longer means a practice shop's imagined item");
+      if (!/never a product the shop sells/.test(src("lib/shops/craft.ts"))) problems.push("PICTURE_CRAFT no longer tells ChatGPT that a scene never shows a product");
+      const migrations = walk(path.join(root, "supabase", "migrations")).map((p) => fs.readFileSync(p, "utf8")).join("\n");
+      if (!/create trigger creative_item_is_practice/.test(migrations)) problems.push("the database no longer refuses item pictures outside practice shops");
+      const launch = src("lib/ads/sets.ts").match(/export async function launchPaused[\s\S]*?\n}\n/)?.[0] ?? "";
+      if (/images\[0\]/.test(launch) || !/adPictureViews\(/.test(launch)) problems.push("launchPaused sends the ad platform something other than the composed pictures the previews show");
+      const cards = Number(src("lib/ads/schema.ts").match(/export const CARDS = \{ min: (\d+)/)?.[1] ?? 0);
+      if (cards < 4) problems.push(`carousel ads can have ${cards} cards; they need at least 4`);
+      const slides = Number(src("lib/social/posts/schema.ts").match(/export const MIN_SLIDES = (\d+)/)?.[1] ?? 0);
+      if (slides < 4) problems.push(`carousel posts can have ${slides} slides; they need at least 4`);
+      if (/ProductArt|iconFor/.test(src("components/ads/ad-preview.tsx"))) problems.push("ad previews draw a product icon instead of a picture");
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
   suites: {
     what: "Every offline test suite passes (scripts/check-*.mjs: ads, AliExpress, chooser, engines, passwords, Shopify, social, store openers, Stripe…)",
     run(root) {
@@ -627,6 +650,27 @@ const PLANTS = {
     const f = path.join(dir, "connectors", "aliexpress", "client.ts");
     // A token call that skips the lane.
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('  await waitForSlot(workspaceId, "aliexpress", GAP_MS);\n  const t = await send("/auth/token/create"', '  const t = await send("/auth/token/create"'));
+  },
+  "honest-pictures/item": (dir) => {
+    // A real product pictured by ChatGPT: the guard that allows practice items only is gone.
+    const f = path.join(dir, "lib", "creative", "pictures.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("if (!UUID.test(productId) || !mayPictureItem(shop, productId)) return false;", "if (!UUID.test(productId)) return false;"));
+  },
+  "honest-pictures/launch": (dir) => {
+    // The platform gets the bare supplier photo instead of the picture that was checked.
+    const f = path.join(dir, "lib", "ads", "sets.ts");
+    const src = fs.readFileSync(f, "utf8");
+    const target = 'imageUrl: a.format === "single" && pics.get("main")?.src.portrait ? `${origin}${pics.get("main")!.src.portrait}` : null,';
+    if (!src.includes(target)) throw new Error("the launch picture line moved; update this plant");
+    fs.writeFileSync(f, src.replace(target, "imageUrl: first?.images[0]?.url ?? null,"));
+  },
+  "honest-pictures/cards": (dir) => {
+    const f = path.join(dir, "lib", "ads", "schema.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("export const CARDS = { min: 4,", "export const CARDS = { min: 2,"));
+  },
+  "honest-pictures/slides": (dir) => {
+    const f = path.join(dir, "lib", "social", "posts", "schema.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("export const MIN_SLIDES = 4;", "export const MIN_SLIDES = 3;"));
   },
   suites: (dir) => {
     const f = path.join(dir, "connectors", "aliexpress", "parse.ts");

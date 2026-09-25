@@ -52,9 +52,13 @@ export function onJobFinished(kindPrefix: string, handler: JobHandler): void {
   handlers.set(kindPrefix, handler);
 }
 
+/** The handler registered for this kind, or for the longest prefix of it ("images.scene" beats "images"). */
 function handlerFor(kind: string): JobHandler | undefined {
-  for (const [prefix, h] of handlers) if (kind === prefix || kind.startsWith(prefix + ".")) return h;
-  return undefined;
+  let best: [string, JobHandler] | undefined;
+  for (const [prefix, h] of handlers) {
+    if ((kind === prefix || kind.startsWith(prefix + ".")) && (!best || prefix.length > best[0].length)) best = [prefix, h];
+  }
+  return best?.[1];
 }
 
 /**

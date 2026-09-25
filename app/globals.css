@@ -261,3 +261,30 @@ body {
 .prose-armada strong {
   font-weight: 600;
 }
+
+/*
+  A picture still being made (ads and posts): a quiet panel in the shop's colours with a slow light
+  passing over it. Reduced motion turns the light off (the rule above also stops every animation).
+*/
+@keyframes armada-sheen {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+.picture-making::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 38%, rgb(255 255 255 / 0.26) 50%, transparent 62%);
+  background-size: 260% 100%;
+  animation: armada-sheen 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .picture-making::after {
+    display: none;
+  }
+}

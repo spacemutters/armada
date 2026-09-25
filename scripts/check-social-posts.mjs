@@ -8,8 +8,9 @@
 //
 // What it proves:
 // - the answer schema the AI gets accepts a good week of posts and rejects the ways an answer goes
-//   wrong (a photo it wasn't offered, too few slides, extra fields, a day outside the week), and the
-//   reader keeps what it can trust and drops the rest (sales hashtags, emoji, exclamation marks);
+//   wrong (a photo it wasn't offered, fewer than four slides, extra fields, a day outside the week),
+//   and the reader keeps what it can trust and drops the rest (sales hashtags, emoji, exclamation
+//   marks, a third scene for ChatGPT to make);
 // - the prompt carries the shop builder's honesty rules word for word and never a photo address;
 // - every slide's words read at 4.5:1 or better: on the shop's background, on its accent, and over
 //   ANY photo under the veil (checked against thousands of pixel colours, and shown to fail when the
@@ -101,7 +102,7 @@ report(
   keys.join(","),
 );
 
-const slide = (headline, line, photo) => ({ headline, line, photo });
+const slide = (headline, line, photo, scene = "") => ({ headline, line, photo, scene });
 const post = (angle, slides, day = 2, time = "19:30", extra = {}) => ({
   angle,
   slides,
@@ -113,9 +114,9 @@ const post = (angle, slides, day = 2, time = "19:30", extra = {}) => ({
 });
 const week = {
   posts: [
-    post("Percale sheets up close", [slide("Cool, crisp percale", "A plain cotton weave.", "P1-1"), slide("The whole set", "Fitted, flat and pillowcases.", "P1-2"), slide("Evenfall", "Bedding chosen for rest.", "none")], 1, "20:00"),
-    post("Light for the last hour", [slide("A lamp for the nightstand", "Low, even light.", "P2-1"), slide("Read, then rest", "", "none"), slide("Evenfall", "", "none")], 2),
-    post("How to make the room darker", [slide("Darker mornings", "One panel per window side.", "none"), slide("Pair it with the lamp", "", "P2-1"), slide("Evenfall", "", "none")], 3),
+    post("Percale sheets up close", [slide("Cool, crisp percale", "A plain cotton weave.", "P1-1"), slide("The whole set", "Fitted, flat and pillowcases.", "P1-2"), slide("Made for warm nights", "", "scene", "an open window at dusk over a made bed, linen curtains moving"), slide("Evenfall", "Bedding chosen for rest.", "none")], 1, "20:00"),
+    post("Light for the last hour", [slide("A lamp for the nightstand", "Low, even light.", "P2-1"), slide("Read, then rest", "", "none"), slide("One page more", "", "none"), slide("Evenfall", "", "none")], 2),
+    post("How to make the room darker", [slide("Darker mornings", "One panel per window side.", "scene", "a dim bedroom at 6 a.m., a thin line of light at the window edge"), slide("Pair it with the lamp", "", "P2-1"), slide("Sleep past sunrise", "", "none"), slide("Evenfall", "", "none")], 3),
     post("A bedtime routine", [slide("Three steps before bed", "", "none"), slide("Lamp low", "", "P2-1"), slide("Sheets cool", "", "P1-1"), slide("Evenfall", "", "none")], 5),
     post("What's in the sheet set", [slide("What you get", "", "P1-2"), slide("Fitted and flat", "", "none"), slide("Two pillowcases", "", "none"), slide("Evenfall", "", "none")], 6, "08:15"),
   ],
@@ -132,6 +133,8 @@ const bad = (label, mutate) => {
 };
 bad("a photo it wasn't offered", (w) => (w.posts[0].slides[0].photo = "P9-1"));
 bad("a post with only two slides", (w) => w.posts[1].slides.splice(2));
+bad("a post with three slides", (w) => w.posts[1].slides.splice(3));
+bad("a slide without its scene field", (w) => delete w.posts[0].slides[0].scene);
 bad("a post with nine slides", (w) => (w.posts[1].slides = Array.from({ length: 9 }, () => slide("x", "", "none"))));
 bad("an extra field", (w) => (w.posts[0].price = "$20"));
 bad("a day outside the week", (w) => (w.posts[2].day = 9));
@@ -141,31 +144,44 @@ bad("a missing caption", (w) => delete w.posts[3].caption);
 // The reader: what's kept, what's dropped.
 const read = schema.readCarouselAnswer(week, keys, schema.POSTS_PER_WEEK);
 report(read.posts.length === 5 && read.notes.length === 0, "the reader keeps all five good posts", `${read.posts.length} posts, ${read.notes.length} notes`);
-report(read.posts[0].slides[0].photo === "P1-1" && read.posts[0].slides[2].photo === null, "photo names map through, and \"none\" means a text-only slide");
+report(read.posts[0].slides[0].photo === "P1-1" && read.posts[0].slides[3].photo === null && read.posts[0].slides[3].scene === null, "photo names map through, and \"none\" means a text-only slide");
+report(read.posts[0].slides[2].photo === null && /open window at dusk/.test(read.posts[0].slides[2].scene ?? ""), "a \"scene\" slide keeps what its ChatGPT picture shows, and no product photo");
 report(read.posts[0].hour === 20 && read.posts[0].minute === 0 && read.posts[0].day === 1, "day and time are read", `${read.posts[0].day} ${read.posts[0].hour}:${read.posts[0].minute}`);
 
 const messy = {
   posts: [
     post(
       "Big sale!!! 🔥",
-      [slide("Buy now!!! 🛏️", "Only today!", "P7-3"), slide("Crisp percale", "A plain weave.", "P1-1"), slide("  ", "", "none"), slide("Evenfall", "", "none")],
+      [slide("Buy now!!! 🛏️", "Only today!", "P7-3"), slide("Crisp percale", "A plain weave.", "P1-1"), slide("  ", "", "none"), slide("Folded at the foot", "", "none"), slide("Evenfall", "", "none")],
       12,
       "6:30 pm",
       { hashtags: ["#sale", "Free Shipping", "#Sleep Well", "sleepwell", "percale", "#123", "giveaway2026", "bedroom"] },
     ),
     post("Too short", [slide("One", "", "none"), slide("Two", "", "none")]),
     "not a post",
-    post("Extra", [slide("a", "", "none"), slide("b", "", "none"), slide("c", "", "none")]),
+    post("Three slides", [slide("a", "", "none"), slide("b", "", "none"), slide("c", "", "none")]),
+    post("Extra", [slide("a", "", "none"), slide("b", "", "none"), slide("c", "", "none"), slide("d", "", "none")]),
   ],
 };
 const m = schema.readCarouselAnswer(messy, keys, 2);
 const p0 = m.posts[0];
-report(m.posts.length === 2, "the reader drops a two-slide post and anything unreadable, and never returns more than asked", `${m.posts.length} posts`);
+report(m.posts.length === 2 && m.posts[1].angle === "Extra", "the reader drops posts under four slides and anything unreadable, and never returns more than asked", `${m.posts.length} posts`);
 report(p0 && !/[!🔥🛏]/u.test(p0.angle + p0.slides.map((s) => s.headline + s.line).join("")), "emoji and exclamation marks are taken out", p0?.slides[0].headline);
-report(p0 && p0.slides.length === 3 && p0.slides[0].photo === null, "a slide naming a photo it wasn't offered stays, words only; a blank slide goes", p0?.slides.map((s) => s.photo).join(","));
+report(p0 && p0.slides.length === 4 && p0.slides[0].photo === null, "a slide naming a photo it wasn't offered stays, words only; a blank slide goes", p0?.slides.map((s) => s.photo).join(","));
 report(p0 && p0.hashtags.join(" ") === "SleepWell percale bedroom", "sales, freebie and number hashtags are dropped; repeats and spaces are fixed", p0?.hashtags.join(" "));
 report(p0 && p0.day === 7 && p0.hour === 18 && p0.minute === 30, "a day past the week is held to 7, and \"6:30 pm\" reads as 18:30", p0 && `${p0.day} ${p0.hour}:${p0.minute}`);
-report(m.notes.some((n) => /wasn't offered/.test(n)) && m.notes.some((n) => /fewer than 3/.test(n)), "the reader says what it left out", m.notes.join(" | "));
+report(m.notes.some((n) => /wasn't offered/.test(n)) && m.notes.some((n) => /fewer than 4/.test(n)), "the reader says what it left out", m.notes.join(" | "));
+report(schema.MIN_SLIDES >= 4 && schema.MAX_SLIDES <= 8, `carousels have ${schema.MIN_SLIDES} to ${schema.MAX_SLIDES} slides`);
+
+// Scenes: ChatGPT makes at most MAX_SCENES_PER_POST per post; a scene with nothing described stays words only.
+const scenic = schema.readCarouselAnswer(
+  { posts: [post("Scenes", [slide("One", "", "scene", "a porch at dusk"), slide("Two", "", "scene", "a kitchen at dawn"), slide("Three", "", "scene", "a hallway at noon"), slide("Four", "", "scene", "  "), slide("Evenfall", "", "none")])] },
+  keys,
+  1,
+);
+const sc = scenic.posts[0]?.slides ?? [];
+report(sc.filter((x) => x.scene).length === schema.MAX_SCENES_PER_POST && sc[2].scene === null && sc[3].scene === null && scenic.notes.some((n) => /more than 2 scenes/.test(n)),
+  `at most ${schema.MAX_SCENES_PER_POST} scene pictures per post; a third, or an empty one, stays words only`, sc.map((x) => (x.scene ? "scene" : "words")).join(","));
 report(schema.readCarouselAnswer({ nope: 1 }, keys, 5).posts.length === 0 && schema.readCarouselAnswer(null, keys, 5).posts.length === 0, "an answer in the wrong shape gives no posts");
 report(
   schema.tidyCaption("Line one.\n\n\n\nLine two!  #cozy #sheets") === "Line one.\n\nLine two.",
@@ -182,7 +198,13 @@ const bp = {
   collections: [{ handle: "bedding", title: "Bedding", description: "", keywords: [], productIds: [] }, { handle: "light", title: "Light", description: "", keywords: [], productIds: [] }],
   facts: { country: "United States", deliveryMin: 7, deliveryMax: 14, handlingDays: 2, returnDays: 30 },
 };
-const text = prompt.carouselPrompt({ bp, practice: true, products, refs, count: 5, platforms: ["instagram", "facebook"], earlierAngles: ["Sheets up close"], takenDays: [2], zoneLabel: "US Eastern time" });
+const practiceRefs = prompt.photoRefs(products, { practice: true });
+report(practiceRefs["P3-1"]?.item === true && practiceRefs["P3-1"].url === null && Object.keys(practiceRefs).join(",") === "P1-1,P1-2,P2-1,P3-1",
+  "in a practice shop, a practice item without a photo is offered as its one picture (made with ChatGPT); real photos are unchanged");
+report(!prompt.photoRefs(products, { practice: false })["P3-1"], "outside a practice shop, a product without a photo is never offered a made-up picture");
+const text = prompt.carouselPrompt({ bp, practice: true, products, refs: practiceRefs, count: 5, platforms: ["instagram", "facebook"], earlierAngles: ["Sheets up close"], takenDays: [2], zoneLabel: "US Eastern time" });
+report(/P3-1 \(a practice item: Armada makes its one picture\)/.test(text) && /"scene"/.test(text) && /never shows one/.test(text) && /at most 2 slides per post/.test(text) && new RegExp(`${schema.MIN_SLIDES} to ${schema.MAX_SLIDES} slides`).test(text),
+  "the prompt offers the practice item's picture, explains scenes (never a product) and asks for four to eight slides");
 report(prompt.SYSTEM === shopPrompts.SYSTEM && /Never invent facts/.test(prompt.SYSTEM), "the job uses the shop builder's honesty rules word for word");
 report(!/https?:\/\//.test(text), "the prompt never shows the AI a photo address");
 report(
@@ -280,11 +302,12 @@ report(
   [
     design.slideVersion({ ...s, headline: "Cool percale" }, 5, look),
     design.slideVersion({ ...s, imageUrl: null }, 5, look),
+    design.slideVersion({ ...s, pictureId: "0f1e2d3c-4b5a-4968-8776-655443322110" }, 5, look),
     design.slideVersion(s, 6, look),
     design.slideVersion(s, 5, { ...look, palette: { ...look.palette, accent: "#123456" } }),
     design.slideVersion(s, 5, { ...look, fonts: { ...look.fonts, display: "Fraunces" } }),
   ].every((x) => x !== v),
-  "it changes with the words, the photo, the slide count, the palette and the fonts",
+  "it changes with the words, the photo, a new ChatGPT picture, the slide count, the palette and the fonts",
 );
 const url = design.slideUrl("https://armada-pi.vercel.app/", "0f1e2d3c-4b5a-4968-8776-655443322110", 2, v);
 report(url === `https://armada-pi.vercel.app/api/social/slide/0f1e2d3c-4b5a-4968-8776-655443322110/2.jpg?v=${v}`, "slide addresses are public, end in .jpg and carry the version", url);
@@ -293,6 +316,10 @@ const ns = ["2", "2.jpg", "8.jpeg", "1.png", "0", "9", "2.gif", "../1", "02x"].m
 report(ns.join(",") === "2,2,8,1,,,,,", "slide numbers read \"2\" and \"2.jpg\", 1 to 8, and nothing else", ns.join(","));
 report(/slideNumber\(rawN\)/.test(routeSrc), "the slide route reads its number that way");
 report(/immutable/.test(routeSrc) && /asked === version/.test(routeSrc), "only an address with the current version is cached for a year");
+report(/pictureId: pic\?\.id/.test(routeSrc) && /pictureId: pictures\.get/.test(readFileSync(path.join(root, "lib/social/posts/schedule.ts"), "utf8")),
+  "the slide route and the publisher both version a slide by the picture it's drawn with");
+report(design.layoutFor(3, 5, "scene", true) === "cover" && design.layoutFor(3, 5, "scene", false) === "object" && design.layoutFor(1, 5, null) === "statement",
+  "a ChatGPT scene is drawn full-bleed on any slide; a product photo keeps its panel");
 
 // ---------- optional: draw real slides ----------
 

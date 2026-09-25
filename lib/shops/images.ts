@@ -98,7 +98,7 @@ const ANSWER_SCHEMA = {
   properties: { prompt: { type: "string" }, alt: { type: "string" } },
 } as const;
 
-const PRICE_WORDS = {
+export const PRICE_WORDS = {
   budget: "everyday prices",
   mid: "considered, mid-range prices",
   premium: "premium prices",
@@ -106,7 +106,7 @@ const PRICE_WORDS = {
 } as const;
 
 /** The product kinds a shop sells, from its plan. The brief lists them as things that must not appear. */
-function productKinds(bp: Blueprint): string[] {
+export function productKinds(bp: Blueprint): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const k of [...(bp.searchTerms ?? []), ...(bp.collections ?? []).flatMap((c) => c.keywords)]) {

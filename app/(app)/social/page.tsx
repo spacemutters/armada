@@ -7,6 +7,7 @@ import {
   captionAction,
   makeWeekAction,
   postNowAction,
+  remakeSlidePictureAction,
   removeAction,
   rewriteAction,
   scheduleAction,
@@ -79,6 +80,7 @@ export default async function SocialPostsPage({ searchParams }: { searchParams: 
   const queue = posts.filter((p) => p.status === "scheduled" || p.status === "posting").sort(byScheduled);
   const failed = posts.filter((p) => p.status === "failed");
   const posted = posts.filter((p) => p.status === "posted").sort((a, b) => time(b.postedAt) - time(a.postedAt));
+  const picturesBusy = posts.some((p) => p.slides.some((s) => s.pictureState === "making" || s.pictureState === "waiting"));
   const busy = Boolean(writing) || posts.some((p) => p.rewriting || p.status === "posting" || due(p));
   const soon = queue.some((p) => p.scheduledAt && time(p.scheduledAt) - now < 90_000);
   const lastFailed = run?.status === "failed" && !posts.some((p) => time(p.createdAt) > time(run.createdAt)) ? run : null;
@@ -113,6 +115,7 @@ export default async function SocialPostsPage({ searchParams }: { searchParams: 
       saved={saved === p.id}
       problem={problemFor === p.id ? problem : null}
       now={now}
+      helperOff={!helper.online}
       actions={{
         schedule: scheduleAction.bind(null, shop.id, p.id),
         postNow: postNowAction.bind(null, shop.id, p.id),
@@ -121,13 +124,14 @@ export default async function SocialPostsPage({ searchParams }: { searchParams: 
         rewrite: rewriteAction.bind(null, shop.id, p.id),
         remove: removeAction.bind(null, shop.id, p.id),
         unschedule: unscheduleAction.bind(null, shop.id, p.id),
+        remakePicture: remakeSlidePictureAction.bind(null, shop.id, p.id),
       }}
     />
   );
 
   return (
     <>
-      {busy ? <RefreshEvery seconds={4} /> : soon ? <RefreshEvery seconds={20} /> : null}
+      {busy ? <RefreshEvery seconds={4} /> : picturesBusy ? <RefreshEvery seconds={8} /> : soon ? <RefreshEvery seconds={20} /> : null}
       <PageHeader
         title="Social posts"
         subtitle={
@@ -191,7 +195,8 @@ export default async function SocialPostsPage({ searchParams }: { searchParams: 
               <h2 className="text-[16px] font-semibold">{posts.length ? "Make another week of posts" : "Make a week of posts"}</h2>
               <p className="mt-1 max-w-2xl text-[14px] text-muted">
                 {POSTS_PER_WEEK} carousel posts, each with {MIN_SLIDES} to {MAX_SLIDES} slides drawn in the shop&apos;s own colors and fonts, a caption,
-                hashtags and a suggested time. Only facts about the shop&apos;s products, and no made-up reviews, sales or deadlines.
+                hashtags and a suggested time. Products appear in their own photos, with scenes made by ChatGPT around them. Only facts about the
+                shop&apos;s products, and no made-up reviews, sales or deadlines.
               </p>
               {lastFailed ? <p className="mt-2 text-[13px] text-negative">{lastFailed.error ?? "The AI couldn't write the posts."} Try again.</p> : null}
               {!helper.online ? (

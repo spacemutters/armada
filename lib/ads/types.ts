@@ -1,4 +1,4 @@
-import type { Cta } from "./schema";
+import type { CardDraft, Cta } from "./schema";
 
 // Shapes shared by the ads screens, lib/ads and the ad platform connectors.
 
@@ -52,11 +52,8 @@ export interface AdSet {
   updatedAt: Date;
 }
 
-export interface CardCopy {
-  productId: string;
-  headline: string;
-  description: string;
-}
+/** A carousel card as stored: a product card (a real photo) or a scene card (a ChatGPT picture). */
+export type CardCopy = CardDraft;
 
 export interface AdVariation {
   id: string;
@@ -71,6 +68,8 @@ export interface AdVariation {
   description: string;
   callToAction: Cta;
   productIds: string[];
+  /** A single-photo ad: the setting its product photo is placed in (a ChatGPT picture). */
+  scene: string;
   cards: CardCopy[];
   writtenBy: "ai" | "ai_edited";
   practiceStrength: number | null;
@@ -96,7 +95,8 @@ export interface Totals {
 // ---------- what a platform connector implements ----------
 
 export interface LaunchCard {
-  productId: string;
+  /** Null on a scene card, which sends people to the shop. */
+  productId: string | null;
   headline: string;
   description: string;
   link: string;

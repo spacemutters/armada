@@ -16,7 +16,7 @@ export type AiEngine = NonNullable<AiJobInput["engine"]>;
 export const AI_ENGINES: Record<string, AiEngine> = {
   "ads.": "codex", // ad writing
   "social.": "codex", // social carousel posts
-  "images.": "codex", // shop brand images, made with ChatGPT's image maker (lib/shops/images.ts)
+  "images.": "codex", // pictures made with ChatGPT's image maker: shop brand images (lib/shops/images.ts), ad and post pictures (lib/creative)
   default: "claude", // shop building, headline tests and everything else
 };
 
@@ -30,6 +30,9 @@ export const AI_MODELS: Record<string, string> = {
   "images.hero": "gpt-5.5",
   "images.collection": "gpt-5.5",
   "images.lifestyle": "gpt-5.5",
+  // Pictures for ads and social posts (lib/creative): scenes, and practice items in practice shops.
+  "images.scene": "gpt-5.5",
+  "images.item": "gpt-5.5",
 };
 
 /**

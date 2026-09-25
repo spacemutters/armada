@@ -3,14 +3,16 @@ import { metaAds } from "@/connectors/meta-ads";
 import { enqueueJob } from "@/lib/ai/jobs";
 import { appOrigin } from "@/lib/connections/types";
 import { countryCode, countryName } from "@/lib/countries";
+import { pictureIndex } from "@/lib/creative/pictures";
 import { withWorkspace, type Tx } from "@/lib/db";
 import { formatMoney } from "@/lib/money";
 import type { ShopRow } from "@/lib/shops/types";
 import { clip } from "@/lib/text";
 import type { CatalogImage, ItemArt } from "@/lib/types";
+import { callOffAdPictures, dropAdPictures, ensureAdPictures, isPracticeItem, photosOf, redoAdPicture, adPictureViews } from "./pictures";
 import { platformFor } from "./platforms";
 import { ADS_SYSTEM, adsPrompt, rewritePrompt, type AdContext } from "./prompts";
-import { adRewriteSchema, adsWriteSchema, BUDGET, CARDS, CTAS, LIMITS, type Cta } from "./schema";
+import { adRewriteSchema, adsWriteSchema, BUDGET, CARDS, cardProducts, CTAS, LIMITS, normalizeCards, type Cta } from "./schema";
 import { PRACTICE_MODEL, practiceDaysDue, practiceStrengths, simulateDay } from "./simulator";
 import { PlatformProblem, type AdSet, type AdVariation, type BudgetChange, type LaunchAd } from "./types";
 
@@ -74,7 +76,7 @@ export async function loadShopProducts(tx: Tx, shop: ShopRow): Promise<AdShopPro
   });
 }
 
-const hasPhoto = (p: AdShopProduct) => Boolean(p.images[0]?.url);
+const hasPhoto = (p: AdShopProduct) => photosOf(p).length > 0;
 
 /** Whether this shop's ads can be real, and where they send people. Recomputed at launch. */
 export async function targetFor(workspaceId: string, shop: ShopRow): Promise<Target> {
@@ -107,11 +109,17 @@ function contextFor(shop: ShopRow, products: AdShopProduct[], target: Target["pl
       title: p.title,
       priceCents: p.priceCents,
       category: p.category,
-      hasPhoto: hasPhoto(p),
+      photos: photosOf(p).length,
+      practiceItem: target === "practice" && isPracticeItem(shop, p),
       bullets: p.bullets,
       description: p.description,
     })),
   };
+}
+
+/** Products an ad can show: a real photo, or (practice ads only) a practice item Armada may picture. */
+function showable(shop: ShopRow, target: Target["platform"]) {
+  return (p: AdShopProduct) => hasPhoto(p) || (target === "practice" && isPracticeItem(shop, p));
 }
 
 async function readyShop(tx: Tx, shopId: string): Promise<ShopRow> {
@@ -138,9 +146,12 @@ export async function startAds(workspaceId: string, memberId: string, shopId: st
     const [open] = await tx<{ id: string }[]>`select id from armada.ad_sets where shop_id = ${shopId} and status in ${tx(OPEN)}`;
     if (open) return open.id;
     const all = await loadShopProducts(tx, shop);
-    const products = (target.platform === "practice" ? all : all.filter(hasPhoto)).slice(0, MAX_PRODUCTS_IN_PROMPT);
+    const products = all.filter(showable(shop, target.platform)).slice(0, MAX_PRODUCTS_IN_PROMPT);
     if (!all.length) throw new AdsProblem("This shop has no products to advertise yet.");
-    if (!products.length) throw new AdsProblem("Ads on Facebook and Instagram need product photos, and none of this shop's products have one.");
+    if (!products.length)
+      throw new AdsProblem(
+        target.platform === "practice" ? "None of this shop's products has a photo to show in an ad." : "Ads on Facebook and Instagram need product photos, and none of this shop's products have one.",
+      );
     const audience = { countries: [countryCode(shop.brief?.country ?? "US")] };
     const [set] = await tx<{ id: string }[]>`
       insert into armada.ad_sets (workspace_id, shop_id, platform, practice_reason, created_by, product_refs, audience)
@@ -227,15 +238,19 @@ export async function updateAd(workspaceId: string, variationId: string, edit: A
     const headline = clip(edit.headline, LIMITS.headline);
     if (!primaryText || !headline) throw new AdsProblem("An ad needs its words above the picture and a headline.");
     const cta: Cta = (CTAS as readonly string[]).includes(edit.callToAction) ? (edit.callToAction as Cta) : v.callToAction;
-    let cards = v.cards;
+    let cards = normalizeCards(v.cards);
     let productIds = v.productIds;
+    let dropped: string[] = [];
     if (v.format === "carousel") {
-      cards = v.cards
+      const before = cards;
+      cards = before
         .map((c, i) => ({ c, e: edit.cards[i] }))
         .filter(({ e }) => !e?.remove)
-        .map(({ c, e }) => ({ productId: c.productId, headline: clip(e?.headline ?? c.headline, LIMITS.cardHeadline), description: clip(e?.description ?? c.description, LIMITS.cardDescription) }));
-      if (cards.length < CARDS.min) throw new AdsProblem("A carousel needs at least two cards.");
-      productIds = cards.map((c) => c.productId);
+        .map(({ c, e }) => ({ ...c, headline: clip(e?.headline ?? c.headline, LIMITS.cardHeadline), description: clip(e?.description ?? c.description, LIMITS.cardDescription) }));
+      if (cards.length < CARDS.min) throw new AdsProblem(`A carousel needs at least ${CARDS.min} cards.`);
+      if (!cards.some((c) => c.kind === "product")) throw new AdsProblem("A carousel needs at least one card with a product on it.");
+      productIds = cardProducts(cards);
+      dropped = before.filter((c) => !cards.some((k) => k.key === c.key)).map((c) => c.key);
     }
     await tx`
       update armada.ad_variations
@@ -243,27 +258,68 @@ export async function updateAd(workspaceId: string, variationId: string, edit: A
           call_to_action = ${cta}, cards = ${tx.json(cards as never)}, product_ids = ${tx.json(productIds as never)},
           written_by = 'ai_edited', status = 'draft', error = null, updated_at = now()
       where id = ${variationId}`;
+    // A card taken out takes its picture with it.
+    await dropAdPictures(tx, variationId, dropped);
   });
 }
 
 export async function removeAd(workspaceId: string, variationId: string): Promise<void> {
-  await withWorkspace(
-    workspaceId,
-    (tx) => tx`
+  await withWorkspace(workspaceId, async (tx) => {
+    const done = await tx`
       update armada.ad_variations v set status = 'removed', updated_at = now()
       from armada.ad_sets s
-      where v.id = ${variationId} and s.id = v.ad_set_id and s.status = 'draft' and v.status in ('draft', 'failed')`,
-  );
+      where v.id = ${variationId} and s.id = v.ad_set_id and s.status = 'draft' and v.status in ('draft', 'failed')`;
+    // Its pictures that haven't started aren't made: nobody will see them.
+    if (done.count) await callOffAdPictures(tx, variationId);
+  });
 }
 
 export async function restoreAd(workspaceId: string, variationId: string): Promise<void> {
-  await withWorkspace(
-    workspaceId,
-    (tx) => tx`
+  await withWorkspace(workspaceId, async (tx) => {
+    const [v] = await tx<AdVariation[]>`
       update armada.ad_variations v set status = 'draft', updated_at = now()
       from armada.ad_sets s
-      where v.id = ${variationId} and s.id = v.ad_set_id and s.status = 'draft' and v.status = 'removed'`,
-  );
+      where v.id = ${variationId} and s.id = v.ad_set_id and s.status = 'draft' and v.status = 'removed'
+      returning v.*`;
+    if (!v) return;
+    const [set] = await tx<AdSet[]>`select * from armada.ad_sets where id = ${v.adSetId}`;
+    const [shop] = await tx<ShopRow[]>`select * from armada.shops where id = ${set.shopId}`;
+    if (shop) await ensureAdPictures(tx, shop, [v], new Map((await loadShopProducts(tx, shop)).map((p) => [p.id, p])));
+  });
+}
+
+// ---------- pictures ----------
+
+/**
+ * Opening a shop's ads asks for any pictures they're still missing (ads written before pictures
+ * existed, or put back). Ads being written, and finished sets, are left alone.
+ */
+export async function ensureShopAdPictures(workspaceId: string, shopId: string): Promise<number> {
+  if (!/^[0-9a-f-]{36}$/i.test(shopId)) return 0;
+  return withWorkspace(workspaceId, async (tx) => {
+    const [set] = await tx<AdSet[]>`select * from armada.ad_sets where shop_id = ${shopId} and status in ('draft', 'paused', 'on')`;
+    if (!set) return 0;
+    const [shop] = await tx<ShopRow[]>`select * from armada.shops where id = ${shopId}`;
+    if (!shop) return 0;
+    const variations = await tx<AdVariation[]>`select * from armada.ad_variations where ad_set_id = ${set.id} order by position`;
+    return ensureAdPictures(tx, shop, variations, new Map((await loadShopProducts(tx, shop)).map((p) => [p.id, p])));
+  });
+}
+
+/** "Make again" on one picture of an ad that hasn't been created yet: its scene, or the practice item's picture. */
+export async function remakeAdPicture(workspaceId: string, variationId: string, key: string, what: "scene" | "item"): Promise<void> {
+  await withWorkspace(workspaceId, async (tx) => {
+    const [v] = await tx<AdVariation[]>`
+      select v.* from armada.ad_variations v join armada.ad_sets s on s.id = v.ad_set_id
+      where v.id = ${variationId} and v.status in ('draft', 'failed') and s.status = 'draft'`;
+    if (!v) throw new AdsProblem("Pictures can be made again only before the ads are created.");
+    const [set] = await tx<AdSet[]>`select * from armada.ad_sets where id = ${v.adSetId}`;
+    const [shop] = await tx<ShopRow[]>`select * from armada.shops where id = ${set.shopId}`;
+    if (!shop) throw new AdsProblem("That shop wasn't found.");
+    const products = new Map((await loadShopProducts(tx, shop)).map((p) => [p.id, p]));
+    const queued = await redoAdPicture(tx, shop, v, key, what, products);
+    if (!queued) throw new AdsProblem("That picture is already being made again.");
+  });
 }
 
 // ---------- budget and audience ----------
@@ -389,8 +445,26 @@ export async function launchPaused(workspaceId: string, memberId: string, setId:
     return;
   }
 
+  // What runs is what was checked: the same composed pictures as the previews, each product in its real photo.
   const byId = new Map(products.map((p) => [p.id, p]));
+  const index = await withWorkspace(workspaceId, (tx) => pictureIndex(tx, { shopId: shop.id, adIds: ads.map((a) => a.id) }));
+  const views = new Map(ads.map((a) => [a.id, adPictureViews(shop, a, byId, index)]));
+  for (const a of ads) {
+    const pics = views.get(a.id) ?? [];
+    const shape = a.format === "carousel" ? "square" : "portrait";
+    const missing = pics.find((p) => !p.src[shape]);
+    if (!pics.length || missing) {
+      await release(null);
+      throw new AdsProblem(
+        missing?.state === "failed"
+          ? `A picture in ad ${a.position + 1} couldn't be made. Press Make again on it, or take that ad out.`
+          : `The pictures for ad ${a.position + 1} are still being made. Try again in a minute.`,
+      );
+    }
+  }
+  const origin = appOrigin();
   const launchAds: LaunchAd[] = ads.map((a) => {
+    const pics = new Map((views.get(a.id) ?? []).map((p) => [p.key, p]));
     const first = byId.get(a.productIds[0]);
     return {
       variationId: a.id,
@@ -400,10 +474,11 @@ export async function launchPaused(workspaceId: string, memberId: string, setId:
       description: a.description,
       callToAction: a.callToAction,
       link: a.format === "carousel" ? target.base : productLink(target, first),
-      imageUrl: first?.images[0]?.url ?? null,
-      cards: a.cards.map((c) => {
-        const p = byId.get(c.productId);
-        return { productId: c.productId, headline: c.headline, description: c.description, link: productLink(target, p), imageUrl: p?.images[0]?.url ?? null };
+      imageUrl: a.format === "single" && pics.get("main")?.src.portrait ? `${origin}${pics.get("main")!.src.portrait}` : null,
+      cards: normalizeCards(a.cards).map((c) => {
+        const p = c.productId ? byId.get(c.productId) : undefined;
+        const pic = pics.get(c.key)?.src.square;
+        return { productId: c.productId, headline: c.headline, description: c.description, link: productLink(target, p), imageUrl: pic ? `${origin}${pic}` : null };
       }),
     };
   });
@@ -532,6 +607,9 @@ export async function endSet(workspaceId: string, memberId: string, memberName: 
 /** Throws away ads that were never created (writing, draft, or the AI couldn't write them). */
 export async function discardSet(workspaceId: string, memberId: string, setId: string): Promise<void> {
   await withWorkspace(workspaceId, async (tx) => {
+    const [open] = await tx<{ id: string }[]>`
+      select id from armada.ad_sets where id = ${setId} and status in ('writing', 'draft', 'failed') and launched_at is null and launching_at is null`;
+    if (open) for (const v of await tx<{ id: string }[]>`select id from armada.ad_variations where ad_set_id = ${setId}`) await callOffAdPictures(tx, v.id);
     const [gone] = await tx<{ shopId: string }[]>`
       delete from armada.ad_sets where id = ${setId} and status in ('writing', 'draft', 'failed') and launched_at is null and launching_at is null
       returning shop_id`;

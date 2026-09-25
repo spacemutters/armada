@@ -7,7 +7,7 @@ import type { Blueprint } from "@/lib/shops/types";
 export const SLIDE_W = 1080;
 export const SLIDE_H = 1350;
 /** Bump when the drawing changes, so every slide gets a fresh address and caches let go of the old look. */
-export const DESIGN_REV = 3;
+export const DESIGN_REV = 4;
 
 export interface SlideLook {
   brand: string;
@@ -16,7 +16,8 @@ export interface SlideLook {
 }
 
 /**
- * - cover: the first slide over a full-bleed photo (a scene), words on a veil at the bottom.
+ * - cover: a slide over a full-bleed photo (a scene), words on a veil at the bottom: the first slide
+ *   with a scene-like product photo, or any slide with a ChatGPT scene.
  * - still: the first slide with a product shot on a plain ground (a cut-out), words below it.
  * - object: a later slide with a product photo in a panel and the words under it.
  * - type: a later slide with words only, set large.
@@ -33,7 +34,8 @@ export type Layout = "cover" | "still" | "object" | "type" | "statement" | "clos
 /** Photo "scene" fills its frame edge to edge; a "cutout" (a product on white) is placed on the shop's ground. */
 export type PhotoKind = "scene" | "cutout";
 
-export function layoutFor(n: number, total: number, photo: PhotoKind | null): Layout {
+export function layoutFor(n: number, total: number, photo: PhotoKind | null, fullBleed = false): Layout {
+  if (photo && fullBleed) return "cover";
   if (n === 1) return photo === "scene" ? "cover" : photo === "cutout" ? "still" : "statement";
   if (photo) return "object";
   return n === total ? "close" : "type";
@@ -124,13 +126,15 @@ export interface SlideWords {
   headline: string;
   line: string;
   imageUrl: string | null;
+  /** The ChatGPT picture the slide is drawn with (a scene or a practice item's picture), if any. */
+  pictureId?: string | null;
 }
 
-/** Changes whenever anything on the drawn slide changes: words, photo, place in the post, or the shop's look. */
+/** Changes whenever anything on the drawn slide changes: words, photo or picture, place in the post, or the shop's look. */
 export function slideVersion(s: SlideWords, total: number, look: SlideLook): string {
   const p = look.palette;
   return shortHash(
-    [DESIGN_REV, s.n, total, s.headline, s.line, s.imageUrl ?? "", look.brand, p.background, p.surface, p.ink, p.muted, p.accent, p.accentInk, look.fonts.display, look.fonts.body].join(""),
+    [DESIGN_REV, s.n, total, s.headline, s.line, s.imageUrl ?? "", s.pictureId ?? "", look.brand, p.background, p.surface, p.ink, p.muted, p.accent, p.accentInk, look.fonts.display, look.fonts.body].join(""),
   );
 }
 

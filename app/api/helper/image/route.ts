@@ -1,9 +1,13 @@
 import { z } from "zod";
 import { helperIdFrom, isHelper } from "@/lib/ai/helper-auth";
+import { isCreativeKind, receiveCreativePictures } from "@/lib/creative/pictures";
+import { asSystem } from "@/lib/db";
 import { receivePictures } from "@/lib/shops/images";
+import "@/lib/ai/handlers";
 
-// The AI helper hands back a finished brand picture here: the cut and compressed files plus the AI's
-// answer (the prompt it used and alt text). The files are stored and the job is finished in one go.
+// The AI helper hands back a finished picture here: the cut and compressed files plus the AI's answer
+// (the prompt it used and alt text). The files are stored and the job is finished in one go. Brand
+// pictures go to lib/shops/images.ts; pictures for ads and posts to lib/creative/pictures.ts.
 // A failed image job is reported through /api/helper/complete like any other job.
 export const maxDuration = 60;
 
@@ -32,7 +36,10 @@ export async function POST(request: Request) {
   if (!parsed.success || !helperId) return new Response(null, { status: 400 });
 
   const d = parsed.data;
-  const result = await receivePictures(helperId, d.jobId, d.output ?? null, d.usage ?? null, d.files);
+  const [job] = await asSystem((tx) => tx<{ kind: string }[]>`select kind from armada.ai_jobs where id = ${d.jobId}`);
+  if (!job) return new Response(null, { status: 409 });
+  const receive = isCreativeKind(job.kind) ? receiveCreativePictures : receivePictures;
+  const result = await receive(helperId, d.jobId, d.output ?? null, d.usage ?? null, d.files);
   if (result === "gone") return new Response(null, { status: 409 });
   if (result === "bad") return new Response(null, { status: 400 });
   return Response.json({ ok: true });

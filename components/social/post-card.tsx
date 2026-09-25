@@ -1,4 +1,4 @@
-import { ExternalLink, Sparkles } from "lucide-react";
+import { ExternalLink, RefreshCw, Sparkles } from "lucide-react";
 import { Expand } from "@/components/fx/expand";
 import { PendingButton } from "@/components/fx/pending-button";
 import { ShimmerText } from "@/components/fx/shimmer-text";
@@ -23,7 +23,15 @@ export interface PostActions {
   rewrite: () => Promise<void>;
   remove: () => Promise<void>;
   unschedule: () => Promise<void>;
+  /** "Make again" on one slide's picture made with AI (a scene, or a practice item's picture). */
+  remakePicture: (n: number) => Promise<void>;
 }
+
+const PICTURE_WORDS = {
+  making: "Making this slide's picture",
+  waiting: "About to make this slide's picture",
+  failed: "This slide's picture couldn't be made",
+} as const;
 
 const quiet = buttonClass("quiet", "min-h-11 md:min-h-9");
 const secondary = buttonClass("secondary", "min-h-11 md:min-h-9");
@@ -54,6 +62,7 @@ export function PostCard({
   problem,
   actions,
   now,
+  helperOff = false,
 }: {
   post: PostWithSlides;
   look: SlideLook;
@@ -65,6 +74,8 @@ export function PostCard({
   problem: string | null;
   actions: PostActions;
   now: number;
+  /** The AI helper on the owner's computer is off, so pictures being made are waiting for it. */
+  helperOff?: boolean;
 }) {
   const total = post.slides.length;
   const slides = post.slides.map((s) => ({ ...s, src: slideUrl("", post.id, s.n, slideVersion(s, total, look)) }));
@@ -85,7 +96,17 @@ export function PostCard({
     <article id={`post-${post.id}`} className="grid scroll-mt-6 items-start gap-6 rounded-3xl border border-line bg-raised p-4 sm:p-6 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] lg:gap-8">
       <div className="relative">
         <CarouselPreview
-          slides={slides.map((s) => ({ src: s.src, alt: s.alt }))}
+          slides={slides.map((s) => ({
+            src: s.src,
+            alt: s.alt,
+            note:
+              s.pictureState && s.pictureState !== "ready"
+                ? s.pictureState !== "failed" && helperOff
+                  ? "Waiting for the AI helper on your computer"
+                  : PICTURE_WORDS[s.pictureState]
+                : null,
+            busy: s.pictureState === "making" || s.pictureState === "waiting",
+          }))}
           name={look.brand}
           handle={handle}
           monogram={{ background: look.palette.accent, ink: look.palette.accentInk }}
@@ -262,10 +283,18 @@ export function PostCard({
                         <label className="flex flex-col gap-1">
                           <span className="text-[12px] font-medium text-muted">Photo</span>
                           <select name={`photo-${s.n}`} defaultValue="keep" className={cx(inputClass, "min-h-11 md:min-h-10")}>
-                            <option value="keep">{s.imageUrl ? `Keep this photo${photoName(choices, s.imageUrl)}` : "Keep it without a photo"}</option>
-                            {s.imageUrl ? <option value="none">No photo, words only</option> : null}
+                            <option value="keep">
+                              {s.picture === "scene"
+                                ? "Keep this scene (made with AI)"
+                                : s.picture === "item"
+                                  ? "Keep the practice item picture"
+                                  : s.imageUrl
+                                    ? `Keep this photo${photoName(choices, s.imageUrl)}`
+                                    : "Keep it without a photo"}
+                            </option>
+                            {s.imageUrl || s.picture ? <option value="none">No photo, words only</option> : null}
                             {choices
-                              .filter((c) => c.url !== s.imageUrl)
+                              .filter((c) => (c.url ? c.url !== s.imageUrl : !(s.picture === "item" && c.value === `${s.productId}:item`)))
                               .map((c) => (
                                 <option key={c.value} value={c.value}>
                                   {c.label}
@@ -284,6 +313,42 @@ export function PostCard({
                 </div>
               </form>
             </Expand>
+
+            {slides.some((s) => s.picture) ? (
+              <Expand summary="Pictures made with AI" buttonClassName="min-h-11 text-[14px] md:min-h-10" className="border-b border-line">
+                <ul className="flex flex-col gap-3 pt-1 pb-4">
+                  {slides
+                    .filter((s) => s.picture)
+                    .map((s) => (
+                      <li key={s.n} className="flex items-center gap-3">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={s.src} alt="" width={44} height={55} loading="lazy" className="aspect-[4/5] w-11 shrink-0 rounded-md border border-line bg-sunken object-cover" />
+                        <span className="min-w-0 flex-1 leading-snug">
+                          <span className="block text-[13px] font-medium">
+                            Slide {s.n} · {s.picture === "scene" ? "a scene" : "the practice item's picture"}
+                          </span>
+                          <span className="block text-[12px] text-muted">
+                            {s.pictureState === "ready"
+                              ? s.picture === "scene"
+                                ? (s.scene || "Made with AI").slice(0, 120)
+                                : "Made with AI, used wherever this practice item appears"
+                              : s.pictureState && s.pictureState !== "failed" && helperOff
+                                ? "Waiting for the AI helper on your computer"
+                                : PICTURE_WORDS[(s.pictureState ?? "waiting") as keyof typeof PICTURE_WORDS]}
+                          </span>
+                        </span>
+                        {s.pictureState !== "making" ? (
+                          <form action={actions.remakePicture.bind(null, s.n)} className="shrink-0">
+                            <PendingButton pendingLabel="Asking" variant="secondary" className={quiet}>
+                              <RefreshCw aria-hidden className="size-3.5" /> Make again
+                            </PendingButton>
+                          </form>
+                        ) : null}
+                      </li>
+                    ))}
+                </ul>
+              </Expand>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-1 pt-3">
               {canRewrite ? (

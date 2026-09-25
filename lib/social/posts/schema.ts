@@ -9,8 +9,13 @@ import { z } from "zod";
 export const POSTS_PER_WEEK = 5;
 /** "Make an ad with AI" on a product: this many carousel ads about that one product. */
 export const POSTS_PER_PRODUCT = 3;
-export const MIN_SLIDES = 3;
+/** A carousel has at least four slides (what people expect of an Instagram carousel) and at most eight. */
+export const MIN_SLIDES = 4;
 export const MAX_SLIDES = 8;
+/** Slides whose picture ChatGPT makes (a scene, never a product). Each is one picture on the owner's plan. */
+export const MAX_SCENES_PER_POST = 2;
+/** The longest scene description kept. */
+export const SCENE_MAX = 200;
 export const MIN_HASHTAGS = 3;
 export const MAX_HASHTAGS = 8;
 /** Photos offered per product; suppliers' later photos are mostly size charts and banners. */
@@ -23,7 +28,7 @@ export const ANGLE_MAX = 110;
 
 const str = { type: "string" } as const;
 
-/** The JSON schema the AI answers in. `photoKeys` are the only photo names it may use, plus "none". */
+/** The JSON schema the AI answers in. `photoKeys` are the only photo names it may use, plus "scene" and "none". */
 export function carouselSchema(photoKeys: string[], count: number) {
   return {
     type: "object",
@@ -47,11 +52,12 @@ export function carouselSchema(photoKeys: string[], count: number) {
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["headline", "line", "photo"],
+                required: ["headline", "line", "photo", "scene"],
                 properties: {
                   headline: str,
                   line: str,
-                  photo: { type: "string", enum: ["none", ...photoKeys] },
+                  photo: { type: "string", enum: ["none", "scene", ...photoKeys] },
+                  scene: str,
                 },
               },
             },
@@ -146,8 +152,10 @@ export function readClock(s: string, fallback: [number, number] = [18, 0]): [num
 export interface ReadSlide {
   headline: string;
   line: string;
-  /** A photo name from the offered list, or null for a text-only slide. */
+  /** A photo name from the offered list, or null. */
   photo: string | null;
+  /** What a scene slide's ChatGPT picture shows (never a product), or null. */
+  scene: string | null;
 }
 
 export interface ReadPost {
@@ -165,6 +173,7 @@ const Slide = z.object({
   headline: z.string().catch(""),
   line: z.string().catch(""),
   photo: z.string().catch("none"),
+  scene: z.string().catch(""),
 });
 
 const Post = z.object({
@@ -197,6 +206,8 @@ export function readCarouselAnswer(output: unknown, photoKeys: Iterable<string>,
     }
     const slides: ReadSlide[] = [];
     let unknownPhotos = 0;
+    let scenes = 0;
+    let extraScenes = 0;
     for (const rawSlide of p.data.slides.slice(0, MAX_SLIDES)) {
       const s = Slide.safeParse(rawSlide);
       if (!s.success) continue;
@@ -204,10 +215,19 @@ export function readCarouselAnswer(output: unknown, photoKeys: Iterable<string>,
       if (!headline) continue;
       const wanted = s.data.photo.trim();
       const photo = keys.has(wanted) ? wanted : null;
-      if (!photo && wanted && wanted.toLowerCase() !== "none") unknownPhotos++;
-      slides.push({ headline, line: tidyLine(s.data.line, LINE_MAX), photo });
+      let scene: string | null = null;
+      if (!photo && wanted.toLowerCase() === "scene") {
+        // At most MAX_SCENES_PER_POST pictures made per post; any more stay words only.
+        const text = clipWords(tidyLine(s.data.scene, SCENE_MAX * 2), SCENE_MAX);
+        if (text && scenes < MAX_SCENES_PER_POST) {
+          scene = text;
+          scenes++;
+        } else if (text) extraScenes++;
+      } else if (!photo && wanted && wanted.toLowerCase() !== "none") unknownPhotos++;
+      slides.push({ headline, line: tidyLine(s.data.line, LINE_MAX), photo, scene });
     }
     if (unknownPhotos) notes.push(`Post ${i + 1} named ${unknownPhotos === 1 ? "a photo" : `${unknownPhotos} photos`} it wasn't offered; ${unknownPhotos === 1 ? "that slide is" : "those slides are"} text only.`);
+    if (extraScenes) notes.push(`Post ${i + 1} asked for more than ${MAX_SCENES_PER_POST} scenes; the extra ${extraScenes === 1 ? "slide is" : "slides are"} words only.`);
     if (slides.length < MIN_SLIDES) {
       notes.push(`Post ${i + 1} had fewer than ${MIN_SLIDES} usable slides, so it was left out.`);
       continue;

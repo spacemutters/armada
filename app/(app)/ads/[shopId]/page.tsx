@@ -8,6 +8,7 @@ import {
   launchAction,
   makeAdsAction,
   pauseAction,
+  remakePictureAction,
   removeAdAction,
   restoreAdAction,
   retryAction,
@@ -20,7 +21,7 @@ import {
 import { FeedPreview, PreviewSkeleton, type PreviewAd, type PreviewShop } from "@/components/ads/ad-preview";
 import { BudgetPanel } from "@/components/ads/budget-form";
 import { PracticeNote, ResultsPanel } from "@/components/ads/results";
-import { FormatPill, VariationCard, WrittenByAi, type VariationData } from "@/components/ads/variation-card";
+import { FormatPill, VariationCard, WrittenByAi, type PictureData, type VariationData } from "@/components/ads/variation-card";
 import { BorderBeam } from "@/components/fx/border-beam";
 import { PendingButton } from "@/components/fx/pending-button";
 import { ShimmerText } from "@/components/fx/shimmer-text";
@@ -28,8 +29,9 @@ import { ThinkingOrb } from "@/components/fx/thinking-orb";
 import { RefreshEvery } from "@/components/refresh-every";
 import { Button, ButtonLink, Card, EmptyState, PageHeader, StatusPill, buttonClass, cx } from "@/components/ui";
 import { shopAdsView, type ShopAdsView } from "@/lib/ads/queries";
-import { BUDGET, CTA_LABEL, CTAS, LIMITS } from "@/lib/ads/schema";
-import { syncPractice, syncRealResults } from "@/lib/ads/sets";
+import type { AdPictureView } from "@/lib/ads/pictures";
+import { BUDGET, CARDS, CTA_LABEL, CTAS, LIMITS, normalizeCards } from "@/lib/ads/schema";
+import { ensureShopAdPictures, syncPractice, syncRealResults } from "@/lib/ads/sets";
 import { PRACTICE_LABEL, PRACTICE_MODEL, PRACTICE_MODEL_LINES } from "@/lib/ads/simulator";
 import type { AdSet, AdVariation } from "@/lib/ads/types";
 import { helperStatus } from "@/lib/ai/jobs";
@@ -48,7 +50,7 @@ const PLATFORM_WORDS: Record<AdSet["platform"], string> = {
   tiktok: "TikTok",
 };
 
-function previewShop(view: ShopAdsView): PreviewShop {
+function previewShop(view: ShopAdsView, helperOff = false): PreviewShop {
   const p = view.shop.blueprint.theme?.palette;
   return {
     brand: view.shop.blueprint.brand?.name ?? view.shop.niche,
@@ -57,10 +59,27 @@ function previewShop(view: ShopAdsView): PreviewShop {
     accentInk: p?.accentInk ?? "#ffffff",
     artBg: p?.surface ?? "#e8eefc",
     artFg: p?.accent ?? "#1f4fd1",
+    practice: view.set?.platform === "practice",
+    helperOff,
   };
 }
 
-function toData(v: AdVariation): VariationData {
+const pictureData = (p: AdPictureView): PictureData => ({
+  key: p.key,
+  state: p.state,
+  src: p.src,
+  practiceItem: p.practiceItem,
+  alt: p.alt,
+  mode: p.mode,
+  label: p.label,
+  note: p.note,
+  redo: p.redo,
+});
+
+const cardsOf = (v: AdVariation) =>
+  normalizeCards(v.cards).map((c) => ({ key: c.key, kind: c.kind, productId: c.productId, headline: c.headline, description: c.description }));
+
+function toData(v: AdVariation, pictures: AdPictureView[]): VariationData {
   return {
     id: v.id,
     position: v.position,
@@ -72,20 +91,22 @@ function toData(v: AdVariation): VariationData {
     description: v.description,
     callToAction: v.callToAction,
     productIds: v.productIds,
-    cards: v.cards,
+    cards: cardsOf(v),
+    pictures: pictures.map(pictureData),
     writtenBy: v.writtenBy,
     error: v.error,
   };
 }
 
-const previewOf = (v: AdVariation): PreviewAd => ({
+const previewOf = (v: AdVariation, pictures: AdPictureView[]): PreviewAd => ({
   format: v.format,
   primaryText: v.primaryText,
   headline: v.headline,
   description: v.description,
   cta: CTA_LABEL[v.callToAction] ?? "Shop now",
   productIds: v.productIds,
-  cards: v.cards,
+  cards: cardsOf(v),
+  pictures: pictures.map(pictureData),
 });
 
 /** Which day of its run a live ad set is on (1-based, capped at its length). Server-rendered per request. */
@@ -104,6 +125,8 @@ export default async function ShopAdsPage({
   const { shopId } = await params;
   const sp = await searchParams;
   await syncPractice(session.workspaceId).catch(() => undefined);
+  // Opening the ads asks for any pictures they're still missing (older ads, or ads put back).
+  await ensureShopAdPictures(session.workspaceId, shopId).catch((e) => console.error("asking for ad pictures failed", e));
   const view = await shopAdsView(session.workspaceId, shopId);
   if (!view) notFound();
   const { shop, set } = view;
@@ -112,14 +135,15 @@ export default async function ShopAdsPage({
     after(() => syncRealResults(ws, set.id).catch(() => undefined));
   }
   const waitingOnAi = set?.status === "writing" || view.variations.some((v) => v.status === "rewriting");
-  const helper = waitingOnAi ? await helperStatus() : null;
+  const picturesBusy = view.variations.some((v) => v.status !== "removed" && (view.pictures[v.id] ?? []).some((p) => p.state === "making" || p.state === "waiting"));
+  const helper = waitingOnAi || picturesBusy ? await helperStatus() : null;
 
   const brand = shop.blueprint.brand?.name ?? shop.niche;
   const canEdit = session.role !== "viewer";
   const canSpend = session.role === "owner" || session.role === "manager";
   const problem = typeof sp.problem === "string" ? sp.problem : null;
   const ready = ["ready", "published"].includes(shop.status);
-  const pshop = previewShop(view);
+  const pshop = previewShop(view, helper ? !helper.online : false);
 
   return (
     <>
@@ -133,7 +157,7 @@ export default async function ShopAdsPage({
             ? set.platform === "practice"
               ? (set.practiceReason ?? "Practice ads: nothing is spent and the results are made up.")
               : `On ${PLATFORM_WORDS[set.platform]}${set.external.accountName ? `, in the ad account ${set.external.accountName}` : ""}. Real money, only once you switch them on.`
-            : "One press writes 3 to 5 ads from this shop's own products and photos, including carousels. You check them before anything is made."
+            : "One press writes 3 to 5 ads from this shop's own products and photos, including carousels, and ChatGPT makes their pictures. You check them before anything is made."
         }
         actions={set ? <StatusPill tone={set.platform === "practice" ? "off" : "ok"}>{PLATFORM_WORDS[set.platform]}</StatusPill> : null}
       />
@@ -147,7 +171,13 @@ export default async function ShopAdsPage({
           {set.error} Nothing was switched on.
         </p>
       ) : null}
-      {waitingOnAi ? <RefreshEvery seconds={3} /> : set?.status === "on" ? <RefreshEvery seconds={set.platform === "practice" ? 15 : 120} /> : null}
+      {waitingOnAi ? (
+        <RefreshEvery seconds={3} />
+      ) : picturesBusy ? (
+        <RefreshEvery seconds={6} />
+      ) : set?.status === "on" ? (
+        <RefreshEvery seconds={set.platform === "practice" ? 15 : 120} />
+      ) : null}
 
       {!ready ? (
         <EmptyState title="This shop isn't finished yet" body="Ads are written from a finished shop's products and photos. Come back once it's built." action={<ButtonLink href={`/builder/${shop.id}`}>See the shop</ButtonLink>} />
@@ -203,8 +233,9 @@ export default async function ShopAdsPage({
 
 function Start({ shopId, brand, canEdit }: { shopId: string; brand: string; canEdit: boolean }) {
   const steps: [string, string][] = [
-    ["The AI writes 3 to 5 ads", "Each tries a different idea in the shop's voice: single photos and carousels, using only facts the shop can stand behind."],
-    ["You check every one", "See each ad as it looks in a feed and between videos. Change the words, have it written again, or take it out."],
+    ["The AI writes 3 to 5 ads", "Each tries a different idea in the shop's voice: single photos and carousels of four or more cards, using only facts the shop can stand behind."],
+    ["ChatGPT makes the pictures", "Scenes in the shop's look around each product's own photo. A product is never redrawn, so shoppers get what the ad shows."],
+    ["You check every one", "See each ad as it looks in a feed and between videos. Change the words, make a picture again, have the ad written again, or take it out."],
     ["They're made switched off", "In practice, or on your connected ad account. Nothing spends yet."],
     ["You switch them on", "With the daily budget and the most they can ever spend in plain money. One press stops them."],
   ];
@@ -253,7 +284,8 @@ function Writing({ brand, set, canEdit, helperOnline }: { brand: string; set: Ad
         </div>
         <p className="max-w-2xl text-[14px] text-muted">
           The AI reads the shop&apos;s products, photos, prices and promises, and writes 3 to 5 different ads, including carousels, plus who to show them to and a
-          starting budget. This usually takes a minute or two.
+          starting budget. This usually takes a minute or two. Then ChatGPT makes each ad&apos;s pictures, about a minute each; you can read the ads while they
+          arrive.
         </p>
         {!helperOnline ? (
           <p className="rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">
@@ -339,16 +371,18 @@ function Draft({ view, set, canEdit, pshop, helperOnline }: { view: ShopAdsView;
         {live.map((v) => (
           <VariationCard
             key={v.id}
-            v={toData(v)}
+            v={toData(v, view.pictures[v.id] ?? [])}
             products={view.products}
             shop={pshop}
             ctaOptions={CTA_OPTIONS}
             limits={LIMITS}
+            minCards={CARDS.min}
             editable={canEdit}
             actions={{
               save: saveAdAction.bind(null, shopId, v.id),
               rewrite: rewriteAdAction.bind(null, shopId, v.id),
               remove: removeAdAction.bind(null, shopId, v.id),
+              remake: remakePictureAction.bind(null, shopId, v.id),
             }}
           />
         ))}
@@ -451,10 +485,10 @@ function AdsGrid({ view, pshop }: { view: ShopAdsView; pshop: PreviewShop }) {
           <li key={v.id} className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[14px] font-semibold">Ad {v.position + 1}</span>
-              <FormatPill format={v.format} cards={v.cards.length || 1} />
+              <FormatPill format={v.format} cards={normalizeCards(v.cards).length || 1} />
               <WrittenByAi edited={v.writtenBy === "ai_edited"} />
             </div>
-            <FeedPreview ad={previewOf(v)} shop={pshop} products={view.products} />
+            <FeedPreview ad={previewOf(v, view.pictures[v.id] ?? [])} shop={pshop} />
           </li>
         ))}
       </ul>

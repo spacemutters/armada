@@ -4,10 +4,11 @@ import { countryCode } from "@/lib/countries";
 import { withWorkspace, type Tx } from "@/lib/db";
 import type { ShopRow } from "@/lib/shops/types";
 import { slideAlt } from "./design";
+import { callOffPostPictures, dropPostPictures, ensurePostPictures, redoSlidePicture, slidePictureIndex, slidePictures } from "./pictures";
 import { carouselPrompt, photoRefs, SYSTEM, type PhotoRef, type PromptProduct } from "./prompt";
 import { carouselSchema, CAPTION_MAX, HEADLINE_MAX, LINE_MAX, normalizeHashtags, POSTS_PER_PRODUCT, POSTS_PER_WEEK, tidyCaption, tidyLine } from "./schema";
 import { takenDays, zoneFor } from "./time";
-import type { PostWithSlides, SocialPostRow, SocialRunRow, SocialSlideRow } from "./types";
+import type { PostWithSlides, SlideWithPicture, SocialPostRow, SocialRunRow, SocialSlideRow } from "./types";
 
 // Reading and changing a shop's carousel posts. Everything here runs as one workspace, so row-level
 // security keeps every query inside it. Publishing lives in ./schedule.ts; the AI's answer is read in ./jobs.ts.
@@ -59,7 +60,7 @@ async function askForPosts(
   if (!products.length) {
     throw new PostProblem(opts.productId ? "This product isn't in that shop, so its ads can't be made there." : "This shop has no products yet, so there's nothing to post about.");
   }
-  const refs = photoRefs(products);
+  const refs = photoRefs(products, { practice: shop.brief.source === "practice" });
   const recent = await tx<{ angle: string; scheduledAt: Date | null }[]>`
     select angle, scheduled_at from armada.social_posts
     where shop_id = ${shop.id} and created_at > now() - interval '45 days' and id <> ${opts.replacing?.postId ?? "00000000-0000-0000-0000-000000000000"}
@@ -217,26 +218,32 @@ export async function postsForShop(workspaceId: string, shopId: string): Promise
       (select * from armada.social_posts where shop_id = ${shopId} and status = 'posted' order by posted_at desc nulls last limit 12)`;
     if (!posts.length) return [];
     const slides = await tx<SocialSlideRow[]>`select * from armada.social_slides where post_id in ${tx(posts.map((p) => p.id))} order by post_id, n`;
-    const byPost = new Map<string, SocialSlideRow[]>();
-    for (const s of slides) byPost.set(s.postId, [...(byPost.get(s.postId) ?? []), s]);
+    const pictures = slidePictures(slides, await slidePictureIndex(tx, shopId, slides));
+    const byPost = new Map<string, SlideWithPicture[]>();
+    for (const s of slides) {
+      const pic = pictures.get(`${s.postId}:${s.n}`) ?? { pictureId: null, pictureState: null };
+      byPost.set(s.postId, [...(byPost.get(s.postId) ?? []), { ...s, ...pic }]);
+    }
     return posts.map((p) => ({ ...p, slides: byPost.get(p.id) ?? [] }));
   });
 }
 
 export interface PhotoChoice {
-  /** "<productId>:<photo index>" */
+  /** "<productId>:<photo index>", or "<productId>:item" for a practice item's picture. */
   value: string;
   label: string;
+  /** The photo's address; empty for a practice item's picture. */
   url: string;
 }
 
-/** The product photos a slide can show, for the slide editor. */
+/** The product photos a slide can show, for the slide editor. In a practice shop, practice items' pictures too. */
 export async function photoChoices(workspaceId: string, shop: ShopRow): Promise<PhotoChoice[]> {
   const products = await withWorkspace(workspaceId, (tx) => shopProducts(tx, shop));
   const out: PhotoChoice[] = [];
   for (const p of products) {
     const imgs = p.images.filter((img) => /^https:\/\//i.test(img?.url ?? "")).slice(0, 3);
     imgs.forEach((img, k) => out.push({ value: `${p.id}:${k}`, label: imgs.length > 1 ? `${p.title}, photo ${k + 1}` : p.title, url: img.url }));
+    if (!imgs.length && p.imagined && shop.brief.source === "practice") out.push({ value: `${p.id}:item`, label: `${p.title} (practice item picture)`, url: "" });
   }
   return out;
 }
@@ -271,6 +278,7 @@ export async function saveSlides(workspaceId: string, postId: string, edits: Sli
     const current = await tx<SocialSlideRow[]>`select * from armada.social_slides where post_id = ${postId}`;
     const titleOf = (productId: string | null) => products.find((p) => p.id === productId)?.title ?? null;
     let changed = false;
+    const droppedScenes: number[] = [];
     for (const e of edits) {
       const slide = current.find((s) => s.n === e.n);
       if (!slide) continue;
@@ -279,40 +287,67 @@ export async function saveSlides(workspaceId: string, postId: string, edits: Sli
       const line = tidyLine(e.line, LINE_MAX);
       let productId = slide.productId;
       let imageUrl = slide.imageUrl;
+      let picture = slide.picture;
       if (e.photo === "none") {
         productId = null;
         imageUrl = null;
+        picture = null;
       } else if (e.photo !== "keep") {
-        // Only a photo of one of this shop's own products can go on a slide.
+        // Only a photo of one of this shop's own products can go on a slide, or (practice shops) a practice item's picture.
         const [pid, idx] = e.photo.split(":");
         const product = products.find((p) => p.id === pid);
         const url = product?.images.filter((img) => /^https:\/\//i.test(img?.url ?? ""))[Number(idx)]?.url;
         if (product && url) {
           productId = product.id;
           imageUrl = url;
+          picture = null;
+        } else if (product && idx === "item" && product.imagined && shop.brief.source === "practice") {
+          productId = product.id;
+          imageUrl = null;
+          picture = "item";
         }
       }
-      if (headline === slide.headline && line === slide.line && imageUrl === slide.imageUrl) continue;
+      if (headline === slide.headline && line === slide.line && imageUrl === slide.imageUrl && picture === slide.picture && productId === slide.productId) continue;
       changed = true;
+      if (slide.picture === "scene" && picture !== "scene") droppedScenes.push(e.n);
       await tx`
         update armada.social_slides
-        set headline = ${headline}, line = ${line}, product_id = ${productId}, image_url = ${imageUrl},
-            alt = ${slideAlt(headline, line, imageUrl ? titleOf(productId) : null)}, updated_at = now()
+        set headline = ${headline}, line = ${line}, product_id = ${productId}, image_url = ${imageUrl}, picture = ${picture},
+            scene = ${picture === "scene" ? slide.scene : ""},
+            alt = ${slideAlt(headline, line, imageUrl || picture === "item" ? titleOf(productId) : null)}, updated_at = now()
         where post_id = ${postId} and n = ${e.n}`;
     }
-    if (changed) await tx`update armada.social_posts set edited = true, updated_at = now() where id = ${postId}`;
+    if (changed) {
+      await tx`update armada.social_posts set edited = true, updated_at = now() where id = ${postId}`;
+      // A scene swapped for a product photo takes its picture with it; a practice item chosen now gets its picture.
+      await dropPostPictures(tx, postId, droppedScenes);
+      await ensurePostPictures(tx, shop, [postId]);
+    }
   });
 }
 
 /** Takes a post that hasn't gone out off the list. A post that went out anywhere stays as the record. */
 export async function removePost(workspaceId: string, postId: string): Promise<void> {
-  await withWorkspace(
-    workspaceId,
-    (tx) => tx`
-      delete from armada.social_posts
+  await withWorkspace(workspaceId, async (tx) => {
+    const [post] = await tx<{ id: string }[]>`
+      select id from armada.social_posts
       where id = ${postId} and status in ('draft', 'scheduled', 'failed')
-        and not exists (select 1 from jsonb_each(results) r where (r.value ->> 'ok')::boolean)`,
-  );
+        and not exists (select 1 from jsonb_each(results) r where (r.value ->> 'ok')::boolean)`;
+    if (!post) return;
+    // Its pictures that haven't started aren't made: nobody will see them.
+    await callOffPostPictures(tx, postId);
+    await tx`delete from armada.social_posts where id = ${postId}`;
+  });
+}
+
+/** "Make again" on one slide's picture (a scene, or a practice item's picture). */
+export async function remakeSlidePicture(workspaceId: string, postId: string, n: number): Promise<void> {
+  await withWorkspace(workspaceId, async (tx) => {
+    const [post] = await tx<SocialPostRow[]>`select * from armada.social_posts where id = ${postId} and status in ${tx([...EDITABLE])} and not rewriting`;
+    if (!post) throw new PostProblem("Pictures can be made again only before a post goes out.");
+    const shop = await readyShop(tx, post.shopId);
+    if (!(await redoSlidePicture(tx, shop, post, n))) throw new PostProblem("That picture is already being made again.");
+  });
 }
 
 // ---------- scheduling ----------

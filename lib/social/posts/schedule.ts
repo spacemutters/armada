@@ -5,6 +5,7 @@ import { publishCarousel, socialAccountsFor } from "@/lib/social/accounts";
 import type { SocialAccount, Slide } from "@/lib/social/types";
 import type { ShopRow } from "@/lib/shops/types";
 import { lookFromBlueprint, slideUrl, slideVersion } from "./design";
+import { slidePictureIndex, slidePictures } from "./pictures";
 import { LOST_AFTER_MINUTES, PER_SWEEP } from "./due";
 import { fullCaption } from "./schema";
 import type { AccountResult, SocialPostRow, SocialSlideRow } from "./types";
@@ -75,7 +76,9 @@ async function sendClaimed(post: SocialPostRow): Promise<void> {
   const { shop, slides } = await withWorkspace(post.workspaceId, async (tx) => {
     const [s] = await tx<ShopRow[]>`select * from armada.shops where id = ${post.shopId}`;
     const sl = await tx<SocialSlideRow[]>`select * from armada.social_slides where post_id = ${post.id} order by n`;
-    return { shop: s, slides: sl };
+    // Each slide's address carries the picture it's drawn with, the same as the preview.
+    const pictures = slidePictures(sl, await slidePictureIndex(tx, post.shopId, sl));
+    return { shop: s, slides: sl.map((x) => ({ ...x, pictureId: pictures.get(`${x.postId}:${x.n}`)?.pictureId ?? null })) };
   });
   const look = shop ? lookFromBlueprint(shop.blueprint) : null;
   if (!shop || !look || !slides.length) {

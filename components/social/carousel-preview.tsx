@@ -8,6 +8,9 @@ import { cx } from "@/components/ui";
 export interface PreviewSlide {
   src: string;
   alt: string;
+  /** Plain words shown on the slide while its picture is being made (or couldn't be). */
+  note?: string | null;
+  busy?: boolean;
 }
 
 /**
@@ -112,6 +115,14 @@ export function CarouselPreview({
                 onLoad={() => setLoaded((l) => ({ ...l, [i]: true }))}
                 className={cx("relative h-full w-full select-none object-cover transition-opacity duration-300", loaded[i] ? "opacity-100" : "opacity-0")}
               />
+              {s.note ? (
+                <span className={cx("absolute inset-0 flex items-end justify-center pb-4", s.busy && "picture-making")}>
+                  <span className="flex max-w-[88%] items-center gap-1.5 rounded-full bg-raised/95 px-3 py-1 text-center text-[12px] leading-snug font-medium text-ink shadow-sm">
+                    {s.busy ? <span aria-hidden className="pulse size-1.5 shrink-0 rounded-full bg-ink" /> : null}
+                    {s.note}
+                  </span>
+                </span>
+              ) : null}
             </div>
           ))}
         </div>

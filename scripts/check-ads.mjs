@@ -9,7 +9,9 @@
 //    Meta connector can switch an ad on except switchOn(), which only a person's press reaches.
 // 3. The "ads.write" answer shape: a sample answer passes the JSON schema (checked by an independent
 //    validator here, and by ajv when it's installed), broken answers fail it, and the tidy-up step
-//    maps products back, drops invented ones and keeps every number in bounds.
+//    maps products back, drops invented ones and keeps every number in bounds. Carousels have at
+//    least four cards (product cards in their real photos, at most two ChatGPT scenes), or become a
+//    single-photo ad.
 //
 // Prints one PASS/FAIL line per check and exits 1 on any FAIL.
 import fs from "node:fs";
@@ -166,7 +168,10 @@ try {
     format: "carousel",
     link: "https://shop.example",
     imageHash: undefined,
-    cards: [1, 2, 3].map((i) => ({ link: `https://shop.example/products/p${i}`, headline: `Card ${i}`, description: `$${i}0.00`, imageHash: `hash-${i}` })),
+    cards: [
+      { link: "https://shop.example", headline: "Slow mornings", description: "", imageHash: "hash-scene" },
+      ...[1, 2, 3].map((i) => ({ link: `https://shop.example/products/p${i}`, headline: `Card ${i}`, description: `$${i}0.00`, imageHash: `hash-${i}` })),
+    ],
   };
 
   const campaign = campaignPayload(plan);
@@ -192,8 +197,8 @@ try {
   report(adSet.targeting.targeting_automation?.advantage_audience === 0 && adSet.targeting.geo_locations.countries[0] === "US", "targeting states the audience explicitly");
   const cs = creatives[1].object_story_spec;
   report(
-    cs.link_data.child_attachments.length === 3 && cs.link_data.child_attachments.every((c) => c.link && c.name && c.image_hash && c.call_to_action?.value?.link === c.link),
-    "a carousel sends one card per product, each with its own link, headline and photo",
+    cs.link_data.child_attachments.length === 4 && cs.link_data.child_attachments.every((c) => c.link && c.name && c.image_hash && c.call_to_action?.value?.link === c.link),
+    "a carousel sends every card (four here), each with its own link, headline and picture",
   );
   report(cs.page_id === "123" && cs.instagram_user_id === "456", "creatives name the Facebook Page and the Instagram account");
   report(creatives[0].object_story_spec.link_data.image_hash === "hash-1" && !creatives[0].object_story_spec.link_data.child_attachments, "a single-photo ad sends one photo and no cards");
@@ -232,7 +237,7 @@ try {
 // 3. The "ads.write" answer shape
 // =====================================================================================
 {
-  const { adsWriteSchema, adRewriteSchema, adItemSchema, toDrafts, toOneDraft, LIMITS, BUDGET, CTAS } = schema;
+  const { adsWriteSchema, adRewriteSchema, adItemSchema, toDrafts, toOneDraft, LIMITS, BUDGET, CTAS, CARDS } = schema;
 
   /** A small, independent JSON Schema checker for the keywords the ads schema uses. */
   function validate(s, v, at = "answer") {
@@ -256,12 +261,13 @@ try {
     return errs;
   }
 
+  const card = (show, photo, headline, description, scene = "") => ({ show, photo, headline, description, scene });
   const sample = {
     plan: "Four calm ads for a small linen shop: one standout throw, two carousels of sets, and one for slow weekend mornings.",
     audience: { description: "People furnishing a calm home who like natural materials.", ageMin: 25, ageMax: 54, interests: ["interior design", "linen", "slow living"] },
     budget: { dailyAmount: 15, days: 7, reasoning: "At $15 a day for a week, each ad gets enough views to show which one brings visits. Products cost $30 to $90, so one sale covers a good part of it." },
     ads: [
-      { idea: "One standout product and what it does", format: "single", primaryText: "A stonewashed linen throw that softens with every wash.", headline: "Stonewashed linen throw", description: "Returns within 30 days", callToAction: "SHOP_NOW", products: ["p1"], cards: [] },
+      { idea: "One standout product and what it does", format: "single", primaryText: "A stonewashed linen throw that softens with every wash.", headline: "Stonewashed linen throw", description: "Returns within 30 days", callToAction: "SHOP_NOW", products: ["p1"], scene: "a linen-covered bed by a tall window, early light", cards: [] },
       {
         idea: "A small set that belongs together",
         format: "carousel",
@@ -270,10 +276,12 @@ try {
         description: "",
         callToAction: "SHOP_NOW",
         products: ["p1", "p2", "p3"],
+        scene: "",
         cards: [
-          { product: "p1", headline: "Linen throw", description: "$64.00" },
-          { product: "p2", headline: "Waffle pillowcase", description: "$28.00" },
-          { product: "p3", headline: "Oak bedside tray", description: "$42.00" },
+          card("scene", 0, "A quieter bedroom", "", "an unmade bed in soft morning light, pale walls, linen folds"),
+          card("p1", 1, "Linen throw", "$64.00"),
+          card("p2", 1, "Waffle pillowcase", "$28.00"),
+          card("p3", 1, "Oak bedside tray", "$42.00"),
         ],
       },
       {
@@ -284,12 +292,10 @@ try {
         description: "",
         callToAction: "LEARN_MORE",
         products: ["p2", "p9"],
-        cards: [
-          { product: "p2", headline: "Waffle pillowcase", description: "$28.00" },
-          { product: "p9", headline: "Invented item", description: "$1.00" },
-        ],
+        scene: "",
+        cards: [card("p2", 1, "Waffle pillowcase", "$28.00"), card("p9", 1, "Invented item", "$1.00")],
       },
-      { idea: "Who it's for", format: "single", primaryText: "x".repeat(400), headline: "y".repeat(80), description: "z".repeat(60), callToAction: "ORDER_NOW", products: ["p3"], cards: [] },
+      { idea: "Who it's for", format: "single", primaryText: "x".repeat(400), headline: "y".repeat(80), description: "z".repeat(60), callToAction: "ORDER_NOW", products: ["p3"], scene: "", cards: [] },
     ],
   };
 
@@ -302,7 +308,8 @@ try {
     ["an unknown button", { ...sample, ads: [{ ...sample.ads[0], callToAction: "BUY_NOW_50_OFF" }, ...sample.ads.slice(1)] }],
     ["an extra field", { ...sample, discount: "20%" }],
     ["a missing budget", { ...sample, budget: undefined }],
-    ["a carousel with 11 cards", { ...sample, ads: [{ ...sample.ads[1], cards: Array(11).fill(sample.ads[1].cards[0]) }, ...sample.ads.slice(1)] }],
+    ["a carousel with 7 cards", { ...sample, ads: [{ ...sample.ads[1], cards: Array(7).fill(sample.ads[1].cards[1]) }, ...sample.ads.slice(1)] }],
+    ["a card without its scene field", { ...sample, ads: [{ ...sample.ads[1], cards: [{ show: "p1", photo: 1, headline: "x", description: "" }] }, ...sample.ads.slice(1)] }],
   ];
   for (const [what, v] of bad) report(validate(adsWriteSchema, JSON.parse(JSON.stringify(v))).length > 0, `the schema refuses an answer with ${what}`);
 
@@ -318,6 +325,7 @@ try {
   })(adsWriteSchema, "answer");
   report(loose.length === 0, "every object in the schema is strict (all fields required, no extras)", loose.join(", "));
   report(adItemSchema.properties.callToAction.enum.join() === CTAS.join(), "the buttons the AI may choose are the ones the database accepts");
+  report(CARDS.min >= 4 && CARDS.max <= CARDS.platformMax && adItemSchema.properties.cards.maxItems === CARDS.max, `carousels have ${CARDS.min} to ${CARDS.max} cards (platforms allow up to ${CARDS.platformMax})`);
 
   // Optional second opinion from ajv, when it happens to be installed.
   try {
@@ -330,22 +338,52 @@ try {
     console.log("skip ajv isn't installed; the built-in checker above covers the schema");
   }
 
-  // Tidying the answer.
+  // Tidying the answer. id-2 has two real photos; id-4 has none (a real product without a photo).
   const refs = ["id-1", "id-2", "id-3", "id-4"];
-  const photoless = new Set(["id-4"]);
-  const d = toDrafts(sample, refs, (id) => !photoless.has(id));
+  const photos = { "id-1": 1, "id-2": 2, "id-3": 3, "id-4": 0 };
+  const info = (id) => ({ photos: photos[id] ?? 0, item: false, title: `Product ${id}`, price: "$10.00" });
+  const d = toDrafts(sample, refs, () => true, info);
   report(d && d.ads.length === 4, "all four sample ads come through", d ? `${d.ads.length}` : "no draft");
-  report(d.ads[0].productIds.join() === "id-1" && d.ads[1].cards.map((c) => c.productId).join() === "id-1,id-2,id-3", "p1, p2 … map back to the shop's product ids in order");
-  report(d.ads[2].format === "single" && d.ads[2].productIds.join() === "id-2" && d.ads[2].cards.length === 0, "an invented product is dropped, and a carousel left with one card becomes a single-photo ad");
+  const set = d.ads[1];
+  report(d.ads[0].productIds.join() === "id-1" && set.cards.filter((c) => c.kind === "product").map((c) => c.productId).join() === "id-1,id-2,id-3", "p1, p2 … map back to the shop's product ids in order");
+  report(set.format === "carousel" && set.cards.length === 4 && set.cards.map((c) => c.key).join() === "c1,c2,c3,c4", "a carousel keeps its four cards, each with its own key", set.cards.map((c) => `${c.key}:${c.kind}`).join(" "));
+  report(set.cards[0].kind === "scene" && set.cards[0].productId === null && /morning light/.test(set.cards[0].scene) && set.cards.slice(1).every((c) => c.kind === "product" && c.scene === "" && c.photo === 0),
+    "a scene card carries what its picture shows and no product; product cards carry which real photo");
+  report(set.productIds.join() === "id-1,id-2,id-3", "a carousel's products are the ones on its product cards");
+  report(d.ads[0].scene.includes("tall window") && d.ads[0].cards.length === 0, "a single-photo ad keeps the setting its product photo is placed in");
+  report(d.ads[2].format === "single" && d.ads[2].productIds.join() === "id-2" && d.ads[2].cards.length === 0,
+    "an invented product is dropped, and a carousel that can't reach four honest cards becomes a single-photo ad");
   report(d.ads[3].primaryText.length <= LIMITS.primaryText && d.ads[3].headline.length <= LIMITS.headline && d.ads[3].description.length <= LIMITS.description, "words are clipped to what the platforms show");
   report(d.dailyBudgetCents === 1500 && d.days === 7 && d.audience.ageMin === 25 && d.audience.ageMax === 54, "the budget and ages come through as written when in bounds");
-  const wild = toDrafts({ ...sample, budget: { dailyAmount: 5000, days: 400, reasoning: "x" }, audience: { ...sample.audience, ageMin: 3, ageMax: 120 } }, refs);
+  const wild = toDrafts({ ...sample, budget: { dailyAmount: 5000, days: 400, reasoning: "x" }, audience: { ...sample.audience, ageMin: 3, ageMax: 120 } }, refs, () => true, info);
   report(wild.dailyBudgetCents === BUDGET.maxDaily * 100 && wild.days === BUDGET.maxDays && wild.audience.ageMin === 18 && wild.audience.ageMax === 65, "an out-of-bounds budget, length or age is pulled back in", `$${wild.dailyBudgetCents / 100} × ${wild.days} days, ages ${wild.audience.ageMin}-${wild.audience.ageMax}`);
-  const onlyPhotoless = toDrafts({ ...sample, ads: [{ ...sample.ads[0], products: ["p4"] }] }, refs, (id) => !photoless.has(id));
-  report(onlyPhotoless === null, "for real ads, products without a photo can't be used");
+  const onlyPhotoless = toDrafts({ ...sample, ads: [{ ...sample.ads[0], products: ["p4"] }] }, refs, () => true, info);
+  report(onlyPhotoless === null, "a product with no photo (and not a practice item) can't be shown in an ad");
   report(toDrafts({ nonsense: true }, refs) === null && toDrafts(null, refs) === null, "an answer in the wrong shape gives nothing, not a half-made ad");
-  const one = toOneDraft({ ad: sample.ads[1] }, refs);
-  report(one && one.format === "carousel" && one.cards.length === 3, "a written-again ad comes through the same way");
+  const one = toOneDraft({ ad: sample.ads[1] }, refs, () => true, info);
+  report(one && one.format === "carousel" && one.cards.length === 4, "a written-again ad comes through the same way");
+
+  // Too many scenes: at most two are kept, so ChatGPT never makes more than an ad needs.
+  const sceneHeavy = {
+    ...sample.ads[1],
+    cards: [card("scene", 0, "A", "", "a porch at dusk"), card("scene", 0, "B", "", "a kitchen at dawn"), card("scene", 0, "C", "", "a hallway at noon"), card("p1", 1, "x", ""), card("p2", 1, "y", ""), card("p3", 1, "z", "")],
+  };
+  const heavy = toOneDraft({ ad: sceneHeavy }, refs, () => true, info);
+  report(heavy.cards.filter((c) => c.kind === "scene").length === schema.SCENES_PER_AD && heavy.cards.length === 5, `at most ${schema.SCENES_PER_AD} scene cards per carousel`, heavy.cards.map((c) => c.kind).join(","));
+  // Short of four: the shown product's other photos are added before anything else.
+  const short = toOneDraft({ ad: { ...sample.ads[1], products: ["p3"], cards: [card("p3", 1, "Tray", "$42.00"), card("scene", 0, "Evening", "", "a low lamp on an oak table")] } }, refs, () => true, info);
+  report(short.format === "carousel" && short.cards.length === 4 && short.cards.filter((c) => c.productId === "id-3").map((c) => c.photo).join() === "0,1,2",
+    "a carousel short of four is filled with the product's own other photos", short.cards.map((c) => `${c.kind}${c.productId ? `:${c.photo}` : ""}`).join(" "));
+  // The same product photo never shows twice.
+  const twice = toOneDraft({ ad: { ...sample.ads[1], cards: [card("p1", 1, "a", ""), card("p1", 1, "b", ""), card("p2", 1, "c", ""), card("p2", 2, "d", ""), card("p3", 1, "e", "")] } }, refs, () => true, info);
+  report(twice.cards.filter((c) => c.productId === "id-1").length === 1 && twice.cards.filter((c) => c.productId === "id-2").length === 2, "the same photo never shows twice; a second photo of a product may");
+  // Practice items: shown by their one picture (made by ChatGPT, practice shops only).
+  const practiceInfo = (id) => (id === "id-4" ? { photos: 0, item: true, title: "Practice mat", price: "$20.00" } : info(id));
+  const practice = toDrafts({ ...sample, ads: [{ ...sample.ads[0], products: ["p4"] }] }, refs, () => true, practiceInfo);
+  report(practice?.ads[0].productIds.join() === "id-4", "a practice item can be shown, by its practice picture");
+  // Old cards (before kinds and keys) still read.
+  const old = schema.normalizeCards([{ productId: "id-1", headline: "a", description: "b" }, { productId: "id-2", headline: "c", description: "" }]);
+  report(old.length === 2 && old.every((c) => c.kind === "product" && c.photo === 0) && old.map((c) => c.key).join() === "c1,c2", "cards saved before kinds and keys still read as product cards");
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : "\nall ads checks pass");

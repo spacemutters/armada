@@ -10,6 +10,7 @@ import { socialAccountsFor } from "@/lib/social/accounts";
 import {
   cancelRun,
   PostProblem,
+  remakeSlidePicture,
   removePost,
   saveCaption,
   saveSlides,
@@ -111,6 +112,19 @@ export async function slidesAction(shopId: string, postId: string, formData: For
     throw e;
   }
   go(page(shopId, `&saved=${postId}#post-${postId}`));
+}
+
+/** "Make again" on one slide's picture made with AI. */
+export async function remakeSlidePictureAction(shopId: string, postId: string, n: number) {
+  const session = await editor();
+  if (!uuid(postId) || !Number.isInteger(n) || n < 1 || n > MAX_SLIDES) go(page(shopId));
+  try {
+    await remakeSlidePicture(session.workspaceId, postId, n);
+  } catch (e) {
+    if (e instanceof PostProblem) go(problem(shopId, e.message, postId));
+    throw e;
+  }
+  go(page(shopId, `#post-${postId}`));
 }
 
 export async function removeAction(shopId: string, postId: string) {

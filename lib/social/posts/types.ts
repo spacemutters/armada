@@ -47,8 +47,17 @@ export interface SocialSlideRow {
   line: string;
   productId: string | null;
   imageUrl: string | null;
+  /** A ChatGPT picture on the slide: a scene (described in `scene`), or the practice item `productId`. */
+  picture: "scene" | "item" | null;
+  scene: string;
   alt: string;
   updatedAt: Date;
+}
+
+/** A slide with its ChatGPT picture, if it has one: the cut it's drawn with and where making it stands. */
+export interface SlideWithPicture extends SocialSlideRow {
+  pictureId: string | null;
+  pictureState: "ready" | "making" | "failed" | "waiting" | null;
 }
 
 export interface SocialRunRow {
@@ -60,7 +69,8 @@ export interface SocialRunRow {
   /** The product a "product" run (Make an ad with AI) is about. */
   productId: string | null;
   status: "writing" | "done" | "failed" | "cancelled";
-  refs: Record<string, { productId: string; url: string; title: string }>;
+  /** The photos the AI was offered, by short name. url is null for a practice item's picture (item: true). */
+  refs: Record<string, { productId: string; url: string | null; title: string; item?: boolean }>;
   count: number;
   error: string | null;
   createdBy: string | null;
@@ -69,5 +79,5 @@ export interface SocialRunRow {
 }
 
 export interface PostWithSlides extends SocialPostRow {
-  slides: SocialSlideRow[];
+  slides: SlideWithPicture[];
 }

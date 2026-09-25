@@ -9,6 +9,7 @@ import {
   endSet,
   launchPaused,
   pauseSet,
+  remakeAdPicture,
   removeAd,
   restoreAd,
   retryWriting,
@@ -125,6 +126,13 @@ export async function removeAdAction(shopId: string, variationId: string) {
   const session = await editor();
   if (!uuid(variationId)) return { problem: "That ad wasn't found." };
   return inPlace(shopId, () => removeAd(session.workspaceId, variationId));
+}
+
+/** "Make again" on one of an ad's pictures made with AI. */
+export async function remakePictureAction(shopId: string, variationId: string, key: string, what: "scene" | "item") {
+  const session = await editor();
+  if (!uuid(variationId) || !/^[a-z0-9]{1,8}$/.test(key) || (what !== "scene" && what !== "item")) return { problem: "That picture wasn't found." };
+  return inPlace(shopId, () => remakeAdPicture(session.workspaceId, variationId, key, what));
 }
 
 export async function restoreAdAction(shopId: string, variationId: string) {

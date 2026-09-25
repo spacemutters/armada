@@ -1,7 +1,11 @@
 import { ImageResponse } from "next/og";
 import { luminance, mix } from "@/lib/color";
 import { rgba, slideColors } from "./contrast";
-import { displayWeight, fitText, isSerif, layoutFor, SLIDE_H, SLIDE_W, type Layout, type PhotoKind, type SlideLook } from "./design";
+import { displayWeight, fitText, isSerif, layoutFor, SLIDE_H, SLIDE_W, type Layout, type SlideLook } from "./design";
+import { loadPhoto, photoFromBytes, type LoadedPhoto } from "./photo";
+
+// Reading photos lives in ./photo.ts (no JSX, so offline checks and the ad pictures use it too).
+export { loadPhoto, photoFromBytes, type LoadedPhoto };
 
 // Draws one carousel slide as a 1080 x 1350 image, in the shop's own palette and fonts, with the
 // product photo and the slide's words. No database here: the slide route loads the post and hands
@@ -19,6 +23,11 @@ export interface RenderInput {
   headline: string;
   line: string;
   imageUrl: string | null;
+  /**
+   * A ChatGPT picture from the database, used instead of imageUrl: a scene (drawn full-bleed on any
+   * slide) or a practice item's picture (placed like a product photo).
+   */
+  picture?: { bytes: Buffer; kind: "scene" | "item" } | null;
 }
 
 type SharpFn = typeof import("sharp").default;
@@ -70,56 +79,9 @@ export async function loadFonts(look: SlideLook): Promise<FontSpec[]> {
 
 // ---------- photos ----------
 
-export interface LoadedPhoto {
-  bytes: Buffer;
-  kind: PhotoKind;
-  /** The format the drawer can read directly, when sharp isn't there. */
-  mime: "image/png" | "image/jpeg" | null;
-}
-
-const MAX_PHOTO_BYTES = 12 * 1024 * 1024;
 /** Channel values from LIFT_FROM up are stretched so that LIFT_TO and above become pure white. */
 const LIFT_FROM = 226;
 const LIFT_TO = 246;
-
-function sniff(b: Buffer): LoadedPhoto["mime"] {
-  if (b.length > 3 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
-  if (b.length > 2 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
-  return null;
-}
-
-/**
- * Fetches a product photo and says what kind it is: a "cutout" (a product on a white or clear
- * background, judged by the ring of pixels around the edge) or a "scene" that should fill its frame.
- */
-export async function loadPhoto(url: string | null): Promise<LoadedPhoto | null> {
-  if (!url || !/^https:\/\//i.test(url)) return null;
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(10_000), headers: { accept: "image/jpeg,image/png,image/webp,image/*;q=0.8" } });
-    if (!res.ok) return null;
-    const len = Number(res.headers.get("content-length") ?? 0);
-    if (len > MAX_PHOTO_BYTES) return null;
-    const bytes = Buffer.from(await res.arrayBuffer());
-    if (bytes.length > MAX_PHOTO_BYTES || bytes.length < 64) return null;
-    const mime = sniff(bytes);
-    const sharp = await getSharp();
-    if (!sharp) return mime ? { bytes, kind: "scene", mime } : null;
-    const { data, info } = await sharp(bytes).flatten({ background: "#ffffff" }).resize(48, 48, { fit: "fill" }).raw().toBuffer({ resolveWithObject: true });
-    let edge = 0;
-    let white = 0;
-    for (let y = 0; y < info.height; y++) {
-      for (let x = 0; x < info.width; x++) {
-        if (x > 2 && y > 2 && x < info.width - 3 && y < info.height - 3) continue;
-        edge++;
-        const i = (y * info.width + x) * info.channels;
-        if (data[i] > 232 && data[i + 1] > 232 && data[i + 2] > 232) white++;
-      }
-    }
-    return { bytes, kind: white / edge >= 0.82 ? "cutout" : "scene", mime };
-  } catch {
-    return null;
-  }
-}
 
 /**
  * The photo sized for its box, as a data address the drawer reads.
@@ -216,7 +178,7 @@ export async function slideElement(input: RenderInput, photo: LoadedPhoto | null
   // Cut-outs are multiplied onto a light ground; on a dark palette they sit on a light panel instead.
   const lightBackground = luminance(p.background) >= 0.45;
   const panel = luminance(p.surface) >= 0.45 ? p.surface : mix("#f3f3f0", p.accent, 0.04);
-  let layout = layoutFor(n, total, photo?.kind ?? null);
+  let layout = layoutFor(n, total, photo?.kind ?? null, input.picture?.kind === "scene");
   if (layout === "still" && !lightBackground) layout = "object";
 
   const { page, loud, overPhoto } = slideColors(p);
@@ -322,7 +284,7 @@ export async function slideElement(input: RenderInput, photo: LoadedPhoto | null
 
 /** Draws the slide. JPEG when sharp is there (every platform takes it), PNG otherwise. */
 export async function renderSlide(input: RenderInput): Promise<{ body: Uint8Array; type: "image/jpeg" | "image/png"; layout: Layout }> {
-  const [fonts, photo] = await Promise.all([loadFonts(input.look), loadPhoto(input.imageUrl)]);
+  const [fonts, photo] = await Promise.all([loadFonts(input.look), input.picture ? photoFromBytes(input.picture.bytes) : loadPhoto(input.imageUrl)]);
   const { element, layout } = await slideElement(input, photo);
   const image = new ImageResponse(element, { width: SLIDE_W, height: SLIDE_H, fonts: fonts.length ? fonts : undefined });
   const png = Buffer.from(await image.arrayBuffer());

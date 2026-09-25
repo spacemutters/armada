@@ -76,6 +76,16 @@ social posts, and a practice fleet that behaves like real stores without real mo
 - **Ads and social** (`lib/ads`, `lib/social`): AI-written ad sets and carousel posts (ChatGPT,
   `social.` and `ads.` jobs), practice results and practice accounts; scheduled posts go out from the
   helper's once-a-minute sweep. Each product page has "Make an ad with AI" (three carousel ads for it).
+  Carousel ads have 4 to 6 cards and carousel posts 4 to 8 slides.
+- **Ad and post pictures** (`lib/creative`, `lib/ads/pictures.ts`, `lib/social/posts/pictures.ts`,
+  table `creative_pictures`): made by the helper with ChatGPT's image maker (`images.scene`,
+  `images.item`, same road as brand pictures) right after the words are written, once per slot;
+  "Make again" per picture. Honest by construction: a product is only ever its real photo, composed
+  by Armada (`lib/creative/compose.ts`: on the shop's ground, or on a panel in front of a ChatGPT
+  setting); ChatGPT makes scenes that never show a product, and pictures of practice items in
+  practice shops only (checked in code, by a database trigger and by preflight `honest-pictures`).
+  Ads go to the platform with the same composed pictures (`/api/ads/picture/...`). About 45 s per
+  picture, two at a time; an ad set usually needs 4 to 8, a post at most 2 plus any practice items.
 - **Look**: the app's own tokens in `app/globals.css`, following the system light/dark setting.
   Glass (Apple's Liquid Glass rules) only on what floats above content: the sidebar, the phone's
   bars, sticky action bars and menus; solid when the system asks for less transparency or more

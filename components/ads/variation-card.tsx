@@ -1,17 +1,28 @@
 "use client";
 
-import { Images, Image as ImageIcon, PenLine, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { Images, Image as ImageIcon, PenLine, RefreshCw, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { BorderBeam } from "@/components/fx/border-beam";
 import { PendingButton } from "@/components/fx/pending-button";
 import { ShimmerText } from "@/components/fx/shimmer-text";
 import { ThinkingOrb } from "@/components/fx/thinking-orb";
 import { buttonClass, cx, inputClass } from "@/components/ui";
-import { FeedPreview, ShortPreview, type PreviewAd, type PreviewProduct, type PreviewShop } from "./ad-preview";
+import { Expand } from "@/components/fx/expand";
+import { FeedPreview, ShortPreview, type PreviewAd, type PreviewPicture, type PreviewProduct, type PreviewShop } from "./ad-preview";
 
 // One AI-written ad: how it looks in a feed and as a full-screen card, and what a person can do with
-// it (change the words, have the AI write it again, or take it out). While it's being edited the
-// previews follow every keystroke; while the AI rewrites it, a light runs round its border.
+// it (change the words, have the AI write it again, make one of its pictures again, or take it out).
+// While it's being edited the previews follow every keystroke; while the AI rewrites it, a light runs
+// round its border.
+
+/** One of the ad's pictures, with what the pictures list says about it. */
+export interface PictureData extends PreviewPicture {
+  mode: "product" | "scene" | "staged";
+  label: string;
+  note: string | null;
+  /** What "Make again" can remake: this slot's scene, and/or the practice item's picture (its product id). */
+  redo: { scene: boolean; item: string | null };
+}
 
 export interface VariationData {
   id: string;
@@ -24,7 +35,8 @@ export interface VariationData {
   description: string;
   callToAction: string;
   productIds: string[];
-  cards: { productId: string; headline: string; description: string }[];
+  cards: { key: string; kind: "product" | "scene"; productId: string | null; headline: string; description: string }[];
+  pictures: PictureData[];
   writtenBy: "ai" | "ai_edited";
   error: string | null;
 }
@@ -35,6 +47,8 @@ export interface VariationActions {
   save: (form: FormData) => Promise<Result>;
   rewrite: () => Promise<Result>;
   remove: () => Promise<Result>;
+  /** "Make again" on one picture: its scene, or the practice item's picture. */
+  remake: (key: string, what: "scene" | "item") => Promise<Result>;
 }
 
 interface Limits {
@@ -51,7 +65,7 @@ interface Draft {
   headline: string;
   description: string;
   callToAction: string;
-  cards: { productId: string; headline: string; description: string; remove: boolean }[];
+  cards: { key: string; kind: "product" | "scene"; productId: string | null; headline: string; description: string; remove: boolean }[];
 }
 
 const toDraft = (v: VariationData): Draft => ({
@@ -89,6 +103,7 @@ export function VariationCard({
   shop,
   ctaOptions,
   limits,
+  minCards,
   editable,
   actions,
 }: {
@@ -97,6 +112,8 @@ export function VariationCard({
   shop: PreviewShop;
   ctaOptions: { value: string; label: string }[];
   limits: Limits;
+  /** A carousel keeps at least this many cards. */
+  minCards: number;
   editable: boolean;
   actions: VariationActions;
 }) {
@@ -114,10 +131,11 @@ export function VariationCard({
         headline: draft.headline,
         description: draft.description,
         cta: label(draft.callToAction),
-        productIds: v.format === "carousel" ? shownCards.map((c) => c.productId) : v.productIds,
+        productIds: v.productIds,
         cards: shownCards,
+        pictures: v.pictures,
       }
-    : { format: v.format, primaryText: v.primaryText, headline: v.headline, description: v.description, cta: label(v.callToAction), productIds: v.productIds, cards: v.cards };
+    : { format: v.format, primaryText: v.primaryText, headline: v.headline, description: v.description, cta: label(v.callToAction), productIds: v.productIds, cards: v.cards, pictures: v.pictures };
 
   const run = async (work: () => Promise<Result>, after?: () => void) => {
     const r = await work();
@@ -160,9 +178,11 @@ export function VariationCard({
 
         <div className={cx("flex flex-col gap-5", rewriting && "opacity-60")}>
           <div className="flex gap-4 overflow-x-auto pb-1 sm:overflow-visible">
-            <FeedPreview ad={ad} shop={shop} products={products} className="w-[300px] shrink-0 sm:w-[340px]" />
-            <ShortPreview ad={ad} shop={shop} products={products} className="hidden sm:block" />
+            <FeedPreview ad={ad} shop={shop} className="w-[300px] shrink-0 sm:w-[340px]" />
+            <ShortPreview ad={ad} shop={shop} className="hidden sm:block" />
           </div>
+
+          <PicturesList pictures={v.pictures} cards={v.cards} format={v.format} products={products} shop={shop} canRemake={editable && !rewriting && !editing} remake={(key, what) => run(() => actions.remake(key, what))} />
 
           {editing ? (
             <form
@@ -218,10 +238,12 @@ export function VariationCard({
                   <fieldset className="flex flex-col gap-3">
                     <legend className="mb-2 text-[14px] font-medium">Cards</legend>
                     {draft.cards.map((c, i) => (
-                      <div key={`${c.productId}-${i}`} className={cx("grid gap-2 rounded-xl border border-line p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end", c.remove && "opacity-50")}>
+                      <div key={c.key} className={cx("grid gap-2 rounded-xl border border-line p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end", c.remove && "opacity-50")}>
                         <input type="hidden" name={`card_${i}_remove`} value={c.remove ? "1" : ""} />
                         <label className="block min-w-0">
-                          <span className="block truncate text-[12px] text-muted">{products[c.productId]?.title ?? "Product"}</span>
+                          <span className="block truncate text-[12px] text-muted">
+                            Card {i + 1} · {c.kind === "scene" ? "a scene made with AI" : (products[c.productId ?? ""]?.title ?? "Product")}
+                          </span>
                           <input
                             name={`card_${i}_headline`}
                             aria-label={`Card ${i + 1} headline`}
@@ -247,7 +269,7 @@ export function VariationCard({
                         <button
                           type="button"
                           onClick={() => setDraft({ ...draft, cards: draft.cards.map((x, j) => (j === i ? { ...x, remove: !x.remove } : x)) })}
-                          disabled={!c.remove && draft.cards.filter((x) => !x.remove).length <= 2}
+                          disabled={!c.remove && (draft.cards.filter((x) => !x.remove).length <= minCards || (c.kind === "product" && draft.cards.filter((x) => !x.remove && x.kind === "product").length <= 1))}
                           className={buttonClass("quiet", touch)}
                         >
                           {c.remove ? "Put back" : "Take out"}
@@ -318,5 +340,100 @@ export function VariationCard({
         ) : null}
       </article>
     </BorderBeam>
+  );
+}
+
+const stateWords: Record<PictureData["state"], string> = {
+  ready: "Ready",
+  making: "Being made",
+  failed: "Couldn't be made",
+  waiting: "Waiting to be made",
+};
+
+/**
+ * The ad's pictures, one row each: what it is (the product's own photo, or made with AI), where it
+ * stands, and "Make again" for the ones made with AI. Closed by default, with a one-line summary.
+ */
+function PicturesList({
+  pictures,
+  cards,
+  format,
+  products,
+  shop,
+  canRemake,
+  remake,
+}: {
+  pictures: PictureData[];
+  cards: VariationData["cards"];
+  format: VariationData["format"];
+  products: Record<string, PreviewProduct>;
+  shop: PreviewShop;
+  canRemake: boolean;
+  remake: (key: string, what: "scene" | "item") => Promise<void>;
+}) {
+  const [asking, setAsking] = useState<string | null>(null);
+  if (!pictures.length) return null;
+  const made = pictures.filter((p) => p.mode !== "product" || p.practiceItem).length;
+  const busy = pictures.filter((p) => p.state === "making" || p.state === "waiting").length;
+  const failed = pictures.filter((p) => p.state === "failed" || p.note).length;
+  const summary = (
+    <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+      <span className="font-medium">Pictures</span>
+      <span className="text-[13px] text-muted">
+        {pictures.length} · {made} made with AI
+        {busy ? ` · ${busy} being made` : ""}
+        {failed ? ` · ${failed} need you` : ""}
+      </span>
+    </span>
+  );
+  const name = (p: PictureData, i: number) => {
+    if (format === "single") return "The ad's picture";
+    const c = cards.find((x) => x.key === p.key);
+    const what = c?.kind === "scene" ? "Scene" : (products[c?.productId ?? ""]?.title ?? "Product");
+    return `Card ${i + 1} · ${what}`;
+  };
+  return (
+    <Expand summary={summary} buttonClassName="min-h-11 text-[14px] md:min-h-10" className="border-y border-line" defaultOpen={failed > 0}>
+      <ul className="grid gap-3 pt-1 pb-4 sm:grid-cols-2">
+        {pictures.map((p, i) => (
+          <li key={p.key} className="flex items-center gap-3">
+            <span className="relative block size-14 shrink-0 overflow-hidden rounded-lg border border-line" style={{ background: shop.artBg }}>
+              {p.src.square ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={p.src.square} alt="" loading="lazy" className="h-full w-full object-cover" />
+              ) : (
+                <span aria-hidden className={cx("absolute inset-0", p.state !== "failed" && "picture-making")} />
+              )}
+            </span>
+            <span className="min-w-0 flex-1 leading-snug">
+              <span className="block truncate text-[13px] font-medium">{name(p, i)}</span>
+              <span className="block text-[12px] text-muted">
+                {p.label} · {p.state === "making" && shop.helperOff ? "Waiting for the AI helper on your computer" : stateWords[p.state]}
+              </span>
+              {p.note ? <span className="block text-[12px] text-attention">{p.note}</span> : null}
+            </span>
+            {canRemake && (p.redo.scene || p.redo.item) && p.state !== "making" ? (
+              <button
+                type="button"
+                disabled={asking !== null}
+                aria-busy={asking === p.key || undefined}
+                onClick={async () => {
+                  setAsking(p.key);
+                  try {
+                    await remake(p.key, p.redo.scene ? "scene" : "item");
+                  } finally {
+                    setAsking(null);
+                  }
+                }}
+                className={buttonClass("quiet", "min-h-11 shrink-0 px-2.5 text-[13px] md:min-h-9")}
+                aria-label={`Make ${name(p, i).toLowerCase()} again`}
+              >
+                <RefreshCw aria-hidden className={cx("size-3.5", asking === p.key && "animate-spin motion-reduce:animate-none")} /> {asking === p.key ? "Asking…" : "Make again"}
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </Expand>
   );
 }
