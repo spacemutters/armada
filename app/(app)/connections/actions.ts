@@ -3,7 +3,6 @@
 import { refresh } from "next/cache";
 import type { FormResult } from "@/components/connect/cj-connect";
 import { connectCj, describeCjError, disconnectCj } from "@/connectors/cj/client";
-import { disconnectMeta } from "@/connectors/meta-ads/connection";
 import { disconnectShopify } from "@/connectors/shopify/client";
 import { requireSession } from "@/lib/auth/session";
 import { connector } from "@/lib/connections/registry";
@@ -75,8 +74,8 @@ export async function disconnectHere(_prev: FormResult | null, formData: FormDat
     }
   } else {
     if (provider === "meta_ads") {
-      // The ads connector's own way out (connectors/meta-ads); a Facebook shop's credential stays.
-      await disconnectMeta(session.workspaceId);
+      // Meta ads keep their access under label "ads" (connectors/meta-ads); a Facebook shop's credential stays.
+      await withWorkspace(session.workspaceId, (tx) => tx`delete from armada.credentials where provider = 'meta' and label = 'ads'`);
     } else {
       await withWorkspace(
         session.workspaceId,
