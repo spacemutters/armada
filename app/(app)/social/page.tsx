@@ -29,7 +29,7 @@ import { requireSession } from "@/lib/auth/session";
 import { readNote } from "@/lib/social/accounts/config";
 import { lookFromBlueprint } from "@/lib/social/posts/design";
 import { isDue } from "@/lib/social/posts/due";
-import { latestRun, photoChoices, postsForShop, uuid } from "@/lib/social/posts/queries";
+import { ensureShopPostPictures, latestRun, photoChoices, postsForShop, uuid } from "@/lib/social/posts/queries";
 import { platformLabel, publishDuePosts } from "@/lib/social/posts/schedule";
 import { MAX_SLIDES, MIN_SLIDES, POSTS_PER_PRODUCT, POSTS_PER_WEEK } from "@/lib/social/posts/schema";
 import { shopAccounts } from "@/lib/social/posts/targets";
@@ -58,6 +58,8 @@ export default async function SocialPostsPage({ searchParams }: { searchParams: 
   }
 
   const look = lookFromBlueprint(shop.blueprint)!;
+  // Pictures that failed only because ChatGPT was down are asked for again (as the ads page does).
+  await ensureShopPostPictures(session.workspaceId, shop.id).catch((e) => console.error("asking for post pictures failed", e));
   const [accounts, posts, run, helper, choices] = await Promise.all([
     shopAccounts(session.workspaceId, shop.id),
     postsForShop(session.workspaceId, shop.id),

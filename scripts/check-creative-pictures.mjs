@@ -265,5 +265,25 @@ report(/const picture = ref\?\.item \? "item" : s\.scene \? "scene" : null;/.tes
 const handlerFor = read("lib/ai/jobs.ts").match(/function handlerFor[\s\S]*?\n}/)?.[0] ?? "";
 report(/prefix\.length > best\[0\]\.length/.test(handlerFor), "a picture job's own handler wins over the brand pictures' (longest name first)");
 
+// ---- pictures that failed because ChatGPT was down are asked for again, later ----
+{
+  const creative = await import("../lib/creative/pictures.ts");
+  const slot = (o) => ({ cuts: {}, alt: "", making: false, failed: false, tried: false, retry: false, ...o });
+  report(creative.needsAsking(undefined) && creative.needsAsking(slot({})), "a picture never asked for is asked for");
+  report(!creative.needsAsking(slot({ tried: true, failed: true })), "a picture that failed for its own reasons isn't asked for by itself");
+  report(creative.needsAsking(slot({ tried: true, failed: true, retry: true })), "a picture that failed only because ChatGPT was down is asked for again");
+  report(!creative.needsAsking(slot({ tried: true, making: true, retry: true })), "…but not while one is being made");
+  report(!creative.needsAsking(slot({ tried: true, failed: true, retry: true, cuts: { square: { id: "x", width: 1, height: 1 } } })), "…and not when it already has a picture");
+  const down = [
+    "The ChatGPT tool on the helper computer isn't signed in. Sign in once with: codex login",
+    "ChatGPT isn't answering right now (a problem on OpenAI's side). Armada tries again later.",
+    "The AI took too long to answer.",
+  ];
+  report(down.every((m) => creative.AI_DOWN.test(m)), "ChatGPT being down or unreachable counts as not the picture's fault");
+  report(!creative.AI_DOWN.test("The AI couldn't finish: content policy") && !creative.AI_DOWN.test("The picture came back empty."), "refusals and bad pictures don't count");
+  report(creative.RETRY_AFTER_MS >= 10 * 60_000, "an outage isn't hammered: a failed picture waits at least 10 minutes");
+  report(/ensureShopPostPictures\(session\.workspaceId, shop\.id\)/.test(read("app/(app)/social/page.tsx")), "opening a shop's posts asks for missing pictures again, as the ads page does");
+}
+
 console.log(failures ? `\n${failures} check(s) failed.` : "\nAll picture checks passed.");
 process.exit(failures ? 1 : 0);

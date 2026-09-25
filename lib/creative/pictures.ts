@@ -240,11 +240,25 @@ export interface SlotState {
   failed: boolean;
   /** Anything was ever asked for this slot, apart from jobs called off. */
   tried: boolean;
+  /** The last try failed only because the AI couldn't be reached (ChatGPT down), long enough ago to ask again. */
+  retry: boolean;
 }
+
+/** Failures that aren't the picture's fault: ChatGPT (or the helper's path to it) wasn't answering. */
+export const AI_DOWN = /isn't signed in|isn't answering|took too long to answer|Couldn't start the ChatGPT tool/i;
+/** How long after such a failure a picture is asked for again, so an outage isn't hammered. */
+export const RETRY_AFTER_MS = 15 * 60_000;
+
+/**
+ * Whether a slot should be asked for (again): nothing was ever asked, or the last try failed only
+ * because the AI was down a while ago. Slots with a picture, or being made, are left alone.
+ */
+export const needsAsking = (s: SlotState | undefined): boolean =>
+  !s || (!s.making && !Object.keys(s.cuts).length && (!s.tried || s.retry));
 
 export type PictureIndex = Map<string, SlotState>;
 
-const blank = (): SlotState => ({ cuts: {}, alt: "", making: false, failed: false, tried: false });
+const blank = (): SlotState => ({ cuts: {}, alt: "", making: false, failed: false, tried: false, retry: false });
 
 /** Everything known about the pictures of these ads, posts and practice items (one shop). */
 export async function pictureIndex(tx: Tx, q: { shopId: string; adIds?: string[]; postIds?: string[]; itemIds?: string[] }): Promise<PictureIndex> {
@@ -272,8 +286,8 @@ export async function pictureIndex(tx: Tx, q: { shopId: string; adIds?: string[]
     index.set(k, s);
   }
 
-  const jobs = await tx<{ parentType: string; parentId: string; slot: string | null; productId: string | null; status: string; error: string | null }[]>`
-    select parent_type, parent_id, input -> 'image' ->> 'slot' as slot, input -> 'image' ->> 'productId' as product_id, status, error
+  const jobs = await tx<{ parentType: string; parentId: string; slot: string | null; productId: string | null; status: string; error: string | null; finishedAt: Date | null }[]>`
+    select parent_type, parent_id, input -> 'image' ->> 'slot' as slot, input -> 'image' ->> 'productId' as product_id, status, error, finished_at
     from armada.ai_jobs
     where (parent_type = ${PICTURE_PARENT.ad} and parent_id in ${tx(adIds.length ? adIds : [none])})
        or (parent_type = ${PICTURE_PARENT.post} and parent_id in ${tx(postIds.length ? postIds : [none])})
@@ -293,6 +307,7 @@ export async function pictureIndex(tx: Tx, q: { shopId: string; adIds?: string[]
       seen.add(k);
       s.making = j.status === "queued" || j.status === "running";
       s.failed = j.status === "failed" && !called;
+      s.retry = s.failed && AI_DOWN.test(j.error ?? "") && (!j.finishedAt || Date.now() - new Date(j.finishedAt).getTime() >= RETRY_AFTER_MS);
     }
     index.set(k, s);
   }

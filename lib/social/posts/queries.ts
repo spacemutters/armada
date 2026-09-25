@@ -210,6 +210,20 @@ export async function latestWeekRun(workspaceId: string, shopId: string): Promis
 }
 
 /** Every post for the shop that's still in play, plus the most recent ones that went out. */
+/**
+ * On opening a shop's posts: asks for any pictures its unposted posts are missing, including ones
+ * that failed only because ChatGPT was down a while ago. Returns how many were asked for.
+ */
+export async function ensureShopPostPictures(workspaceId: string, shopId: string): Promise<number> {
+  if (!/^[0-9a-f-]{36}$/i.test(shopId)) return 0;
+  return withWorkspace(workspaceId, async (tx) => {
+    const [shop] = await tx<ShopRow[]>`select * from armada.shops where id = ${shopId}`;
+    if (!shop) return 0;
+    const ids = await tx<{ id: string }[]>`select id from armada.social_posts where shop_id = ${shopId} and status in ('draft', 'scheduled', 'failed')`;
+    return ensurePostPictures(tx, shop, ids.map((r) => r.id));
+  });
+}
+
 export async function postsForShop(workspaceId: string, shopId: string): Promise<PostWithSlides[]> {
   return withWorkspace(workspaceId, async (tx) => {
     const posts = await tx<SocialPostRow[]>`

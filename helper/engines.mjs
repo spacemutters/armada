@@ -384,6 +384,10 @@ function codexMessage(text) {
   }
 }
 
+function openaiDown(text) {
+  return /Incorrect API key provided: sk-svcac[\s\S]*chatgpt\.com\/backend-api|chatgpt\.com\/backend-api\S*[\s\S]{0,200}\b(500|502|503|504)\b|service unavailable|server is overloaded/i.test(text);
+}
+
 function signedOut(text) {
   return /not logged in|log ?in again|please (re-?)?authenticate|401 unauthorized|refresh token|token (has )?expired|codex login/i.test(text);
 }
@@ -515,6 +519,11 @@ export function readCodexRun(input, { out = "", err = "", code = null, answerTex
   if (!answerText?.trim()) answerText = lastMessage;
 
   const problems = [...failures, err.trim()].filter(Boolean).join(" ");
+  // ChatGPT's own servers refusing their internal key (seen in OpenAI's 2026-09-25 outage) looks like a
+  // sign-in problem but isn't one: signing in again doesn't help, waiting does.
+  if (openaiDown(problems)) {
+    return { ok: false, error: "ChatGPT isn't answering right now (a problem on OpenAI's side). Armada tries again later.", usage };
+  }
   if (signedOut(problems)) {
     return { ok: false, error: "The ChatGPT tool on the helper computer isn't signed in. Sign in once with: codex login", usage };
   }

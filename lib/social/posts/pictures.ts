@@ -1,6 +1,6 @@
 import "server-only";
 import type { SceneSpec } from "@/lib/creative/brief";
-import { callOff, dropPictures, pictureIndex, pictureKey, queueItem, queueScene, type PictureIndex, type SlotState } from "@/lib/creative/pictures";
+import { callOff, dropPictures, needsAsking, pictureIndex, pictureKey, queueItem, queueScene, type PictureIndex, type SlotState } from "@/lib/creative/pictures";
 import type { Tx } from "@/lib/db";
 import type { ShopRow } from "@/lib/shops/types";
 import { clip } from "@/lib/text";
@@ -22,7 +22,7 @@ export interface SlidePicture {
   pictureState: SlidePictureState | null;
 }
 
-const EMPTY: SlotState = { cuts: {}, alt: "", making: false, failed: false, tried: false };
+const EMPTY: SlotState = { cuts: {}, alt: "", making: false, failed: false, tried: false, retry: false };
 
 function stateOf(s: SlotState, cut: string | null): SlidePictureState {
   if (s.making) return "making";
@@ -67,7 +67,8 @@ export function slideScene(post: Pick<SocialPostRow, "angle">, slide: Pick<Socia
 
 /**
  * Asks for the pictures these posts' slides are missing. Slots that have a picture, are being made,
- * or couldn't be made are left alone. Returns how many were asked for.
+ * or couldn't be made are left alone, unless they failed only because ChatGPT was down (then they're
+ * asked for again a while later). Returns how many were asked for.
  */
 export async function ensurePostPictures(tx: Tx, shop: ShopRow, postIds: string[]): Promise<number> {
   if (!postIds.length) return 0;
@@ -79,7 +80,7 @@ export async function ensurePostPictures(tx: Tx, shop: ShopRow, postIds: string[
   for (const r of await tx<{ postId: string; n: number }[]>`
     select post_id, count(*)::int as n from armada.social_slides where post_id in ${tx(posts.map((p) => p.id))} group by post_id`) totals.set(r.postId, r.n);
   const index = await slidePictureIndex(tx, shop.id, slides);
-  const untouched = (s: SlotState | undefined) => !s || (!s.tried && !s.making && !Object.keys(s.cuts).length);
+  const untouched = needsAsking;
   const itemIds = [...new Set(slides.filter((s) => s.picture === "item" && s.productId).map((s) => s.productId as string))];
   const facts = itemIds.length
     ? new Map((await tx<{ id: string; title: string; bullets: string[] }[]>`select id, title, bullets from armada.products where id in ${tx(itemIds)}`).map((p) => [p.id, p]))

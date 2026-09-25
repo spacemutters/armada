@@ -1,7 +1,7 @@
 import "server-only";
 import { COMPOSE_REV, type Shape } from "@/lib/creative/compose";
 import { mayPictureItem, type SceneSpec } from "@/lib/creative/brief";
-import { callOff, dropPictures, pictureIndex, pictureKey, queueItem, queueScene, type PictureIndex, type SlotState } from "@/lib/creative/pictures";
+import { callOff, dropPictures, needsAsking, pictureIndex, pictureKey, queueItem, queueScene, type PictureIndex, type SlotState } from "@/lib/creative/pictures";
 import type { Tx } from "@/lib/db";
 import { shortHash } from "@/lib/social/posts/design";
 import type { ShopRow } from "@/lib/shops/types";
@@ -132,7 +132,7 @@ export function adPictureVersion(plan: PicturePlan, shape: Shape, parts: { scene
   return shortHash([COMPOSE_REV, shape, JSON.stringify(plan), parts.sceneCut ?? "", parts.itemCut ?? "", JSON.stringify(palette ?? {})].join("|"));
 }
 
-const EMPTY: SlotState = { cuts: {}, alt: "", making: false, failed: false, tried: false };
+const EMPTY: SlotState = { cuts: {}, alt: "", making: false, failed: false, tried: false, retry: false };
 
 /** Everything the ad previews need about one ad's pictures. */
 export function adPictureViews(
@@ -200,14 +200,15 @@ export function adPictureViews(
 /**
  * Asks for whatever pictures these ads are missing: a scene per scene card and per single-photo ad,
  * and a picture of each practice item they show (once per shop and item). Slots that have a picture,
- * are being made, or already failed are left alone. Returns how many were asked for.
+ * are being made, or already failed are left alone, unless they failed only because ChatGPT was down
+ * (then they're asked for again a while later). Returns how many were asked for.
  */
 export async function ensureAdPictures(tx: Tx, shop: ShopRow, variations: AdVariation[], products: Map<string, PictureProduct>): Promise<number> {
   const live = variations.filter((v) => v.status === "draft" || v.status === "created" || v.status === "failed");
   if (!live.length) return 0;
   const itemIds = [...products.values()].filter((p) => isPracticeItem(shop, p)).map((p) => p.id);
   const index = await pictureIndex(tx, { shopId: shop.id, adIds: live.map((v) => v.id), itemIds });
-  const untouched = (s: SlotState | undefined) => !s || (!s.tried && !s.making && !Object.keys(s.cuts).length);
+  const untouched = needsAsking;
   let queued = 0;
   const items = new Set<string>();
   for (const v of live) {

@@ -183,6 +183,10 @@ const failed = readCodexRun(input, {
 report(!failed.ok && /Invalid schema for response_format/.test(failed.error), "a failed run reports Codex's reason", failed.error);
 const signedOut = readCodexRun(input, { err: "Error: Not logged in. Run codex login.", code: 1 });
 report(!signedOut.ok && /isn't signed in/.test(signedOut.error), "a signed-out Codex says so plainly", signedOut.error);
+// OpenAI's 2026-09-25 outage: its servers refused their own internal key, which looked like a sign-in problem.
+const outageEvent = JSON.stringify({ type: "turn.failed", error: { message: "unexpected status 401 Unauthorized: Incorrect API key provided: sk-svcac****fvMA. You can find your API key at https://platform.openai.com/account/api-keys., url: https://chatgpt.com/backend-api/codex/responses" } });
+const outage = readCodexRun(input, { out: outageEvent, code: 1 });
+report(!outage.ok && /isn't answering right now/.test(outage.error) && !/signed in/.test(outage.error), "OpenAI's own outage isn't blamed on the sign-in", outage.error);
 const wrong = readCodexRun(input, { answerText: '{"ok":"maybe"}', code: 0 });
 report(!wrong.ok && /didn't fit/.test(wrong.error), "an answer that breaks the schema is refused", wrong.error);
 const missing = await runJob({ claude: "claude.exe", codex: null }, input);
