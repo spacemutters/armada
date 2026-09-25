@@ -20,8 +20,22 @@ export interface PdSettings {
   environment: PdEnvironment;
 }
 
-/** The platforms Armada connects through the service, and the service's name for each. */
-export const PD_APPS = { shopify: "shopify", ebay: "ebay" } as const;
+/**
+ * The platforms Armada connects through the service, and the service's name for each. Only apps
+ * the service connects with its own approved app belong here (no keys asked of the seller); the
+ * admin check (/api/admin/service-check) shows which those are.
+ */
+export const PD_APPS = {
+  shopify: "shopify",
+  ebay: "ebay",
+  tiktok_ads: "tiktok_ads_manager",
+  google_ads: "google_ads",
+  printful: "printful_oauth",
+  printify: "printify",
+} as const;
+
+/** Platforms with a store or special finishing of their own; the rest are finished the same simple way. */
+export const PD_STORE_PROVIDERS = new Set<string>(["shopify", "ebay"]);
 export type PdProvider = keyof typeof PD_APPS;
 
 export const isPdProvider = (p: string): p is PdProvider => Object.hasOwn(PD_APPS, p);

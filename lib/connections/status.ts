@@ -3,6 +3,7 @@ import { isPdProvider } from "@/connectors/pipedream/core";
 import { withWorkspace } from "@/lib/db";
 import type { Role } from "@/lib/types";
 import { CONNECTORS, type Connector } from "./registry";
+import { loadAppKeys } from "@/lib/app-keys";
 import { serviceOn } from "./service";
 import type { Provider } from "./types";
 
@@ -62,6 +63,8 @@ export const CREDENTIAL_PROVIDER: Record<Provider, string> = {
   facebook: "meta",
   cj: "cj",
   aliexpress: "aliexpress",
+  printful: "printful",
+  printify: "printify",
   meta_ads: "meta",
   google_ads: "google",
   tiktok_ads: "tiktok",
@@ -175,6 +178,8 @@ function summarize(connector: Connector, accounts: ConnectedAccount[], service =
 
 /** Every connector's status for this workspace, in the registry's order. */
 export async function connectionStatus(workspaceId: string): Promise<ProviderStatus[]> {
+  // Pasted app keys reach this server before the cards read them.
+  await loadAppKeys().catch(() => {});
   const service = await serviceOn();
   const { stores, creds } = await withWorkspace(workspaceId, async (tx) => {
     const stores = await tx<StoreRow[]>`

@@ -10,6 +10,9 @@ import type { ConnectedAccount, ProviderStatus } from "@/lib/connections/status"
 import { hasEnv, type Provider } from "@/lib/connections/types";
 import { timeAgo } from "@/lib/text";
 import { CardShell } from "./card-shell";
+import { PD_STORE_PROVIDERS } from "@/connectors/pipedream/core";
+import { APP_KEYS, appKeySource, isAppKey } from "@/lib/app-keys";
+import { AppKeysForm, type AppKeyField } from "./app-keys-form";
 import { CjConnect, type FormResult } from "./cj-connect";
 import { ConnectLink } from "./connect-link";
 import { CopyField } from "./copy-field";
@@ -25,6 +28,39 @@ type FormAction = (prev: FormResult | null, formData: FormData) => Promise<FormR
 export interface CardActions {
   connectCj: FormAction;
   disconnect: FormAction;
+  /** Platform admins: save Armada's own app keys for a platform. */
+  saveKeys?: FormAction;
+}
+
+// Plain names for app keys, as each platform's developer site labels them.
+const KEY_LABELS: Record<string, string> = {
+  SHOPIFY_CLIENT_ID: "Client ID",
+  SHOPIFY_CLIENT_SECRET: "Client secret",
+  EBAY_CLIENT_ID: "App ID (Client ID)",
+  EBAY_CLIENT_SECRET: "Cert ID (Client secret)",
+  EBAY_RUNAME: "RuName (redirect name)",
+  META_APP_ID: "App ID",
+  META_APP_SECRET: "App secret",
+  META_SOCIAL_CONFIG_ID: "Login configuration ID",
+  META_SHOPS_APPROVED: "Meta approved shops (type yes)",
+  META_ADS_APPROVED: "Meta approved ads (type yes)",
+  TIKTOK_CLIENT_KEY: "Client key",
+  TIKTOK_CLIENT_SECRET: "Client secret",
+  TIKTOK_APP_ID: "App ID",
+  TIKTOK_APP_SECRET: "App secret",
+  GOOGLE_ADS_CLIENT_ID: "Client ID",
+  GOOGLE_ADS_CLIENT_SECRET: "Client secret",
+  GOOGLE_ADS_DEVELOPER_TOKEN: "Developer token",
+  ALIEXPRESS_APP_KEY: "App key",
+  ALIEXPRESS_APP_SECRET: "App secret",
+};
+
+function appKeyFields(names: string[]): AppKeyField[] {
+  return names.filter(isAppKey).map((name) => {
+    const secret = APP_KEYS[name].secret;
+    const source = appKeySource(name);
+    return { name, label: KEY_LABELS[name] ?? name, secret, source, current: !secret && source === "pasted" ? (process.env[name] ?? null) : null };
+  });
 }
 
 const STATE: Record<ProviderStatus["state"], { tone: Tone; label: string }> = {
@@ -48,6 +84,8 @@ const NOUN: Record<Provider, [one: string, many: string]> = {
   facebook: ["Facebook shop", "Facebook shops"],
   cj: ["account", "accounts"],
   aliexpress: ["account", "accounts"],
+  printful: ["account", "accounts"],
+  printify: ["account", "accounts"],
   meta_ads: ["ad account", "ad accounts"],
   google_ads: ["ad account", "ad accounts"],
   tiktok_ads: ["ad account", "ad accounts"],
@@ -60,6 +98,7 @@ function consequence(provider: Provider, kind: Connector["kind"]): string {
   if (provider === "shopify") return "Armada takes itself off the store in Shopify and stops keeping it in step. Its products and orders stay here.";
   if (provider === "cj") return "The shop builder and product search go back to the practice catalog, and sales stop being ordered from CJ. You can connect again any time.";
   if (provider === "aliexpress") return "Product search stops showing AliExpress. Products you already added stay. You can connect again any time.";
+  if (kind === "supplier") return "Armada stops using this account. Products you already added stay. You can connect again any time.";
   if (kind === "store") return "Armada stops keeping it in step. Its products and orders stay here.";
   return "Armada stops managing ads on this account. Ads already running keep running on the platform.";
 }
@@ -206,7 +245,7 @@ export function ConnectorCard({
 
       <Actions s={s} canManage={canManage} typedShop={typedShop} noun={noun} connectCj={actions.connectCj} />
 
-      {admin && (!s.available || c.method !== "key") ? <AdminSetup c={c} origin={origin} open={!s.available} /> : null}
+      {admin && (!s.available || c.method !== "key") ? <AdminSetup c={c} origin={origin} open={!s.available} saveKeys={actions.saveKeys} /> : null}
     </CardShell>
   );
 }
@@ -286,7 +325,10 @@ function Actions({ s, canManage, typedShop, noun, connectCj }: { s: ProviderStat
   const short = SHORT[c.provider] ?? c.name;
   return (
     <div className="mt-5 flex flex-wrap gap-2">
-      <ConnectLink href={connectHref(c.provider)} busyLabel={`Opening ${short}…`}>
+      <ConnectLink
+        href={s.via === "service" && !PD_STORE_PROVIDERS.has(c.provider) ? `/api/connect/service/${c.provider}/start` : connectHref(c.provider)}
+        busyLabel={`Opening ${short}…`}
+      >
         {s.connectedCount ? `Connect another ${noun}` : `Connect ${short}`}
       </ConnectLink>
       {c.canOpenNew ? (
@@ -299,7 +341,9 @@ function Actions({ s, canManage, typedShop, noun, connectCj }: { s: ProviderStat
 }
 
 /** Only platform admins: exactly what to set up on the platform's side, and which server settings are in place. */
-function AdminSetup({ c, origin, open }: { c: Connector; origin: string; open: boolean }) {
+function AdminSetup({ c, origin, open, saveKeys }: { c: Connector; origin: string; open: boolean; saveKeys?: FormAction }) {
+  const keyFields = appKeyFields(c.requiredEnv);
+  const otherSettings = c.requiredEnv.filter((n) => !isAppKey(n));
   return (
     <details open={open} className="mt-5 rounded-xl border border-dashed border-line-strong">
       <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-2 px-4 py-2 text-[13px] font-medium [&::-webkit-details-marker]:hidden">
@@ -320,11 +364,12 @@ function AdminSetup({ c, origin, open }: { c: Connector; origin: string; open: b
             </p>
           </>
         ) : null}
-        {c.requiredEnv.length ? (
+        {keyFields.length && saveKeys ? <AppKeysForm provider={c.provider} name={c.name} fields={keyFields} action={saveKeys} /> : null}
+        {otherSettings.length ? (
           <div>
             <div className="text-[13px] font-medium">Settings in Vercel</div>
             <ul className="mt-1.5 flex flex-col gap-1">
-              {c.requiredEnv.map((name) => {
+              {otherSettings.map((name) => {
                 const set = hasEnv([name]);
                 return (
                   <li key={name} className="flex flex-wrap items-center gap-2 text-[13px]">

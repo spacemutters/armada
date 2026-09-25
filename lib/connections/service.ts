@@ -1,8 +1,11 @@
 import "server-only";
 import { connectPage, forgetServiceAccount, pdSettings } from "@/connectors/pipedream/client";
-import { externalUserFor, isViaService, type PdProvider } from "@/connectors/pipedream/core";
+import { externalUserFor, isViaService, type PdProvider, type ViaService } from "@/connectors/pipedream/core";
+import { accountName } from "@/connectors/pipedream/identity";
+import { seal } from "@/lib/crypto";
 import { open } from "@/lib/crypto";
 import { withWorkspace } from "@/lib/db";
+import { CREDENTIAL_PROVIDER } from "./status";
 import { appOrigin } from "./types";
 import { createState } from "./state";
 
@@ -72,4 +75,24 @@ export async function forgetViaService(workspaceId: string, provider: string, la
   } catch {
     // Letting go here still disconnects it in Armada.
   }
+}
+
+/**
+ * Finishes a supplier or ad account connected through the service: its credential holds only which
+ * account it is at the service (sealed, never a key), named by what the platform says it's called.
+ */
+export async function completeViaService(input: { workspaceId: string; memberId: string | null; provider: PdProvider; via: ViaService; fallbackName: string | null }): Promise<void> {
+  const name = (await accountName(input.provider, input.via)) ?? input.fallbackName;
+  const credProvider = CREDENTIAL_PROVIDER[input.provider];
+  const meta = { account: name, via: "service", connectedAt: new Date().toISOString(), connectedBy: input.memberId };
+  await withWorkspace(input.workspaceId, async (tx) => {
+    await tx`
+      insert into armada.credentials (workspace_id, provider, label, secret, status, meta)
+      values (${input.workspaceId}, ${credProvider}, ${input.via.accountId}, ${seal(input.via)}, 'connected', ${tx.json(meta as never)})
+      on conflict (workspace_id, provider, label) do update
+        set secret = excluded.secret, status = 'connected', meta = excluded.meta, updated_at = now()`;
+    await tx`
+      insert into armada.audit_log (workspace_id, member_id, action, detail)
+      values (${input.workspaceId}, ${input.memberId}, ${`${input.provider}.connected`}, ${tx.json({ via: "service", account: name } as never)})`;
+  });
 }

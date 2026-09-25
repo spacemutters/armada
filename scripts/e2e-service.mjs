@@ -99,6 +99,20 @@ try {
   await shot("05-ebay-setup");
   expect(/mock_seller/.test(t4), "the setup names the eBay account read through the relay");
 
+  // ---- a supplier and an ad account, the same one press ----
+  for (const [name, card, expectName] of [
+    ["Printful", "Printful", "Mock Print Studio"],
+    ["Printify", "Printify", "Mock Printify Shop"],
+    ["TikTok ads", "TikTok ads", "Mock TikTok Ads"],
+  ]) {
+    await page.goto(`${base}/connections`, { waitUntil: "networkidle0" });
+    const pressedIt = await clickText("a", new RegExp(String.raw`^\s*Connect ${name}\s*$`, "i"));
+    expect(pressedIt, `pressed Connect ${name}`);
+    const t = await text();
+    expect(/connected=/.test(page.url()) && new RegExp(expectName).test(t), `${card} is connected and named from the platform (${page.url().replace(base, "")})`);
+  }
+  await shot("07-suppliers-and-ads");
+
   // ---- the relay ----
   const s = await stats();
   expect(s.relayByApp.shopify >= 1 && s.relayByApp.ebay >= 2, `requests went through the relay (Shopify ${s.relayByApp.shopify ?? 0}, eBay ${s.relayByApp.ebay ?? 0})`);

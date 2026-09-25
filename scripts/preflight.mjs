@@ -149,6 +149,10 @@ const checks = {
         for (const m of text.matchAll(/insert into armada\.credentials[\s\S]*?values\s*\(([\s\S]*?)\)\s*(on conflict|returning|`)/g)) {
           if (!/\$\{seal\(/.test(m[1])) bad.push(rel(root, p));
         }
+        // Armada's own app keys and the connection service's secret, too.
+        for (const m of text.matchAll(/insert into armada\.(app_keys|connection_service)[\s\S]*?values\s*\(([\s\S]*?)\)\s*(on conflict|returning|`)/g)) {
+          if (!/\$\{seal\(/.test(m[2])) bad.push(rel(root, p));
+        }
         if (/update armada\.credentials[\s\S]{0,200}set[^`]*\bsecret\s*=\s*\$\{(?!seal\()/.test(text)) bad.push(rel(root, p));
       }
       return bad.length ? `credentials saved without encryption in: ${[...new Set(bad)].join(", ")}` : null;
@@ -526,16 +530,18 @@ const PLANTS = {
     // Shipping picked regardless of how long it takes: check-aliexpress.mjs must notice.
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("o.daysMax <= 14", "o.daysMax <= 60"));
   },
-  "key-boxes": (dir) => {
-    const f = path.join(dir, "components", "connect", "cj-connect.tsx");
-    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('autoComplete="new-password"', 'autoComplete="off"'));
-  },
+  "key-boxes": (dir) => fs.writeFileSync(path.join(dir, "components", "planted.tsx"), `export const X = () => <input name="apiKey" type="password" autoComplete="off" />;
+`),
   "glass-layer": (dir) => fs.writeFileSync(path.join(dir, "components", "planted.tsx"), `export const X = () => <Card className="glass p-4">A card</Card>;
 `),
   "contrast/glass": (dir) => {
     const f = path.join(dir, "app", "globals.css");
     // Floating glass so thin that ink over a black photo stops reading.
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("--glass-pct: 78%;", "--glass-pct: 30%;"));
+  },
+  "sealed-keys/app-keys": (dir) => {
+    const f = path.join(dir, "lib", "app-keys.ts");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("${seal(value)}", "${value}"));
   },
   "sealed-keys": (dir) => {
     const f = path.join(dir, "connectors", "cj", "client.ts");

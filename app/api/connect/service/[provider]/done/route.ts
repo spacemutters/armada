@@ -5,7 +5,7 @@ import { PdProblem, serviceAccounts } from "@/connectors/pipedream/client";
 import { externalUserFor, isPdProvider, pickNewAccount, type ViaService } from "@/connectors/pipedream/core";
 import { completeShopifyViaService, ShopifyProblem } from "@/connectors/shopify/client";
 import { getSession } from "@/lib/auth/session";
-import { knownServiceAccounts } from "@/lib/connections/service";
+import { completeViaService, knownServiceAccounts } from "@/lib/connections/service";
 import { consumeState } from "@/lib/connections/state";
 import { asSystem } from "@/lib/db";
 import { safeReturnPath, withProblem } from "../../../facebook/bridge";
@@ -55,6 +55,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return problem("failed");
     }
     const via: ViaService = { via: "pipedream", accountId: account.id, externalUserId };
+    if (provider !== "shopify" && provider !== "ebay") {
+      // Suppliers and ad accounts: keep which account it is (never a key) and name it.
+      await completeViaService({ workspaceId: state.workspaceId, memberId: state.memberId, provider, via, fallbackName: account.name });
+      return go(`/connections?connected=${provider}`);
+    }
     if (provider === "shopify") {
       const r = await completeShopifyViaService({ workspaceId: state.workspaceId, memberId: state.memberId, account: via });
       const next = new URLSearchParams({ connected: "shopify", store: r.storeId });

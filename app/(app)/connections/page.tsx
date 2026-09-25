@@ -1,5 +1,5 @@
 import { isPlatformAdmin } from "../admin/access";
-import { clearServiceHere, connectCjHere, disconnectHere, saveServiceHere } from "./actions";
+import { clearServiceHere, connectCjHere, disconnectHere, saveAppKeysHere, saveServiceHere } from "./actions";
 import { ConnectBanner, ConnectorGroup } from "@/components/connect/connector-card";
 import { ServiceSetup } from "@/components/connect/service-setup";
 import { pdStatus } from "@/connectors/pipedream/client";
@@ -94,7 +94,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
               admin={admin}
               origin={origin}
               typedShop={typedShop}
-              actions={{ connectCj: connectCjHere, disconnect: disconnectHere }}
+              actions={{ connectCj: connectCjHere, disconnect: disconnectHere, ...(admin ? { saveKeys: saveAppKeysHere } : {}) }}
               rollIn={anyConnected}
             />
           ) : null;

@@ -193,7 +193,7 @@ export async function serviceAccounts(externalUserId: string, provider: PdProvid
   const r = await call(
     s,
     "GET",
-    `/v1/connect/${encodeURIComponent(s.projectId)}/users/${encodeURIComponent(externalUserId)}/accounts?app=${provider === "shopify" ? "shopify" : "ebay"}`,
+    `/v1/connect/${encodeURIComponent(s.projectId)}/users/${encodeURIComponent(externalUserId)}/accounts?app=${PD_APPS[provider]}`,
   );
   // A workspace that hasn't connected anything yet isn't a user at the service yet.
   if (r.status === 404) return [];

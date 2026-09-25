@@ -8,6 +8,7 @@ import { clearPdSettings, savePdSettings } from "@/connectors/pipedream/client";
 import { disconnectShopify } from "@/connectors/shopify/client";
 import { isPlatformAdmin } from "../admin/access";
 import { forgetViaService } from "@/lib/connections/service";
+import { isAppKey, saveAppKeys } from "@/lib/app-keys";
 import { requireSession } from "@/lib/auth/session";
 import { connector } from "@/lib/connections/registry";
 import { canManageConnections, CREDENTIAL_PROVIDER, credentialLabelFor } from "@/lib/connections/status";
@@ -83,6 +84,7 @@ export async function disconnectHere(_prev: FormResult | null, formData: FormDat
       // Meta ads keep their access under label "ads" (connectors/meta-ads); a Facebook shop's credential stays.
       await withWorkspace(session.workspaceId, (tx) => tx`delete from armada.credentials where provider = 'meta' and label = 'ads'`);
     } else {
+      await forgetViaService(session.workspaceId, CREDENTIAL_PROVIDER[provider], key);
       await withWorkspace(
         session.workspaceId,
         (tx) => tx`delete from armada.credentials where provider = ${CREDENTIAL_PROVIDER[provider]} and label = ${key}`,
@@ -141,4 +143,30 @@ export async function clearServiceHere(): Promise<ServiceResult> {
   );
   refresh();
   return { ok: true, message: "Switched off. Accounts already connected stop working until it's on again." };
+}
+
+/** Platform admins only: saves Armada's own app keys for one platform, pasted on its card. */
+export async function saveAppKeysHere(_prev: FormResult | null, formData: FormData): Promise<FormResult> {
+  const session = await requireSession();
+  if (!(await isPlatformAdmin(session.memberId))) return { ok: false, message: "Only Armada's admin can change this." };
+  const c = connector(String(formData.get("provider") ?? "") as Provider);
+  if (!c) return { ok: false, message: "That connection wasn't found. Reload the page and try again." };
+  const values: Record<string, string> = {};
+  for (const name of c.requiredEnv.filter(isAppKey)) {
+    const v = formData.get(name);
+    if (typeof v === "string" && v.trim()) {
+      if (v.trim().length > 500 || /\s/.test(v.trim())) return { ok: false, message: "One of those has a space in it or is far too long. Copy it again." };
+      values[name] = v;
+    }
+  }
+  if (!Object.keys(values).length) return { ok: false, message: "Paste at least one key first." };
+  const saved = await saveAppKeys(values, session.memberId);
+  await withWorkspace(
+    session.workspaceId,
+    (tx) => tx`
+      insert into armada.audit_log (workspace_id, member_id, action, detail)
+      values (${session.workspaceId}, ${session.memberId}, 'app_keys.saved', ${tx.json({ provider: c.provider, names: saved } as never)})`,
+  );
+  refresh();
+  return { ok: true, message: c.available() ? `Saved. ${c.name} is switched on.` : `Saved. ${c.name} switches on once every setting above is in.` };
 }

@@ -120,7 +120,7 @@ const server = http.createServer(async (req, res) => {
     stats.pages++;
     const t = connectTokens.get(url.searchParams.get("token") ?? "");
     const app = url.searchParams.get("app");
-    if (!t || !["shopify", "ebay"].includes(app ?? "")) return send(res, 400, { error: "bad link" });
+    if (!t || !["shopify", "ebay", "tiktok_ads_manager", "google_ads", "printful_oauth", "printify"].includes(app ?? "")) return send(res, 400, { error: "bad link" });
     if (denyNext) {
       denyNext = false;
       res.writeHead(302, { location: t.error });
@@ -179,6 +179,18 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, shopAnswer(account, body));
     }
     const t = new URL(target);
+    // The other apps' own domains, answering who the account is.
+    const ALLOWED = { tiktok_ads_manager: ["business-api.tiktok.com"], google_ads: ["googleads.googleapis.com", "www.googleapis.com"], printful_oauth: ["api.printful.com"], printify: ["api.printify.com"] };
+    if (ALLOWED[account.app]) {
+      if (!ALLOWED[account.app].includes(t.hostname)) {
+        stats.badTargets.push(target);
+        return send(res, 403, { error: "domain not allowed" });
+      }
+      if (t.hostname === "api.printful.com" && t.pathname === "/stores") return send(res, 200, { code: 200, result: [{ id: 1, name: "Mock Print Studio" }] });
+      if (t.hostname === "api.printify.com" && t.pathname === "/v1/shops.json") return send(res, 200, [{ id: 7, title: "Mock Printify Shop" }]);
+      if (t.hostname === "business-api.tiktok.com") return send(res, 200, { code: 0, data: { display_name: "Mock TikTok Ads", email: "ads@example.com" } });
+      return send(res, 200, {});
+    }
     if (!["api.ebay.com", "apiz.ebay.com"].includes(t.hostname)) {
       stats.badTargets.push(target);
       return send(res, 403, { error: "domain not allowed" });
