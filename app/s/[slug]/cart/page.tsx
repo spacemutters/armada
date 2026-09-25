@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { BagView } from "@/components/storefront/bag";
+import { checkoutState, CLOSED_WORDS } from "@/lib/shops/checkout";
 import { loadStorefront, storeItems } from "@/lib/shops/storefront";
 
 export const metadata = { title: "Your bag" };
@@ -10,6 +11,7 @@ export default async function CartPage({ params }: PageProps<"/s/[slug]/cart">) 
   if (!data) notFound();
   const bp = data.shop.blueprint;
   const items = storeItems(data.shop, data.products);
+  const state = await checkoutState(data.shop);
   // For each product, the ones that go with it, ready to add from the bag.
   const goesWith = Object.fromEntries(
     Object.entries(bp.pairings ?? {}).map(([h, list]) => [
@@ -27,7 +29,7 @@ export default async function CartPage({ params }: PageProps<"/s/[slug]/cart">) 
       <h1 className="sf-display mb-12" style={{ fontSize: "clamp(2.4rem, 1rem + 4vw, 4.5rem)" }}>
         Your bag
       </h1>
-      <BagView slug={slug} sets={bp.sets ?? []} goesWith={goesWith} />
+      <BagView slug={slug} sets={bp.sets ?? []} goesWith={goesWith} checkout={state.open ? { open: true, test: state.test } : { open: false, note: CLOSED_WORDS[state.why] }} />
     </section>
   );
 }

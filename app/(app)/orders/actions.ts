@@ -17,5 +17,5 @@ export async function sendToSupplier(formData: FormData) {
       values (${session.workspaceId}, ${session.memberId}, 'orders.sent_to_supplier', ${tx.json(result as never)})`;
     return result;
   });
-  redirect(`/orders?sent=${r.sent}&dupes=${r.alreadySent}&capped=${r.overCap}`);
+  redirect(`/orders?sent=${r.sent}&dupes=${r.alreadySent}&capped=${r.overCap}&problems=${r.problems}`);
 }

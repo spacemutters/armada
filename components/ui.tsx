@@ -132,6 +132,7 @@ export function StatusPill({ tone, children }: { tone: Tone; children: ReactNode
 export function platformName(platform: string, form: "short" | "long" = "short"): string {
   if (platform === "ebay") return form === "long" ? "eBay account" : "eBay";
   if (platform === "facebook") return "Facebook shop";
+  if (platform === "armada") return form === "long" ? "Armada shop" : "Armada";
   return form === "long" ? "Shopify store" : "Shopify";
 }
 

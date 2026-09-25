@@ -70,7 +70,10 @@ const checks = {
       const migrations = walk(path.join(root, "supabase", "migrations")).map((p) => fs.readFileSync(p, "utf8")).join("\n");
       if (!/order_line_id uuid not null unique references armada\.order_lines/.test(migrations)) return "supplier_orders.order_line_id is no longer unique";
       const send = path.join(root, "lib", "orders", "send.ts");
-      if (!fs.existsSync(send) || !/on conflict \(order_line_id\) do nothing/.test(fs.readFileSync(send, "utf8"))) return "sending orders no longer skips lines already sent";
+      if (!fs.existsSync(send)) return "sending orders no longer skips lines already sent";
+      // Every supplier order Armada inserts (practice or a real CJ reservation) must skip a line already sent.
+      const inserts = [...fs.readFileSync(send, "utf8").matchAll(/insert into armada\.supplier_orders[\s\S]*?`/g)].map((m) => m[0]);
+      if (!inserts.length || inserts.some((q) => !/on conflict \(order_line_id\) do nothing/.test(q))) return "sending orders no longer skips lines already sent";
       return null;
     },
   },

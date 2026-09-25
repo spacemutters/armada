@@ -381,3 +381,121 @@ export function missingPermission(message: string | null | undefined): { resourc
   if (!m) return null;
   return { resource: PERMISSION_NAMES[m[1]] ?? m[1].replace(/_/g, " "), access: m[2] === "write" ? "Write" : "Read", code: `${m[1]}_${m[2]}` };
 }
+
+// ---------- Checkout on Armada's own storefronts ----------
+
+/** Shop sales carry this in their metadata, apart from Armada's own plan billing. */
+export const SHOP_ORDER_METADATA = { armada: "shop_order" } as const;
+
+export interface ShopCheckoutInput {
+  workspaceId: string;
+  shopId: string;
+  /** The storefront's address, like https://armada-pi.vercel.app/s/abc123 */
+  shopUrl: string;
+  currency: string;
+  pay: { name: string; unitCents: number; qty: number; image: string | null }[];
+  /** What was sold, one key per product (lib/shops/checkout-core soldMetadata). */
+  sold: Record<string, string>;
+  countries: readonly string[];
+}
+
+/** One payment on Stripe's own checkout page for a storefront bag. Cards only, so it's paid the moment it completes. */
+export function shopCheckoutParams(input: ShopCheckoutInput): FormParams {
+  const meta = { ...SHOP_ORDER_METADATA, workspace_id: input.workspaceId, shop_id: input.shopId };
+  return {
+    mode: "payment",
+    line_items: input.pay.map((p) => ({
+      quantity: p.qty,
+      price_data: {
+        currency: input.currency.toLowerCase(),
+        unit_amount: p.unitCents,
+        product_data: { name: p.name.slice(0, 250), images: p.image && /^https:\/\//.test(p.image) ? [p.image] : undefined },
+      },
+    })),
+    payment_method_types: ["card"],
+    shipping_address_collection: { allowed_countries: [...input.countries] },
+    // The supplier needs a phone number to deliver.
+    phone_number_collection: { enabled: true },
+    shipping_options: [
+      { shipping_rate_data: { type: "fixed_amount", display_name: "Free shipping", fixed_amount: { amount: 0, currency: input.currency.toLowerCase() } } },
+    ],
+    metadata: { ...meta, ...input.sold },
+    payment_intent_data: { metadata: meta },
+    success_url: `${input.shopUrl}/thanks?session={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${input.shopUrl}/cart`,
+  };
+}
+
+export interface ShopCheckoutSnapshot {
+  sessionId: string;
+  workspaceId: string;
+  shopId: string;
+  paid: boolean;
+  livemode: boolean;
+  amountTotal: number;
+  currency: string;
+  country: string | null;
+  metadata: Record<string, unknown>;
+}
+
+/** A storefront checkout, or null when the session is anything else (plan billing, someone else's). */
+export function readShopCheckout(session: unknown): ShopCheckoutSnapshot | null {
+  if (!session || typeof session !== "object") return null;
+  const s = session as Record<string, unknown>;
+  if (s.object !== "checkout.session" || typeof s.id !== "string" || s.mode !== "payment") return null;
+  const meta = (s.metadata ?? {}) as Record<string, unknown>;
+  if (meta.armada !== SHOP_ORDER_METADATA.armada) return null;
+  const workspaceId = asWorkspaceId(meta.workspace_id);
+  const shopId = asWorkspaceId(meta.shop_id);
+  if (!workspaceId || !shopId) return null;
+  const collected = (s.collected_information ?? {}) as { shipping_details?: { address?: { country?: unknown } } };
+  const shipping = (collected.shipping_details ?? s.shipping_details ?? null) as { address?: { country?: unknown } } | null;
+  const customer = (s.customer_details ?? null) as { address?: { country?: unknown } } | null;
+  const country = shipping?.address?.country ?? customer?.address?.country;
+  return {
+    sessionId: s.id,
+    workspaceId,
+    shopId,
+    paid: s.status === "complete" && s.payment_status === "paid",
+    livemode: s.livemode === true,
+    amountTotal: typeof s.amount_total === "number" ? s.amount_total : 0,
+    currency: typeof s.currency === "string" ? s.currency.toUpperCase() : "USD",
+    country: typeof country === "string" ? country : null,
+    metadata: meta,
+  };
+}
+
+/** Where to send an order, from a paid storefront checkout: Stripe collected it, and Armada doesn't keep it. */
+export interface ShipTo {
+  name: string;
+  line1: string;
+  line2: string | null;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  phone: string | null;
+  email: string | null;
+}
+
+export function readShipTo(session: unknown): ShipTo | null {
+  const s = (session ?? {}) as Record<string, unknown>;
+  const collected = (s.collected_information ?? {}) as { shipping_details?: unknown };
+  const shipping = (collected.shipping_details ?? s.shipping_details ?? null) as { name?: unknown; address?: Record<string, unknown> } | null;
+  const customer = (s.customer_details ?? {}) as { name?: unknown; phone?: unknown; email?: unknown };
+  const a = shipping?.address;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const name = str(shipping?.name) ?? str(customer.name);
+  if (!a || !name || !str(a.line1) || !str(a.city) || !str(a.country)) return null;
+  return {
+    name,
+    line1: str(a.line1)!,
+    line2: str(a.line2),
+    city: str(a.city)!,
+    state: str(a.state) ?? "",
+    postalCode: str(a.postal_code) ?? "",
+    country: str(a.country)!,
+    phone: str(customer.phone),
+    email: str(customer.email),
+  };
+}

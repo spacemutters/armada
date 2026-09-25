@@ -106,6 +106,8 @@ export interface ShopRow {
   brief: ShopBrief;
   blueprint: Blueprint;
   storeId: string | null;
+  /** Launch switched the shop's own checkout on (supabase/migrations/0024_shop_checkout.sql). */
+  checkoutOpen?: boolean;
   progress: ProgressStep[];
   error: string | null;
   createdAt: Date;

@@ -71,6 +71,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
           Sent {sent} {sent === 1 ? "order" : "orders"} to the supplier.
           {Number(sp.dupes) ? ` ${sp.dupes} had already been sent, so they weren't sent again.` : ""}
           {Number(sp.capped) ? ` ${sp.capped} waited because today's safety limit was reached.` : ""}
+          {Number(sp.problems) ? ` ${sp.problems} couldn't be sent; each says why below.` : ""}
         </p>
       ) : null}
       {orders.length === 0 ? (

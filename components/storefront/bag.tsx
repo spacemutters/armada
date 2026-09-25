@@ -49,7 +49,70 @@ export function AddToBag({ slug, line }: { slug: string; line: Omit<BagLine, "qt
 
 type Suggestion = Omit<BagLine, "qty"> & { why: string };
 
-export function BagView({ slug, sets = [], goesWith = {} }: { slug: string; sets?: ShopSet[]; goesWith?: Record<string, Suggestion[]> }) {
+/** Whether the shop takes payments: open (with test payments or real ones), or closed with a short reason. */
+export type CheckoutInfo = { open: true; test: boolean } | { open: false; note: string };
+
+/** The bag's one press: Stripe's own checkout page, or a short line saying why checkout is off. */
+function CheckoutButton({ slug, lines, checkout }: { slug: string; lines: BagLine[]; checkout: CheckoutInfo }) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  if (!checkout.open) {
+    return (
+      <>
+        <button className="sf-button w-full" aria-disabled="true" disabled>
+          Checkout
+        </button>
+        <p className="sf-muted text-[14px]">{checkout.note}</p>
+      </>
+    );
+  }
+  const go = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const r = await fetch(`/s/${slug}/checkout`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lines: lines.map((l) => ({ handle: l.handle, qty: l.qty })) }),
+      });
+      const j = (await r.json().catch(() => null)) as { url?: string; problem?: string } | null;
+      if (j?.url) {
+        window.location.assign(j.url);
+        return;
+      }
+      setProblem(j?.problem ?? "Checkout couldn't start. Try again in a minute.");
+    } catch {
+      setProblem("Checkout couldn't start. Check your connection and try again.");
+    }
+    setBusy(false);
+  };
+  return (
+    <>
+      <button className="sf-button w-full" onClick={go} disabled={busy || !lines.length} aria-busy={busy}>
+        {busy ? "Opening checkout…" : "Checkout"}
+      </button>
+      {problem ? (
+        <p role="alert" className="text-[14px]">
+          {problem}
+        </p>
+      ) : checkout.test ? (
+        <p className="sf-muted text-[14px]">Test payments: no real card is charged.</p>
+      ) : null}
+    </>
+  );
+}
+
+export function BagView({
+  slug,
+  sets = [],
+  goesWith = {},
+  checkout = { open: false, note: "Checkout opens when the shop launches." },
+}: {
+  slug: string;
+  sets?: ShopSet[];
+  goesWith?: Record<string, Suggestion[]>;
+  checkout?: CheckoutInfo;
+}) {
   const lines = useBag(slug);
   const subtotal = lines.reduce((n, l) => n + l.priceCents * l.qty, 0);
   // Complete sets cost the set price; the saving is the real difference from the items' own prices.
@@ -139,14 +202,8 @@ export function BagView({ slug, sets = [], goesWith = {} }: { slug: string; sets
           <span>Subtotal</span>
           <span className="text-xl font-medium tabular-nums">{formatMoney(total)}</span>
         </div>
-        <p className="sf-muted text-[15px]">Shipping is worked out at checkout.</p>
-        <button className="sf-button w-full" aria-disabled="true" disabled>
-          Checkout
-        </button>
-        <p className="sf-muted text-[14px]">
-          This is a preview built with Armada, so checkout is switched off. Once the shop is published to a real Shopify store, checkout runs
-          there.
-        </p>
+        <p className="sf-muted text-[15px]">Free shipping.</p>
+        <CheckoutButton slug={slug} lines={lines} checkout={checkout} />
       </aside>
       {suggestions.length ? (
         <section className="lg:col-span-2" aria-labelledby="sf-bag-goes">

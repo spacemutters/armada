@@ -1,6 +1,7 @@
 import "server-only";
 import { retrieveSubscription } from "@/connectors/stripe/client";
-import { invoiceSubscriptionId, readCheckoutSession, readSubscription, WEBHOOK_EVENTS, type SubscriptionSnapshot } from "@/connectors/stripe/payloads";
+import { invoiceSubscriptionId, readCheckoutSession, readShopCheckout, readSubscription, WEBHOOK_EVENTS, type SubscriptionSnapshot } from "@/connectors/stripe/payloads";
+import { recordShopOrder } from "@/lib/shops/checkout";
 import { asSystem } from "@/lib/db";
 import { priceIndex, type StripeConnection } from "./settings";
 import { saveSnapshot, workspaceForSubscription } from "./subscriptions";
@@ -44,6 +45,19 @@ export async function handleStripeEvent(event: StripeEvent, secretKey: string, c
   let payment: "paid" | "failed" | null = null;
   switch (event.type) {
     case "checkout.session.completed": {
+      // A shopper paid on one of Armada's own storefronts: the order is recorded with the event, once.
+      const sale = readShopCheckout(obj);
+      if (sale) {
+        if (!sale.paid) {
+          await record(event);
+          return "ignored";
+        }
+        await asSystem(async (tx) => {
+          await recordShopOrder(tx, sale);
+          await tx`insert into armada.stripe_events (id, type) values (${event.id}, ${event.type}) on conflict (id) do nothing`;
+        });
+        return "saved";
+      }
       const s = readCheckoutSession(obj);
       if (!s || s.mode !== "subscription") break;
       subscriptionId = s.subscriptionId;

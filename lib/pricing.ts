@@ -23,6 +23,8 @@ export const PLATFORM_FEES = {
   // Meta's selling fee where Facebook/Instagram checkout applies (5% a shipment). Shops whose
   // checkout sends buyers to a website pay that site's fees instead; 5% is the cautious figure.
   facebook: { pct: 0.05, fixedCents: 0 },
+  // An Armada storefront: Stripe's standard card fee.
+  armada: { pct: 0.029, fixedCents: 30 },
 } as const;
 
 /** Share of the price assumed to go to ads when judging margin. */

@@ -11,6 +11,8 @@ import {
   priceParams,
   productId,
   productParams,
+  shopCheckoutParams,
+  type ShopCheckoutInput,
   STRIPE_API_VERSION,
   webhookParams,
   webhookUpdateParams,
@@ -303,6 +305,13 @@ export async function deleteWebhook(key: string, id: string): Promise<void> {
 
 export async function createCheckoutSession(key: string, input: CheckoutInput): Promise<{ id: string; url: string }> {
   const s = await send<{ id: string; url: string | null }>(key, "POST", "/v1/checkout/sessions", checkoutParams(input));
+  if (!s.url) throw new StripeError(0, "api_error", "Stripe didn't send back a checkout page.");
+  return { id: s.id, url: s.url };
+}
+
+/** Stripe's own checkout page for a storefront bag (the shop's sales go to the connected Stripe account). */
+export async function createShopCheckoutSession(key: string, input: ShopCheckoutInput): Promise<{ id: string; url: string }> {
+  const s = await send<{ id: string; url: string | null }>(key, "POST", "/v1/checkout/sessions", shopCheckoutParams(input));
   if (!s.url) throw new StripeError(0, "api_error", "Stripe didn't send back a checkout page.");
   return { id: s.id, url: s.url };
 }
