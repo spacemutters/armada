@@ -128,13 +128,79 @@ try {
   await shot("13-shop-building", false);
   // Ask the status endpoint rather than reloading, so the test never races the page's own refresh.
   const shopId = shopUrl.split("/").at(-1);
+  const status = () => page.evaluate(async (id) => (await fetch(`/api/shops/${id}`, { cache: "no-store" })).json(), shopId).catch(() => null);
+  const fail = (what) => {
+    console.log(`CHOOSER PROBLEM: ${what}`);
+    process.exitCode = 1;
+  };
+  // The build stops at "Choose your products" and waits for a person. Choose like one: tap the first
+  // N cards by hand, watching the count and the build button on the way, then press build.
+  const chooseByHand = async () => {
+    await page.goto(shopUrl, { waitUntil: "networkidle0" });
+    await page.waitForSelector("label[data-proposal]", { timeout: 30_000 });
+    await shot("13b-chooser");
+    // On a phone: two columns and nothing wider than the screen.
+    await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+    await page.reload({ waitUntil: "networkidle0" });
+    await shot("13b-chooser-phone", false);
+    const phone = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      columns: new Set([...document.querySelectorAll("label[data-proposal]")].slice(0, 4).map((l) => Math.round(l.getBoundingClientRect().left))).size,
+    }));
+    console.log(`  chooser on a phone: ${phone.columns} columns, ${phone.overflow}px sideways overflow`);
+    if (phone.overflow > 0 || phone.columns !== 2) fail("the chooser doesn't fit a phone in two columns");
+    await page.setViewport({ width: 1440, height: 900 });
+    await page.reload({ waitUntil: "networkidle0" });
+    await page.waitForSelector("label[data-proposal]", { timeout: 30_000 });
+    const cards = await page.$$("label[data-proposal]");
+    const counter = () => page.evaluate(() => document.body.innerText.match(/(\d+) of (\d+) chosen/)?.slice(1).map(Number) ?? null);
+    const buildDisabled = () =>
+      page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Build the shop with these"))?.disabled ?? null);
+    const tap = async (card) => {
+      await card.evaluate((el) => el.scrollIntoView({ block: "center" }));
+      await card.click();
+    };
+    const [, need] = (await counter()) ?? [0, 0];
+    console.log(`  the chooser shows ${cards.length} products; choose ${need}`);
+    // The AI is asked for twice the count; it may leave out a poor fit, but there must be a real choice.
+    if (!need || cards.length <= need) fail(`expected more than ${need} cards, found ${cards.length}`);
+    else if (cards.length !== need * 2) console.log(`  (the AI proposed ${cards.length}, not ${need * 2})`);
+    if ((await buildDisabled()) !== true) fail("the build button works before anything is chosen");
+    for (let i = 0; i < need - 1; i++) await tap(cards[i]);
+    if (JSON.stringify(await counter()) !== JSON.stringify([need - 1, need]) || (await buildDisabled()) !== true) fail(`at ${need - 1} chosen the count or the button is wrong`);
+    await tap(cards[need - 1]);
+    if (JSON.stringify(await counter()) !== JSON.stringify([need, need]) || (await buildDisabled()) !== false) fail(`at ${need} chosen the count or the button is wrong`);
+    // One too many turns the button off again; untick it and it comes back.
+    await tap(cards[need]);
+    if ((await buildDisabled()) !== true || !/too many/i.test(await page.evaluate(() => document.body.innerText))) fail("choosing one too many didn't stop the build button");
+    await tap(cards[need]);
+    const checked = await page.$$eval('input[name="pick"]', (els) => els.map((e) => e.checked));
+    if (checked.filter(Boolean).length !== need || !checked.slice(0, need).every(Boolean)) fail("the ticked cards aren't the first ones tapped");
+    await shot("13c-chooser-chosen");
+    await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Build the shop with these")).click());
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const s = await status();
+      if (s && s.status !== "choosing") return true;
+    }
+    fail("pressing build didn't carry the build on");
+    return false;
+  };
   const started = Date.now();
   let ready = false;
-  while (Date.now() - started < 9 * 60_000) {
+  let chose = false;
+  while (Date.now() - started < 10 * 60_000) {
     await new Promise((r) => setTimeout(r, 5_000));
-    const s = await page.evaluate(async (id) => (await fetch(`/api/shops/${id}`, { cache: "no-store" })).json(), shopId);
-    const running = s.progress.filter((p) => p.state === "running").map((p) => p.label);
+    const s = await status();
+    if (!s) continue;
+    const running = s.progress.filter((p) => p.state === "running" || p.state === "needs-you").map((p) => p.label);
     console.log(`  ${Math.round((Date.now() - started) / 1000)}s ${s.status}${running.length ? ` · ${running.join(", ")}` : ""}${s.helperOnline ? "" : " · helper off"}`);
+    if (s.status === "choosing") {
+      if (chose) break; // chose once already and it's still waiting: chooseByHand said why
+      chose = true;
+      console.log((await chooseByHand()) ? "  chose by hand; the build carries on" : "  CHOOSING FAILED");
+      continue;
+    }
     if (s.status === "ready") {
       ready = true;
       break;

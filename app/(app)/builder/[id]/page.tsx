@@ -1,10 +1,11 @@
 import { ExternalLink } from "lucide-react";
 import { createElement } from "react";
 import { notFound } from "next/navigation";
-import { buildAgain, putInPracticeStore } from "./actions";
+import { buildAgain, chooseProducts, letAiPick, putInPracticeStore } from "./actions";
 import { iconFor, ProductArt } from "@/components/product-art";
 import { PendingButton } from "@/components/fx/pending-button";
-import { ShopProgress } from "@/components/shop-progress";
+import { ProductChooser, type ChooserCard } from "@/components/product-chooser";
+import { BuildSteps, ShopProgress } from "@/components/shop-progress";
 import { Button, buttonClass, ButtonLink, Card, PageHeader, ScoreBadge, Section, StatusPill } from "@/components/ui";
 import { testsForShop } from "@/lib/abtest/tests";
 import { helperStatus } from "@/lib/ai/jobs";
@@ -14,8 +15,12 @@ import { formatMoney } from "@/lib/money";
 import { unitProfitCents } from "@/lib/pricing";
 import { getShop, getShopProducts } from "@/lib/shops/queries";
 import { googleFontsHref } from "@/lib/shops/style";
+import { chooseCount, type ShopRow } from "@/lib/shops/types";
 
 export const metadata = { title: "Shop" };
+
+// Choosing products runs CJ's shipping check for the chosen ones after the page is sent back.
+export const maxDuration = 300;
 
 const SWATCH_NAMES: Record<string, string> = {
   background: "Page",
@@ -26,12 +31,60 @@ const SWATCH_NAMES: Record<string, string> = {
   accentInk: "Button text",
 };
 
-export default async function ShopPage({ params }: PageProps<"/builder/[id]">) {
+/** The owner's step: the AI proposed twice the products, and the build waits for them to choose. */
+function ChooseProducts({ shop, problem }: { shop: ShopRow; problem: string | null }) {
+  const bp = shop.blueprint;
+  const proposals = [...(bp.proposals ?? [])].sort((a, b) => a.rank - b.rank);
+  const need = chooseCount(shop.brief.productCount, proposals.length);
+  const titles = new Map((bp.collections ?? []).map((c) => [c.handle, c.title]));
+  const cards: ChooserCard[] = proposals.map((p) => ({
+    id: p.id,
+    title: p.title,
+    why: p.why,
+    collection: titles.get(p.collection) ?? "",
+    priceCents: p.priceCents,
+    priceEstimated: p.priceEstimated,
+    score: p.score,
+    reasons: p.reasons,
+    image: p.image,
+    icon: p.icon,
+    practice: Boolean(p.imagined),
+  }));
+  const palette = bp.theme?.palette;
+  return (
+    <>
+      <PageHeader
+        title={bp.brand?.name ? `Choose ${need} products for ${bp.brand.name}` : `Choose ${need} products`}
+        subtitle={`The AI found ${proposals.length} that fit “${shop.niche}”. Tap the ${need} you want, and the rest of the shop builds by itself.`}
+      />
+      <BuildSteps progress={shop.progress} className="mb-6" />
+      {problem ? (
+        <p role="alert" className="mb-5 max-w-3xl rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">
+          {problem}
+        </p>
+      ) : null}
+      <ProductChooser
+        need={need}
+        cards={cards}
+        artColors={palette ? { bg: palette.surface, fg: palette.accent } : undefined}
+        choose={chooseProducts.bind(null, shop.id)}
+        aiPick={letAiPick.bind(null, shop.id)}
+      />
+    </>
+  );
+}
+
+export default async function ShopPage({ params, searchParams }: PageProps<"/builder/[id]">) {
   const session = await requireSession();
   const { id } = await params;
   const shop = await getShop(session.workspaceId, id);
   if (!shop) notFound();
   const bp = shop.blueprint;
+  const { problem } = await searchParams;
+
+  if (shop.status === "choosing") {
+    return <ChooseProducts shop={shop} problem={typeof problem === "string" ? problem.slice(0, 300) : null} />;
+  }
 
   if (shop.status === "building" || shop.status === "failed" || shop.status === "draft") {
     const helper = await helperStatus();
@@ -100,7 +153,9 @@ export default async function ShopPage({ params }: PageProps<"/builder/[id]">) {
       <div className="mb-6 flex flex-wrap items-center gap-2 text-[13px] text-muted">
         <StatusPill tone="ok">{shop.status === "published" ? "In a practice store" : "Ready"}</StatusPill>
         <span>
-          {(bp.products ?? []).length} products · {(bp.collections ?? []).length} collections · built from “{shop.niche}”
+          {(bp.products ?? []).length} products
+          {bp.choice && bp.choice.by !== "all" ? ` (${bp.choice.by === "you" ? "you chose them" : "the AI picked them"} from ${bp.choice.offered})` : ""} ·{" "}
+          {(bp.collections ?? []).length} collections · built from “{shop.niche}”
         </span>
       </div>
 

@@ -57,10 +57,17 @@ try {
   await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click('button[type="submit"]')]);
   const shopId = page.url().split("/").at(-1);
   let ready = false;
-  for (let i = 0; i < 96 && !ready; i++) {
+  let aiPicked = 0;
+  for (let i = 0; i < 108 && !ready; i++) {
     await sleep(5000);
-    const s = await page.evaluate(async (id) => (await fetch(`/api/shops/${id}`, { cache: "no-store" })).json().catch(() => null), shopId);
+    const s = await page.evaluate(async (id) => (await fetch(`/api/shops/${id}`, { cache: "no-store" })).json().catch(() => null), shopId).catch(() => null);
     if (s?.status === "failed") break;
+    // The build stops at "Choose your products" and waits for a person; this run lets the AI pick.
+    if (s?.status === "choosing" && aiPicked++ < 3) {
+      await page.goto(`${base}/builder/${shopId}`, { waitUntil: "networkidle0" });
+      expect(await press("Let the AI pick for me"), "the build waits for a choice, and “Let the AI pick for me” carries it on");
+      continue;
+    }
     ready = s?.status === "ready";
   }
   expect(ready, "a practice shop was built to advertise");

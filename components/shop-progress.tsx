@@ -24,9 +24,15 @@ interface State {
 // which never runs past the end of the step on time alone).
 const STEP_LOOK: Record<string, { orb: OrbState; expected: number }> = {
   concept: { orb: "thinking", expected: 45_000 },
-  products: { orb: "searching", expected: 90_000 },
+  products: { orb: "searching", expected: 150_000 },
+  check: { orb: "connecting", expected: 30_000 },
   pages: { orb: "composing", expected: 60_000 },
 };
+
+/** The mark for a step waiting on a person: the "needs you" diamond, the same shape as everywhere else. */
+function YourTurnMark({ className }: { className?: string }) {
+  return <span aria-hidden className={cx("block size-2 rotate-45 rounded-[1px] border border-attention bg-attention", className)} />;
+}
 
 function elapsed(from: string | undefined, to: string | undefined, now: number | null): string {
   if (!from) return "";
@@ -78,9 +84,10 @@ export function ShopProgress({ shopId, initial }: { shopId: string; initial: Sta
   }, [shopId, state.status]);
 
   // Finished or stopped: let the last tick draw and the bar complete, then show the finished page.
+  // Waiting for the owner to choose products: show the chooser straight away.
   useEffect(() => {
     if (initial.status !== "building" || state.status === "building") return;
-    const t = setTimeout(() => router.refresh(), state.status === "failed" ? 0 : 1100);
+    const t = setTimeout(() => router.refresh(), state.status === "ready" ? 1100 : 0);
     return () => clearTimeout(t);
   }, [initial.status, state.status, router]);
 
@@ -99,7 +106,7 @@ export function ShopProgress({ shopId, initial }: { shopId: string; initial: Sta
         creepTo={running && !waitingOnHelper ? (doneCount + 1) / total : undefined}
         since={running?.startedAt ? new Date(running.startedAt).getTime() : undefined}
         expected={running ? (STEP_LOOK[running.key]?.expected ?? 60_000) : undefined}
-        status={state.status === "failed" ? "failed" : building || state.status === "draft" ? "running" : "done"}
+        status={state.status === "failed" ? "failed" : building || state.status === "draft" || state.status === "choosing" ? "running" : "done"}
       />
       {state.brandName ? (
         <p className="text-muted">
@@ -113,6 +120,7 @@ export function ShopProgress({ shopId, initial }: { shopId: string; initial: Sta
       <ol className="flex flex-col gap-2" aria-live="polite">
         {steps.map((step, i) => {
           const isRunning = step.state === "running";
+          const yours = step.state === "needs-you";
           const live = isRunning && !waitingOnHelper;
           const look = STEP_LOOK[step.key] ?? { orb: "working" as OrbState };
           return (
@@ -122,6 +130,8 @@ export function ShopProgress({ shopId, initial }: { shopId: string; initial: Sta
                   <span aria-hidden className="mt-0.5 flex size-5 shrink-0 items-center justify-center">
                     {isRunning ? (
                       <ThinkingOrb state={live ? look.orb : "idle"} size={20} decorative />
+                    ) : yours ? (
+                      <YourTurnMark className="size-2.5" />
                     ) : step.state === "done" ? (
                       <Tick size={20} look="filled" draw={justDone.includes(step.key)} className="text-positive" />
                     ) : step.state === "failed" ? (
@@ -140,14 +150,16 @@ export function ShopProgress({ shopId, initial }: { shopId: string; initial: Sta
                           ? waitingOnHelper
                             ? "waiting"
                             : `working${now ? ` · ${elapsed(step.startedAt, undefined, now)}` : ""}`
-                          : step.state === "done"
-                            ? elapsed(step.startedAt, step.finishedAt, now)
-                            : step.state === "failed"
-                              ? "stopped"
-                              : "next"}
+                          : yours
+                            ? "your turn"
+                            : step.state === "done"
+                              ? elapsed(step.startedAt, step.finishedAt, now)
+                              : step.state === "failed"
+                                ? "stopped"
+                                : "next"}
                       </span>
                     </div>
-                    {step.note ? <StatusText text={step.note} wrap className="mt-0.5 text-[13px] text-muted" /> : null}
+                    {step.note ? <StatusText text={step.note} wrap className={cx("mt-0.5 text-[13px]", yours ? "text-attention" : "text-muted")} /> : null}
                   </div>
                 </div>
               </BorderBeam>
@@ -166,5 +178,44 @@ export function ShopProgress({ shopId, initial }: { shopId: string; initial: Sta
         </p>
       ) : null}
     </div>
+  );
+}
+
+const STEP_WORDS: Record<ProgressStep["state"], string> = {
+  waiting: "next",
+  running: "working",
+  "needs-you": "your turn",
+  done: "done",
+  failed: "stopped",
+};
+
+/**
+ * The build's steps on one quiet line, for a page where the build is waiting on its owner: what's
+ * done, the step that's theirs, and what happens by itself afterwards. State is shown by shape (a
+ * tick, the "needs you" diamond, an open ring) and in words for screen readers.
+ */
+export function BuildSteps({ progress, className }: { progress: ProgressStep[]; className?: string }) {
+  return (
+    <ol aria-label="The build" className={cx("flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-muted", className)}>
+      {progress.map((step) => (
+        <li key={step.key} className="inline-flex items-center gap-2">
+          <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center">
+            {step.state === "done" ? (
+              <Tick size={14} look="plain" weight={2} className="text-positive" />
+            ) : step.state === "needs-you" ? (
+              <YourTurnMark />
+            ) : step.state === "failed" ? (
+              <span className="block size-2 rounded-[1px] bg-negative" />
+            ) : step.state === "running" ? (
+              <span className="pulse block size-2 rounded-full bg-accent" />
+            ) : (
+              <span className="block size-2.5 rounded-full border border-line-strong" />
+            )}
+          </span>
+          <span className={cx(step.state === "needs-you" && "font-medium text-ink")}>{step.label}</span>
+          <span className="sr-only">({STEP_WORDS[step.state] ?? step.state})</span>
+        </li>
+      ))}
+    </ol>
   );
 }

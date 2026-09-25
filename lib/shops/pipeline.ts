@@ -8,22 +8,54 @@ import { enqueueJob, onJobFinished, type Deferred } from "@/lib/ai/jobs";
 import { fixPalette } from "@/lib/color";
 import { searchCatalog } from "@/lib/catalog/search";
 import { scoreCatalogItem } from "@/lib/products/score-item";
-import { clip, randomSlug, slugify, uniqueHandle } from "@/lib/text";
+import { randomSlug, slugify, uniqueHandle } from "@/lib/text";
 import type { AiJob, CatalogItem } from "@/lib/types";
-import { SYSTEM, conceptPrompt, conceptSchema, pagesPrompt, pagesSchema, productsPrompt, productsSchema } from "./prompts";
+import {
+  IMAGINED_ITEM,
+  ProductsAnswer,
+  SYSTEM,
+  answerIds,
+  buildProposals,
+  conceptPrompt,
+  conceptSchema,
+  longText,
+  pagesPrompt,
+  pagesSchema,
+  productsAsk,
+  text,
+} from "./prompts";
 import { ART_ICONS, BODY_FONTS, DISPLAY_FONTS } from "./style";
-import type { Blueprint, ProgressStep, ShopBrief, ShopRow, StepKey } from "./types";
+import { aiPicks, checkChoice, chooseCount, proposalTarget, stalledCjStep } from "./types";
+import type { Blueprint, ProgressStep, Proposal, ShopBrief, ShopRow, StepKey } from "./types";
 
-// A shop is built in three AI steps. Each finished step starts the next one, so the build
-// needs no background worker: the AI helper's hand-back drives it forward.
+// A shop is built in three AI steps and one of the owner's. Each finished AI step starts the next, so
+// the build needs no background worker: the AI helper's hand-back drives it forward. After the
+// products step the build waits ("choosing") until the owner picks which proposed products go in.
 
-const STEPS: { key: StepKey; label: string }[] = [
-  { key: "concept", label: "Brand, look and plan" },
-  { key: "products", label: "Choosing and writing products" },
-  { key: "pages", label: "Pages and policies" },
-];
+const STEP_LABELS: Record<StepKey, string> = {
+  concept: "Brand, look and plan",
+  products: "Finding and writing products",
+  choose: "Choose your products",
+  check: "Checking shipping with CJ",
+  pages: "Pages and policies",
+};
 
-const TIMEOUTS: Record<StepKey, number> = { concept: 180_000, products: 360_000, pages: 240_000 };
+/** The steps of a build, in order. Only CJ shops check real shipping, after the choice. */
+function stepsFor(brief: ShopBrief): StepKey[] {
+  return brief.source === "cj" ? ["concept", "products", "choose", "check", "pages"] : ["concept", "products", "choose", "pages"];
+}
+
+/** The build's steps in order, keeping what already happened. A build started before a step existed gets it, waiting. */
+function withAllSteps(progress: ProgressStep[], brief: ShopBrief): ProgressStep[] {
+  return stepsFor(brief).map((key) => {
+    const had = progress.find((p) => p.key === key);
+    return had ? { ...had, label: STEP_LABELS[key] } : { key, label: STEP_LABELS[key], state: "waiting" };
+  });
+}
+
+const TIMEOUTS = { concept: 180_000, pages: 240_000 } as const;
+/** The products step writes twice the shop's products, so it gets time for each (under the 12-minute stale-job line). */
+const productsTimeout = (target: number) => Math.min(600_000, 240_000 + target * 10_000);
 
 const HANDLING_DAYS = 2;
 const RETURN_DAYS = 30;
@@ -32,11 +64,14 @@ const MIN_CJ_PRODUCTS = 4;
 
 const nProducts = (n: number) => `${n} ${n === 1 ? "product" : "products"}`;
 
+const CATALOG_COLS = `id, workspace_id, source, source_id, title, description, category, tags, images, cost_cents, ship_cents,
+  ship_days_min, ship_days_max, stock, rating, branded, retail_source, attributes`;
+
 export async function startShopBuild(tx: Tx, workspaceId: string, brief: ShopBrief): Promise<{ id: string; slug: string }> {
   const slug = randomSlug(10);
-  const progress: ProgressStep[] = STEPS.map((s, i) => ({
-    key: s.key,
-    label: s.label,
+  const progress: ProgressStep[] = stepsFor(brief).map((key, i) => ({
+    key,
+    label: STEP_LABELS[key],
     state: i === 0 ? "running" : "waiting",
     ...(i === 0 ? { startedAt: new Date().toISOString() } : {}),
   }));
@@ -53,10 +88,6 @@ export async function startShopBuild(tx: Tx, workspaceId: string, brief: ShopBri
   return { id: shop.id, slug };
 }
 
-// Lenient readers for AI output: trim, cap lengths, and fall back rather than fail on style.
-const text = (max: number) => z.string().transform((s) => clip(s, max));
-const longText = (max: number) => z.string().transform((s) => s.trim().slice(0, max));
-
 const Concept = z.object({
   brandName: text(24),
   alternativeNames: z.array(text(24)).default([]),
@@ -72,28 +103,6 @@ const Concept = z.object({
   monogramIcon: z.string(),
 });
 
-const ProductOut = z.object({
-  candidateId: z.string(),
-  collection: z.string(),
-  title: text(70),
-  description: longText(1200),
-  bullets: z.array(text(140)).default([]),
-  seoTitle: text(70),
-  seoDescription: text(160),
-});
-
-const ImaginedOut = z.object({
-  collection: z.string(),
-  title: text(70),
-  category: text(60),
-  description: longText(1200),
-  bullets: z.array(text(140)).default([]),
-  estimatedCostUsd: z.number(),
-  icon: z.string(),
-});
-
-const Products = z.object({ products: z.array(ProductOut).default([]), imagined: z.array(ImaginedOut).default([]) });
-
 const Pages = z.object({
   about: longText(3000),
   faq: z.array(z.object({ question: text(160), answer: longText(700) })).default([]),
@@ -108,15 +117,15 @@ const Pages = z.object({
 });
 
 async function setStep(tx: Tx, shopId: string, key: StepKey, state: ProgressStep["state"], note?: string) {
-  const [row] = await tx<{ progress: ProgressStep[] }[]>`select progress from armada.shops where id = ${shopId}`;
+  const [row] = await tx<{ progress: ProgressStep[]; brief: ShopBrief }[]>`select progress, brief from armada.shops where id = ${shopId}`;
   const now = new Date().toISOString();
-  const progress = row.progress.map((s) =>
+  const progress = withAllSteps(row.progress, row.brief).map((s) =>
     s.key !== key
       ? s
       : {
           ...s,
           state,
-          ...(state === "running" ? { startedAt: now } : {}),
+          ...(state === "running" || state === "needs-you" ? { startedAt: now } : {}),
           ...(state === "done" || state === "failed" ? { finishedAt: now } : {}),
           ...(note ? { note } : {}),
         },
@@ -134,6 +143,16 @@ async function saveBlueprint(tx: Tx, shopId: string, blueprint: Blueprint, statu
 async function failShop(tx: Tx, shop: ShopRow, step: StepKey, message: string) {
   await setStep(tx, shop.id, step, "failed", message);
   await tx`update armada.shops set status = 'failed', error = ${message}, updated_at = now() where id = ${shop.id}`;
+}
+
+function enqueueProducts(tx: Tx, shop: ShopRow, blueprint: Blueprint, candidates: CatalogItem[], allowImagined: boolean) {
+  const ask = productsAsk(shop.brief, blueprint, candidates, allowImagined);
+  return enqueueJob(tx, {
+    workspaceId: shop.workspaceId,
+    kind: "shop.products",
+    input: { system: SYSTEM, prompt: ask.prompt, schema: ask.schema as never, timeoutMs: productsTimeout(ask.target) },
+    parent: { type: "shop", id: shop.id },
+  });
 }
 
 async function afterConcept(tx: Tx, shop: ShopRow, output: unknown, defer: (work: Deferred) => void) {
@@ -176,6 +195,7 @@ async function afterConcept(tx: Tx, shop: ShopRow, output: unknown, defer: (work
 
   const candidates = await searchCatalog(tx, { source: shop.brief.source, phrases, limit: 60 });
   blueprint.candidateCount = candidates.length;
+  blueprint.candidateIds = candidates.map((i) => i.id);
   const allowImagined = shop.brief.source === "practice";
   if (!candidates.length && !allowImagined) {
     await saveBlueprint(tx, shop.id, blueprint);
@@ -194,126 +214,213 @@ async function afterConcept(tx: Tx, shop: ShopRow, output: unknown, defer: (work
       ? `${candidates.length} supplier ${candidates.length === 1 ? "match" : "matches"} to choose from`
       : "No close supplier matches, so this practice shop gets practice items",
   );
-  await enqueueJob(tx, {
-    workspaceId: shop.workspaceId,
-    kind: "shop.products",
-    input: {
-      system: SYSTEM,
-      prompt: productsPrompt(shop.brief, blueprint, candidates, allowImagined),
-      schema: productsSchema(allowImagined) as never,
-      timeoutMs: TIMEOUTS.products,
-    },
-    parent: { type: "shop", id: shop.id },
-  });
+  await enqueueProducts(tx, shop, blueprint, candidates, allowImagined);
 }
 
+/**
+ * The AI's answer becomes cards for the owner to choose from; no products are made yet. When there is
+ * nothing to choose between (the AI found no more than the shop needs), all of them go straight in.
+ */
 async function afterProducts(tx: Tx, shop: ShopRow, output: unknown, defer: (work: Deferred) => void) {
-  const out = Products.parse(output);
-  const blueprint = shop.blueprint;
-  const brief = shop.brief;
-  const collections = blueprint.collections ?? [];
-  const collectionFor = (title: string) =>
-    collections.find((c) => c.title.toLowerCase() === title.trim().toLowerCase()) ?? collections[0];
+  const answer = ProductsAnswer.parse(output);
+  const { brief, blueprint } = shop;
+  const allowImagined = brief.source === "practice";
+  // The same count the prompt asked for (candidateCount is saved when the candidates are handed over).
+  const target = proposalTarget(brief.productCount, blueprint.candidateCount ?? blueprint.candidateIds?.length ?? 60, allowImagined);
 
-  // Only candidates that really exist are used. An id the AI made up is dropped, not trusted.
-  const ids = [...new Set(out.products.map((p) => p.candidateId))].filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  // Only candidates that really exist, were shown to the AI and aren't branded are looked up at all.
+  const ids = answerIds(answer, blueprint.candidateIds);
   const items = ids.length
     ? await tx<CatalogItem[]>`
-        select id, workspace_id, source, source_id, title, description, category, tags, images, cost_cents, ship_cents,
-               ship_days_min, ship_days_max, stock, rating, branded, retail_source, attributes
-        from armada.catalog_items where id in ${tx(ids)}`
+        select ${tx.unsafe(CATALOG_COLS)} from armada.catalog_items
+        where id in ${tx(ids)} and source = ${brief.source} and not branded`
     : [];
-  const byId = new Map(items.map((i) => [i.id, i]));
+  const proposals = buildProposals(answer, new Map(items.map((i) => [i.id, i])), {
+    target,
+    allowImagined,
+    source: brief.source,
+    priceFeel: brief.priceFeel,
+    collections: blueprint.collections ?? [],
+    shown: blueprint.candidateIds,
+  });
 
-  type Chosen = { item: CatalogItem; copy: z.infer<typeof ProductOut> | z.infer<typeof ImaginedOut>; imagined: boolean };
-  const chosen: Chosen[] = [];
-  const seen = new Set<string>();
-  for (const p of out.products) {
-    const item = byId.get(p.candidateId);
-    if (!item || seen.has(item.id)) continue;
-    seen.add(item.id);
-    chosen.push({ item, copy: p, imagined: false });
-  }
-
-  if (brief.source === "practice") {
-    for (const im of out.imagined.slice(0, Math.max(0, brief.productCount - chosen.length))) {
-      const costCents = Math.round(Math.min(500, Math.max(1, im.estimatedCostUsd)) * 100);
-      const icon = (ART_ICONS as readonly string[]).includes(im.icon) ? im.icon : "package";
-      const [item] = await tx<CatalogItem[]>`
-        insert into armada.catalog_items
-          (workspace_id, source, source_id, title, description, category, images, cost_cents, ship_cents,
-           ship_days_min, ship_days_max, stock, attributes)
-        values (${shop.workspaceId}, 'practice', ${"imagined-" + crypto.randomUUID()}, ${im.title}, ${im.description},
-                ${im.category}, '[]', ${costCents}, 499, 7, 14, 250,
-                ${tx.json({ imagined: true, art: { icon, tone: "accent" } } as never)})
-        returning id, workspace_id, source, source_id, title, description, category, tags, images, cost_cents, ship_cents,
-                  ship_days_min, ship_days_max, stock, rating, branded, retail_source, attributes`;
-      chosen.push({ item, copy: im, imagined: true });
-    }
-  }
-
-  if (!chosen.length) {
+  if (!proposals.length) {
     await failShop(tx, shop, "products", "The AI didn't find products that fit this shop. Try a broader idea.");
     return;
   }
+  if (brief.source === "cj" && proposals.length < MIN_CJ_PRODUCTS) {
+    await failShop(
+      tx,
+      shop,
+      "products",
+      `Only ${nProducts(proposals.length)} from CJ fit this shop, and a shop needs at least ${MIN_CJ_PRODUCTS}. Try a broader idea.`,
+    );
+    return;
+  }
+
+  const need = chooseCount(brief.productCount, proposals.length);
+  if (proposals.length <= need) {
+    // Nothing to choose between: every product the AI found goes in, as before.
+    await setStep(tx, shop.id, "products", "done", `${nProducts(proposals.length)} written`);
+    await setStep(
+      tx,
+      shop.id,
+      "choose",
+      "done",
+      `The AI found ${proposals.length} that fit${proposals.length < brief.productCount ? ` (not ${brief.productCount})` : ""}, so all of them are in`,
+    );
+    await buildWithChosen(tx, shop, blueprint, proposals, { offered: proposals.length, chosen: proposals.length, by: "all" }, defer);
+    return;
+  }
+
+  const next: Blueprint = { ...blueprint, proposals };
+  delete next.candidateIds;
+  await saveBlueprint(tx, shop.id, next, "choosing");
+  await setStep(tx, shop.id, "products", "done", `${nProducts(proposals.length)} written for you to choose from`);
+  await setStep(tx, shop.id, "choose", "needs-you", `Waiting for you: choose ${nProducts(need)}`);
+}
+
+/**
+ * Makes the chosen products (and the catalog rows for chosen practice items the AI imagined), then
+ * carries on exactly as the build always has: CJ shops confirm real shipping for these products,
+ * then pages; practice shops go straight to pages. Prices come from the pricing rules.
+ */
+async function buildWithChosen(
+  tx: Tx,
+  shop: ShopRow,
+  blueprint: Blueprint,
+  chosen: Proposal[],
+  choice: NonNullable<Blueprint["choice"]>,
+  defer: (work: Deferred) => void,
+) {
+  const brief = shop.brief;
+  const collections = (blueprint.collections ?? []).map((c) => ({ ...c, productIds: [] as string[] }));
+  // Real items are read again, so prices use today's numbers and nothing branded slips in.
+  const realIds = chosen.map((p) => p.catalogItemId).filter((id): id is string => Boolean(id));
+  const items = realIds.length
+    ? await tx<CatalogItem[]>`
+        select ${tx.unsafe(CATALOG_COLS)} from armada.catalog_items
+        where id in ${tx(realIds)} and source = ${brief.source} and not branded`
+    : [];
+  const byId = new Map(items.map((i) => [i.id, i]));
 
   const handles = new Set<string>();
   const products: NonNullable<Blueprint["products"]> = [];
-  for (const { item, copy, imagined } of chosen.slice(0, brief.productCount)) {
+  const used: CatalogItem[] = [];
+  for (const p of chosen) {
+    let item: CatalogItem | undefined;
+    if (p.imagined) {
+      if (brief.source !== "practice") continue;
+      const icon = p.icon && (ART_ICONS as readonly string[]).includes(p.icon) ? p.icon : "package";
+      [item] = await tx<CatalogItem[]>`
+        insert into armada.catalog_items
+          (workspace_id, source, source_id, title, description, category, images, cost_cents, ship_cents,
+           ship_days_min, ship_days_max, stock, attributes)
+        values (${shop.workspaceId}, 'practice', ${"imagined-" + crypto.randomUUID()}, ${p.title}, ${p.description},
+                ${p.imagined.category}, '[]', ${p.imagined.costCents}, ${IMAGINED_ITEM.shipCents},
+                ${IMAGINED_ITEM.shipDaysMin}, ${IMAGINED_ITEM.shipDaysMax}, ${IMAGINED_ITEM.stock},
+                ${tx.json({ imagined: true, art: { icon, tone: "accent" } } as never)})
+        returning ${tx.unsafe(CATALOG_COLS)}`;
+    } else if (p.catalogItemId) {
+      item = byId.get(p.catalogItemId);
+    }
+    if (!item) continue;
     const { priceCents, shipCents, score, parts } = scoreCatalogItem(item, brief.priceFeel);
     const [product] = await tx<{ id: string }[]>`
       insert into armada.products
         (workspace_id, catalog_item_id, title, description, bullets, images, category, cost_cents, ship_cents,
          seo_title, seo_description, score, score_parts)
-      values (${shop.workspaceId}, ${item.id}, ${copy.title}, ${copy.description}, ${tx.json(copy.bullets as never)},
+      values (${shop.workspaceId}, ${item.id}, ${p.title}, ${p.description}, ${tx.json(p.bullets as never)},
               ${tx.json(item.images as never)}, ${item.category}, ${item.costCents}, ${shipCents},
-              ${"seoTitle" in copy ? copy.seoTitle : copy.title}, ${"seoDescription" in copy ? copy.seoDescription : null},
-              ${score}, ${tx.json(parts as never)})
+              ${p.seoTitle}, ${p.seoDescription}, ${score}, ${tx.json(parts as never)})
       returning id`;
-    const col = collectionFor(copy.collection);
+    const col = collections.find((c) => c.handle === p.collection) ?? collections[0];
     col?.productIds.push(product.id);
-    products.push({ productId: product.id, handle: uniqueHandle(copy.title, handles), collection: col?.handle ?? "", priceCents, imagined });
+    products.push({ productId: product.id, handle: uniqueHandle(p.title, handles), collection: col?.handle ?? "", priceCents, imagined: Boolean(p.imagined) });
+    used.push(item);
   }
 
-  blueprint.products = products;
-  blueprint.collections = collections.filter((c) => c.productIds.length > 0);
+  const next: Blueprint = { ...blueprint, products, collections: collections.filter((c) => c.productIds.length > 0), choice };
+  delete next.proposals;
+  delete next.candidateIds;
+
+  if (!products.length) {
+    await saveBlueprint(tx, shop.id, next);
+    await failShop(tx, shop, "choose", "None of the chosen products could be added. Build the shop again.");
+    return;
+  }
 
   if (brief.source === "cj") {
     if (products.length < MIN_CJ_PRODUCTS) {
-      await saveBlueprint(tx, shop.id, blueprint);
-      await failShop(
-        tx,
-        shop,
-        "products",
-        `Only ${nProducts(products.length)} from CJ fit this shop, and a shop needs at least ${MIN_CJ_PRODUCTS}. Try a broader idea.`,
-      );
+      await saveBlueprint(tx, shop.id, next);
+      await failShop(tx, shop, "choose", `Only ${nProducts(products.length)} from CJ could be added, and a shop needs at least ${MIN_CJ_PRODUCTS}. Try a broader idea.`);
       return;
     }
-    // Prices wait until CJ confirms each product's real cost and shipping.
-    await saveBlueprint(tx, shop.id, blueprint);
-    await setStep(tx, shop.id, "products", "running", `${nProducts(products.length)} written. Checking real shipping costs and times with CJ`);
+    // Prices wait until CJ confirms each chosen product's real cost and shipping.
+    await saveBlueprint(tx, shop.id, next, "building");
+    await setStep(tx, shop.id, "check", "running", `Checking real shipping costs and times for ${nProducts(products.length)} with CJ`);
     defer(() => cjCheckChosen(shop.workspaceId, shop.id));
     return;
   }
 
-  const mins = chosen.map((c) => c.item.shipDaysMin).filter((n): n is number => n != null);
-  const maxs = chosen.map((c) => c.item.shipDaysMax).filter((n): n is number => n != null);
-  blueprint.facts = {
+  const mins = used.map((i) => i.shipDaysMin).filter((n): n is number => n != null);
+  const maxs = used.map((i) => i.shipDaysMax).filter((n): n is number => n != null);
+  next.facts = {
     country: brief.country,
     deliveryMin: mins.length ? Math.min(...mins) : 7,
     deliveryMax: maxs.length ? Math.max(...maxs) : 15,
     handlingDays: HANDLING_DAYS,
     returnDays: RETURN_DAYS,
   };
-  await saveBlueprint(tx, shop.id, blueprint);
-  await setStep(tx, shop.id, "products", "done", `${nProducts(products.length)} written`);
+  await saveBlueprint(tx, shop.id, next, "building");
   await setStep(tx, shop.id, "pages", "running");
   await enqueueJob(tx, {
     workspaceId: shop.workspaceId,
     kind: "shop.pages",
-    input: { system: SYSTEM, prompt: pagesPrompt(blueprint), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
+    input: { system: SYSTEM, prompt: pagesPrompt(next), schema: pagesSchema as never, timeoutMs: TIMEOUTS.pages },
     parent: { type: "shop", id: shop.id },
   });
+}
+
+export type ChooseResult = { ok: true } | { ok: false; problem: string };
+
+/**
+ * The owner's choice: exactly the shop's count of the proposed products, or the AI's own top ones.
+ * Then the build carries on by itself. A second press (or a shop no longer waiting) changes nothing.
+ * Slow follow-up work (CJ's shipping check) is handed to `defer` once the choice is saved.
+ */
+export async function chooseShopProducts(
+  workspaceId: string,
+  shopId: string,
+  pick: { ai: true } | { ids: unknown[] },
+  defer: (work: Deferred) => void,
+): Promise<ChooseResult> {
+  if (!/^[0-9a-f-]{36}$/i.test(shopId)) return { ok: false, problem: "This shop isn't here any more." };
+  const deferred: Deferred[] = [];
+  const result = await withWorkspace(workspaceId, async (tx): Promise<ChooseResult> => {
+    const [shop] = await tx<ShopRow[]>`select * from armada.shops where id = ${shopId} for update`;
+    if (!shop) return { ok: false, problem: "This shop isn't here any more." };
+    if (shop.status !== "choosing") return { ok: true };
+    const proposals = shop.blueprint.proposals ?? [];
+    const need = chooseCount(shop.brief.productCount, proposals.length);
+    const checked = "ai" in pick ? ({ ok: true, ids: aiPicks(proposals, need) } as const) : checkChoice(proposals, pick.ids, need);
+    if (!checked.ok) return checked;
+    const picked = new Set(checked.ids);
+    // The shop lists them in the AI's order, best fit first.
+    const chosen = proposals.filter((p) => picked.has(p.id)).sort((a, b) => a.rank - b.rank);
+    const by = "ai" in pick ? "ai" : "you";
+    await setStep(
+      tx,
+      shop.id,
+      "choose",
+      "done",
+      by === "ai" ? `The AI picked ${chosen.length} of the ${proposals.length}` : `You chose ${chosen.length} of the ${proposals.length}`,
+    );
+    await buildWithChosen(tx, shop, shop.blueprint, chosen, { offered: proposals.length, chosen: chosen.length, by }, (w) => deferred.push(w));
+    return { ok: true };
+  });
+  for (const work of deferred) defer(work);
+  return result;
 }
 
 async function afterPages(tx: Tx, shop: ShopRow, output: unknown) {
@@ -346,7 +453,7 @@ async function loadBuildingShop(workspaceId: string, shopId: string): Promise<Sh
   return rows[0] && rows[0].status === "building" ? rows[0] : null;
 }
 
-/** Searches CJ with the AI's search terms, then hands the real candidates to the AI to choose from. */
+/** Searches CJ with the AI's search terms, then hands the real candidates to the AI to propose from. */
 async function cjCandidates(workspaceId: string, shopId: string) {
   const shop = await loadBuildingShop(workspaceId, shopId);
   if (!shop) return;
@@ -373,19 +480,10 @@ async function cjCandidates(workspaceId: string, shopId: string) {
       );
       return;
     }
-    await saveBlueprint(tx, shop.id, { ...bp, candidateCount: candidates.length });
+    const next: Blueprint = { ...bp, candidateCount: candidates.length, candidateIds: candidates.map((i) => i.id) };
+    await saveBlueprint(tx, shop.id, next);
     await setStep(tx, shop.id, "products", "running", `${nProducts(candidates.length)} from CJ to choose from`);
-    await enqueueJob(tx, {
-      workspaceId,
-      kind: "shop.products",
-      input: {
-        system: SYSTEM,
-        prompt: productsPrompt(shop.brief, bp, candidates, false),
-        schema: productsSchema(false) as never,
-        timeoutMs: TIMEOUTS.products,
-      },
-      parent: { type: "shop", id: shop.id },
-    });
+    await enqueueProducts(tx, shop, next, candidates, false);
   });
 }
 
@@ -400,14 +498,16 @@ async function cjCheckChosen(workspaceId: string, shopId: string) {
   const bp = shop.blueprint;
   const country = knownCountryCode(shop.brief.country);
   if (!country) {
-    await withWorkspace(workspaceId, (tx) => failShop(tx, shop, "products", `Armada doesn't know “${shop.brief.country}” as a country, so it can't get real shipping quotes. Build it again with the country's full name.`));
+    await withWorkspace(workspaceId, (tx) => failShop(tx, shop, "check", `Armada doesn't know “${shop.brief.country}” as a country, so it can't get real shipping quotes. Build it again with the country's full name.`));
     return;
   }
   const refs = bp.products ?? [];
-  const links = await withWorkspace(
-    workspaceId,
-    (tx) => tx<{ id: string; catalogItemId: string }[]>`select id, catalog_item_id from armada.products where id in ${tx(refs.map((r) => r.productId))}`,
-  );
+  const links = refs.length
+    ? await withWorkspace(
+        workspaceId,
+        (tx) => tx<{ id: string; catalogItemId: string }[]>`select id, catalog_item_id from armada.products where id in ${tx(refs.map((r) => r.productId))}`,
+      )
+    : [];
   const catalogFor = new Map(links.map((l) => [l.id, l.catalogItemId]));
 
   const checked = new Map<string, CatalogItem>();
@@ -423,16 +523,21 @@ async function cjCheckChosen(workspaceId: string, shopId: string) {
       if (isFatalCjError(e)) break;
     }
     // Progress on screen, and a fresh timestamp so the stall check below leaves a live run alone.
-    await withWorkspace(workspaceId, (tx) => setStep(tx, shopId, "products", "running", `Checked ${n + 1} of ${refs.length} products with CJ`));
+    await withWorkspace(workspaceId, (tx) => setStep(tx, shopId, "check", "running", `Checked ${n + 1} of ${refs.length} products with CJ`));
   }
 
   await withWorkspace(workspaceId, async (tx) => {
     if (!(await stillBuilding(tx, shop.id))) return;
+    // A build started before the choosing step existed checked shipping inside its products step.
+    const [now] = await tx<{ progress: ProgressStep[] }[]>`select progress from armada.shops where id = ${shop.id}`;
+    if (now.progress.find((s) => s.key === "products")?.state === "running") await setStep(tx, shop.id, "products", "done");
+    if (!now.progress.some((s) => s.key === "choose")) await setStep(tx, shop.id, "choose", "done", "Chosen by the AI");
+
     if (checked.size < MIN_CJ_PRODUCTS) {
       await failShop(
         tx,
         shop,
-        "products",
+        "check",
         lastError
           ? describeCjError(lastError)
           : `CJ could confirm shipping for only ${nProducts(checked.size)}, and a shop needs at least ${MIN_CJ_PRODUCTS}. Try the build again, or a broader idea.`,
@@ -471,7 +576,7 @@ async function cjCheckChosen(workspaceId: string, shopId: string) {
     await setStep(
       tx,
       shop.id,
-      "products",
+      "check",
       "done",
       `${nProducts(kept.length)} with shipping confirmed by CJ${dropped ? `. ${dropped} left out because CJ couldn't confirm ${dropped === 1 ? "it" : "them"}` : ""}`,
     );
@@ -487,22 +592,27 @@ async function cjCheckChosen(workspaceId: string, shopId: string) {
 
 /**
  * The CJ steps run after a response, so a server cut-off can stop one halfway. Any CJ build whose
- * products step has sat still for six minutes with no AI job pending is picked up again. Both steps
- * are safe to repeat: checked products are remembered and the search only refreshes the catalog.
+ * search or shipping check has sat still for six minutes with no AI job pending is picked up again.
+ * Both steps are safe to repeat: checked products are remembered and the search only refreshes the
+ * catalog. A shop waiting for its owner to choose is never picked up: its status is 'choosing', and
+ * stalledCjStep says no to anything waiting on a person even if that ever changed.
  * Called from the AI helper's poll, which runs every few seconds while the helper is on.
  */
 export async function resumeStalledCjBuilds(): Promise<void> {
-  const stalled = await asSystem(
-    (tx) => tx<{ id: string; workspaceId: string; hasProducts: boolean }[]>`
+  const quiet = await asSystem(
+    (tx) => tx<{ id: string; workspaceId: string; status: string; brief: ShopBrief; progress: ProgressStep[]; hasProducts: boolean }[]>`
       update armada.shops s set updated_at = now()
       where s.status = 'building' and s.brief ->> 'source' = 'cj' and s.updated_at < now() - interval '6 minutes'
-        and exists (select 1 from jsonb_array_elements(s.progress) p where p ->> 'key' = 'products' and p ->> 'state' = 'running')
+        and exists (select 1 from jsonb_array_elements(s.progress) p where p ->> 'key' in ('products', 'check') and p ->> 'state' = 'running')
+        and not exists (select 1 from jsonb_array_elements(s.progress) p where p ->> 'state' = 'needs-you')
         and not exists (select 1 from armada.ai_jobs j where j.parent_type = 'shop' and j.parent_id = s.id and j.status in ('queued', 'running'))
-      returning s.id, s.workspace_id, (s.blueprint ? 'products') as has_products`,
+      returning s.id, s.workspace_id, s.status, s.brief, s.progress, (s.blueprint ? 'products') as has_products`,
   );
-  for (const s of stalled) {
+  for (const s of quiet) {
+    const step = stalledCjStep(s);
+    if (!step) continue;
     try {
-      await (s.hasProducts ? cjCheckChosen(s.workspaceId, s.id) : cjCandidates(s.workspaceId, s.id));
+      await (step === "check" ? cjCheckChosen(s.workspaceId, s.id) : cjCandidates(s.workspaceId, s.id));
     } catch (e) {
       console.error("resuming CJ build failed", s.id, e);
     }

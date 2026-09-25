@@ -246,15 +246,22 @@ try {
   const buildStarted = Date.now();
   let status = null;
   let lastLine = "";
-  while (Date.now() - buildStarted < 8 * 60_000) {
+  let aiPicked = 0;
+  while (Date.now() - buildStarted < 9 * 60_000) {
     await sleep(5000);
     const s = await shopStatus(shopId);
     if (!s) continue;
     status = s;
-    const running = (s.progress ?? []).filter((p) => p.state === "running").map((p) => `${p.label}${p.note ? ` (${p.note})` : ""}`);
+    const running = (s.progress ?? []).filter((p) => p.state === "running" || p.state === "needs-you").map((p) => `${p.label}${p.note ? ` (${p.note})` : ""}`);
     const line = `${s.status}${running.length ? ` · ${running.join(", ")}` : ""}${s.helperOnline === false ? " · helper off" : ""}`;
     if (line !== lastLine) console.log(`  ${Math.round((Date.now() - buildStarted) / 1000)}s ${line}`);
     lastLine = line;
+    // The build stops at "Choose your products" and waits for a person; this test lets the AI pick.
+    if (s.status === "choosing" && aiPicked++ < 3) {
+      await open(`${base}/builder/${shopId}`);
+      console.log((await clickButton("Let the AI pick for me")) ? "  pressed “Let the AI pick for me”" : "  there is no “Let the AI pick for me” button");
+      continue;
+    }
     if (s.status === "ready" || s.status === "failed") break;
   }
   expect(status?.status === "ready", `the practice shop is ready (${status?.status ?? "no answer"}${status?.error ? `: ${status.error}` : ""})`);

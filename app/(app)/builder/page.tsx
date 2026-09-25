@@ -5,7 +5,7 @@ import { ProductArt } from "@/components/product-art";
 import { ButtonLink, EmptyState, PageHeader, StatusPill, type Tone } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
 import { getShopProducts, listShops } from "@/lib/shops/queries";
-import type { ShopRow } from "@/lib/shops/types";
+import { chooseCount, type ShopRow } from "@/lib/shops/types";
 import { timeAgo } from "@/lib/text";
 
 export const metadata = { title: "Shop builder" };
@@ -13,6 +13,7 @@ export const metadata = { title: "Shop builder" };
 const STATUS: Record<ShopRow["status"], { tone: Tone; label: string }> = {
   draft: { tone: "off", label: "Draft" },
   building: { tone: "working", label: "Building" },
+  choosing: { tone: "attention", label: "Waiting for you" },
   ready: { tone: "ok", label: "Ready" },
   publishing: { tone: "working", label: "Publishing" },
   published: { tone: "ok", label: "Live in a store" },
@@ -44,7 +45,10 @@ export default async function BuilderPage() {
           {shops.map((s) => {
             const bp = s.blueprint;
             const palette = bp.theme?.palette;
-            const status = STATUS[s.status];
+            const status = STATUS[s.status] ?? STATUS.draft;
+            // While the owner chooses, the cards show the first of the AI's proposals.
+            const proposals = s.status === "choosing" ? (bp.proposals ?? []) : [];
+            const need = chooseCount(s.brief.productCount, proposals.length);
             return (
               <li key={s.id}>
                 <Link href={`/builder/${s.id}`} className="group block overflow-hidden rounded-2xl border border-line bg-raised transition-colors hover:border-line-strong">
@@ -52,9 +56,14 @@ export default async function BuilderPage() {
                     {[0, 1, 2].map((i) => {
                       const ref = bp.products?.[i];
                       const p = ref ? products.get(ref.productId) : undefined;
+                      const proposed = p ? undefined : proposals[i];
                       return (
                         <div key={i} className="overflow-hidden bg-sunken" style={palette ? ({ "--art-bg": palette.surface, "--art-fg": palette.accent } as React.CSSProperties) : undefined}>
-                          {p ? <ProductArt images={p.images} icon={p.art?.icon} title={p.title} /> : null}
+                          {p ? (
+                            <ProductArt images={p.images} icon={p.art?.icon} title={p.title} />
+                          ) : proposed ? (
+                            <ProductArt images={proposed.image ? [proposed.image] : []} icon={proposed.icon ?? undefined} title={proposed.title} />
+                          ) : null}
                         </div>
                       );
                     })}
@@ -69,6 +78,11 @@ export default async function BuilderPage() {
                       </div>
                       <StatusPill tone={status.tone}>{status.label}</StatusPill>
                     </div>
+                    {s.status === "choosing" ? (
+                      <p className="text-[13px] font-medium text-attention">
+                        Choose {need} of the {proposals.length} products the AI found
+                      </p>
+                    ) : null}
                     <div className="flex items-center justify-between text-[13px] text-muted">
                       <span className="truncate">{s.niche}</span>
                       <span className="shrink-0">{timeAgo(s.createdAt)}</span>

@@ -63,6 +63,26 @@ const shopStatus = async (id) => {
   if (!r.ok) console.log(`  (status poll got ${r.status}, trying again)`);
   return r.ok ? r.body : null;
 };
+// The build stops at "Choose your products" and waits for a person. This run lets the AI pick: one
+// press on the shop's page, then the build carries on (CJ checks shipping for the chosen ones).
+const picked = new Map();
+const letAiPick = async (id) => {
+  const tries = picked.get(id) ?? 0;
+  if (tries >= 3) return false;
+  picked.set(id, tries + 1);
+  await page.goto(`${base}/builder/${id}`, { waitUntil: "networkidle0" });
+  const cards = await page.$$eval("label[data-proposal]", (els) => els.length);
+  const pressed = await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.includes("Let the AI pick for me") && !x.disabled);
+    if (!b) return false;
+    b.click();
+    return true;
+  });
+  console.log(`  ${id.slice(0, 8)} waits for a choice (${cards} proposed); ${pressed ? "pressed “Let the AI pick for me”" : "NO “Let the AI pick for me” BUTTON"}`);
+  if (!tries) expect(pressed && cards > 0, `shop ${id.slice(0, 8)}: the build waits at the chooser, and one press lets the AI pick`);
+  await sleep(3000);
+  return pressed;
+};
 
 try {
   step("sign up");
@@ -162,13 +182,14 @@ try {
   while (Date.now() - started < 14 * 60_000) {
     await sleep(5000);
     for (const id of shopIds) {
-      const s = await shopStatus(id);
+      const s = await shopStatus(id).catch(() => null);
       if (s) statuses.set(id, s);
+      if (s?.status === "choosing") await letAiPick(id);
     }
     if (statuses.size < shopIds.length) continue;
     const line = [...statuses.values()]
       .map((s) => {
-        const running = s.progress.filter((p) => p.state === "running").map((p) => `${p.label}${p.note ? ` (${p.note})` : ""}`);
+        const running = s.progress.filter((p) => p.state === "running" || p.state === "needs-you").map((p) => `${p.label}${p.note ? ` (${p.note})` : ""}`);
         return `${s.status}${running.length ? ` · ${running.join(", ")}` : ""}`;
       })
       .join("  |  ");
@@ -178,8 +199,11 @@ try {
   }
   for (const [id, s] of statuses) {
     expect(s.status === "ready", `CJ shop ${id.slice(0, 8)} is ready (${s.status}${s.error ? `: ${s.error}` : ""})`);
-    const note = s.progress.find((p) => p.key === "products")?.note ?? "";
-    console.log("  products step:", note);
+    // CJ checks shipping for the chosen products in its own step, after the choice.
+    const note = (s.progress.find((p) => p.key === "check") ?? s.progress.find((p) => p.key === "products"))?.note ?? "";
+    console.log("  shipping check:", note);
+    const chose = s.progress.find((p) => p.key === "choose")?.note ?? "";
+    console.log("  choice:", chose);
     expect(/shipping confirmed by CJ/.test(note), "its kept products all had shipping confirmed by CJ");
   }
   console.log(`  all done in ${Math.round((Date.now() - started) / 1000)}s`);
@@ -221,7 +245,9 @@ try {
   let thin = null;
   for (let i = 0; i < 60; i++) {
     await sleep(5000);
-    thin = (await shopStatus(thinId)) ?? thin;
+    thin = (await shopStatus(thinId).catch(() => null)) ?? thin;
+    // If CJ had enough for a choice after all, let the AI pick and see how the build ends.
+    if (thin?.status === "choosing" && (await letAiPick(thinId))) continue;
     if (thin && thin.status !== "building") break;
   }
   console.log(`  ${thin?.status}: ${thin?.error}`);

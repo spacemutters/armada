@@ -16,7 +16,7 @@ export default async function NewShopPage({ searchParams }: PageProps<"/builder/
     <>
       <PageHeader
         title="Build a shop"
-        subtitle="Describe the idea. The AI names the brand, picks the look, chooses and writes the products, and writes every page. Prices come from your pricing rules, not the AI."
+        subtitle="Describe the idea. The AI names the brand, picks the look, finds and writes twice the products you ask for so you can choose the ones that go in, and writes every page. Prices come from your pricing rules, not the AI."
       />
       <Card className="max-w-2xl p-6">
         <form action={createShops} className="flex flex-col gap-6">
@@ -89,7 +89,7 @@ export default async function NewShopPage({ searchParams }: PageProps<"/builder/
             <PendingButton pendingLabel="Starting the build…" beam className={buttonClass("primary")}>
               Build it
             </PendingButton>
-            <span className="text-[13px] text-muted">Takes about two to four minutes per shop. You can leave this page.</span>
+            <span className="text-[13px] text-muted">Takes a few minutes per shop, with one stop where you choose the products. You can leave this page.</span>
           </div>
         </form>
       </Card>
