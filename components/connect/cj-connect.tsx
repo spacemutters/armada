@@ -3,7 +3,8 @@
 import { ArrowUpRight, ClipboardPaste } from "lucide-react";
 import { useActionState, useId, useRef, useSyncExternalStore } from "react";
 import { PendingButton } from "@/components/fx";
-import { buttonClass, cx, inputClass } from "@/components/ui";
+import { SecretInput } from "@/components/secret-input";
+import { buttonClass } from "@/components/ui";
 import { useCardBusy } from "./card-shell";
 
 export interface FormResult {
@@ -61,21 +62,18 @@ export function CjConnect({ action, keyPage, again = false }: { action: Action; 
         <li className="flex flex-col gap-2 rounded-xl bg-sunken p-4">
           <Step n={2} title="Paste it here" htmlFor={`${id}-key`} />
           <div className="mt-auto flex gap-2">
-            <input
-              ref={field}
-              id={`${id}-key`}
-              name="apiKey"
-              type="password"
-              autoComplete="new-password"
-              data-1p-ignore
-              data-lpignore="true"
-              spellCheck={false}
-              required
-              minLength={10}
-              maxLength={300}
-              placeholder="Your CJ key"
-              className={cx(inputClass, "min-h-11 min-w-0 flex-1 md:min-h-10")}
-            />
+            <div className="min-w-0 flex-1">
+              <SecretInput
+                ref={field}
+                id={`${id}-key`}
+                name="apiKey"
+                required
+                minLength={10}
+                maxLength={300}
+                placeholder="Your CJ key"
+                className="min-h-11 md:min-h-10"
+              />
+            </div>
             {canPaste ? (
               <button type="button" onClick={paste} className={buttonClass("secondary", "min-h-11 shrink-0 px-3 md:min-h-10")}>
                 <ClipboardPaste aria-hidden className="size-4" strokeWidth={2} />

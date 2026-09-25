@@ -107,9 +107,16 @@ async function serviceToken(s: PdSettings): Promise<string> {
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({ grant_type: "client_credentials", client_id: s.clientId, client_secret: s.clientSecret }),
   });
-  const body = parse(r.text) as { access_token?: string; expires_in?: number } | null;
-  if (r.status !== 200 || !body?.access_token) {
-    throw new PdProblem(r.status === 200 ? 502 : r.status, "The connection service didn't accept Armada's Client ID and secret. Paste them again on the Admin page.");
+  const body = parse(r.text) as { access_token?: string; expires_in?: number; error?: string; error_description?: string } | null;
+  if (r.status < 200 || r.status > 299 || !body?.access_token) {
+    // Pipedream's own reason (never the secret) goes in the message, so a refusal can be told apart
+    // from a wrong paste; the server log keeps the status too.
+    console.error("connection service token refused", r.status, body?.error ?? "", (body?.error_description ?? r.text.slice(0, 160)).replace(/\s+/g, " "));
+    const why = body?.error === "invalid_client" ? "it doesn't know that Client ID and secret together" : body?.error ? `it said ${body.error}` : `it answered with status ${r.status}`;
+    throw new PdProblem(
+      r.status >= 200 && r.status <= 299 ? 502 : r.status,
+      `Pipedream didn't accept these: ${why}. Copy the Client ID and Client secret again from Pipedream (Settings, then API) and paste them here.`,
+    );
   }
   // Renewed five minutes early.
   cachedToken = { key, token: body.access_token, until: Date.now() + Math.max(60, (body.expires_in ?? 3600) - 300) * 1000 };

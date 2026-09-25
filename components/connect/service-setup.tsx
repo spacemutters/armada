@@ -3,7 +3,7 @@
 import { ArrowUpRight, Zap } from "lucide-react";
 import { useActionState, useId } from "react";
 import { PendingButton } from "@/components/fx";
-import { PasswordInput } from "@/components/password-input";
+import { SecretInput } from "@/components/secret-input";
 import { Button, buttonClass, Card, cx, inputClass, StatusPill } from "@/components/ui";
 import type { FormResult } from "./cj-connect";
 
@@ -90,7 +90,7 @@ export function ServiceSetup({ view, save, clear }: { view: ServiceView; save: A
             </label>
             <label className="flex flex-col gap-1 text-[13px]" htmlFor={`${id}-secret`}>
               Client secret
-              <PasswordInput id={`${id}-secret`} name="clientSecret" autoComplete="new-password" data-1p-ignore data-lpignore="true" required className="min-h-11 md:min-h-10" />
+              <SecretInput id={`${id}-secret`} name="clientSecret" required className="min-h-11 md:min-h-10" />
             </label>
           </div>
           <fieldset className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[14px]">

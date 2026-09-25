@@ -1,7 +1,8 @@
 import { ArrowUpRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { HoldButton } from "@/components/fx";
-import { Card, cx, inputClass, PageHeader, StatusPill } from "@/components/ui";
+import { SecretInput } from "@/components/secret-input";
+import { Card, cx, PageHeader, StatusPill } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
 import { isBillingAdmin, readNote } from "@/lib/billing/access";
 import { standingFrom, usageFor, type PlanStanding } from "@/lib/billing/entitlements";
@@ -119,20 +120,9 @@ function KeyForm({ replacing }: { replacing: boolean }) {
         {replacing ? "New restricted key" : "Restricted key"}
       </label>
       <div className="flex flex-col gap-2 sm:flex-row">
-        <input
-          id="stripe-key"
-          name="key"
-          type="password"
-          required
-          autoComplete="new-password"
-          data-1p-ignore
-          data-lpignore="true"
-          autoCapitalize="none"
-          spellCheck={false}
-          maxLength={300}
-          placeholder="rk_live_… or rk_test_…"
-          className={cx(inputClass, "min-h-11 min-w-0 flex-1 font-mono")}
-        />
+        <div className="min-w-0 flex-1">
+          <SecretInput id="stripe-key" name="key" required maxLength={300} placeholder="rk_live_… or rk_test_…" className="min-h-11 font-mono" />
+        </div>
         <PendingButton pendingLabel="Setting up Stripe…" beam>
           {replacing ? "Connect with this key" : "Connect Stripe"}
         </PendingButton>
