@@ -36,7 +36,9 @@ export async function proxy(request: NextRequest) {
 }
 
 // Public paths skip this check: sign-in, setup links, the API, Next's own files, the homepage (/home)
-// and its files (/marketing/...), and the icons.
+// and its files (/marketing/...), the icons and the home-screen manifest.
 export const config = {
-  matcher: ["/((?!welcome|setup/|api/|_next/|home$|home/|home\\.|marketing/|icon\\.svg|favicon\\.ico|robots\\.txt).*)"],
+  matcher: [
+    "/((?!welcome|setup/|privacy|api/|_next/|home$|home/|home\\.|marketing/|icon\\.svg|icon-\\d+\\.png|apple-icon|armada\\.ico|manifest\\.webmanifest|favicon\\.ico|robots\\.txt).*)",
+  ],
 };
