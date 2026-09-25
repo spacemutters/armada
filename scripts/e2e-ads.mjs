@@ -55,7 +55,8 @@ const waitFor = (re, ms) => page.waitForFunction((s) => new RegExp(s).test(docum
  */
 const adPictures = () =>
   page.evaluate(async () => {
-    const figs = [...document.querySelectorAll("article[data-variation] figure")];
+    // Every ad preview, in the draft cards and in the grid of created ads alike.
+    const figs = [...document.querySelectorAll('figure[aria-label^="How it looks"]')];
     const srcs = [...new Set(figs.flatMap((f) => [...f.querySelectorAll("img")]).map((i) => i.src).filter((u) => /\/api\/ads\/picture\//.test(u)))];
     const waiting = figs.flatMap((f) => [...f.querySelectorAll('[role="img"]')]).map((e) => e.getAttribute("aria-label"));
     const results = await Promise.all(

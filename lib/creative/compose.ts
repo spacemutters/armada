@@ -83,9 +83,58 @@ async function cutoutOnGround(bytes: Buffer, w: number, h: number, ground: strin
     .toBuffer();
 }
 
-/** A product photo (real, or a practice item's picture) on the shop's ground, w x h. */
+/**
+ * The colour around a photo's edge, and whether the edge is one plain colour (a studio seamless, as
+ * in a practice item's picture or many supplier shots on a coloured backdrop).
+ */
+export async function edgeOf(bytes: Buffer): Promise<{ color: string; plain: boolean }> {
+  const sharp = await getSharp();
+  const { data, info } = await sharp(bytes).rotate().flatten({ background: "#ffffff" }).resize(48, 48, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const px: number[][] = [];
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      if (x > 1 && y > 1 && x < info.width - 2 && y < info.height - 2) continue;
+      const i = (y * info.width + x) * info.channels;
+      px.push([data[i], data[i + 1], data[i + 2]]);
+    }
+  }
+  const mean = [0, 1, 2].map((c) => px.reduce((s, p) => s + p[c], 0) / px.length);
+  const spread = Math.max(...[0, 1, 2].map((c) => Math.sqrt(px.reduce((s, p) => s + (p[c] - mean[c]) ** 2, 0) / px.length)));
+  const hex = `#${mean.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+  return { color: hex, plain: spread < 12 };
+}
+
+/**
+ * A photo on a plain seamless, fitted whole inside w x h (never cropping the product), so a square
+ * picture sits in a tall frame without losing its sides. The space it doesn't fill is the same
+ * seamless, stretched and softened, and the photo's edges fade into it, so no band shows.
+ */
+async function fitOnSeamless(bytes: Buffer, w: number, h: number, color: string): Promise<Buffer> {
+  const sharp = await getSharp();
+  const flat = await sharp(bytes).rotate().flatten({ background: color }).removeAlpha().png().toBuffer();
+  const { data: inner, info } = await sharp(flat).resize(w, h, { fit: "inside" }).removeAlpha().png().toBuffer({ resolveWithObject: true });
+  if (info.width >= w - 1 && info.height >= h - 1) return sharp(inner).resize(w, h, { fit: "cover" }).png().toBuffer();
+  const base = await sharp(flat).resize(w, h, { fit: "fill" }).blur(40).png().toBuffer();
+  const tall = info.height < h; // the gaps are above and below
+  const size = tall ? info.height : info.width;
+  const f = Math.max(1, Math.round(size * 0.08)) / size;
+  const stops = `<stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="${f}" stop-color="#fff"/><stop offset="${1 - f}" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>`;
+  const mask = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${info.width}" height="${info.height}"><defs><linearGradient id="g" x1="0" y1="0" x2="${tall ? 0 : 1}" y2="${tall ? 1 : 0}">${stops}</linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/></svg>`,
+  );
+  const faded = await sharp(inner).ensureAlpha().composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
+  return sharp(base)
+    .composite([{ input: faded, left: Math.round((w - info.width) / 2), top: Math.round((h - info.height) / 2), blend: "over" }])
+    .removeAlpha()
+    .png()
+    .toBuffer();
+}
+
+/** A product photo (real, or a practice item's picture) on the shop's ground, w x h. The product is never cropped away. */
 export async function packshot(photo: LoadedPhoto, w: number, h: number, palette: Palette): Promise<Buffer> {
   if (photo.kind === "cutout") return cutoutOnGround(photo.bytes, w, h, groundFor(palette));
+  const edge = await edgeOf(photo.bytes).catch(() => null);
+  if (edge?.plain) return fitOnSeamless(photo.bytes, w, h, edge.color);
   return fill(photo.bytes, w, h);
 }
 

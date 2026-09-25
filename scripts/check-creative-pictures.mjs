@@ -218,6 +218,20 @@ for (const shape of ["square", "portrait", "story"]) {
   for (let i = 0; i < data.length; i += info.channels) if (data[i] > 150 && data[i + 1] < 90 && data[i + 2] < 90) red++;
   report(meta.format === "jpeg" && meta.width === w && meta.height === h && red >= 60, `a staged ${shape} picture is ${w}x${h} and the product's own pixels sit on its panel`, `${sizes[shape]}, ${red}/64 product pixels`);
 }
+// A square picture on a plain seamless (a practice item's, or a supplier's studio shot) placed in a
+// tall frame: the whole product stays in view, nothing is cropped off its sides.
+const seamless = await sharp({ create: { width: 600, height: 600, channels: 3, background: "#cfd4d1" } })
+  .composite([{ input: await sharp({ create: { width: 480, height: 300, channels: 3, background: "#1030c0" } }).png().toBuffer(), left: 60, top: 150 }])
+  .png()
+  .toBuffer();
+const wide = await photoFromBytes(seamless);
+const story = await compose.staged(setting, wide, "story", palette);
+const sb = compose.panelBox("story");
+const row = Math.round(sb.top + sb.h / 2);
+const px = async (x) => [...(await sharp(story).extract({ left: x, top: row, width: 1, height: 1 }).raw().toBuffer())];
+const blue = (p) => p[2] > 150 && p[0] < 80;
+const [edgeIn, inside, edgeOut] = [await px(sb.left + 6), await px(sb.left + 100), await px(sb.left + sb.w - 7)];
+report(wide?.kind === "scene" && !blue(edgeIn) && blue(inside) && !blue(edgeOut), "a square picture in a tall frame keeps the whole product (nothing cropped off its sides)", `${wide?.kind}; edge ${edgeIn.join(",")}, inside ${inside.join(",")}, far edge ${edgeOut.join(",")}`);
 const alone = await sharp(await compose.staged(null, product, "portrait", palette)).metadata();
 report(alone.width === 1080 && alone.height === 1350, "without a setting, the product shows alone on the shop's ground, same size");
 const pc = await compose.productCard(product, "square", palette);
