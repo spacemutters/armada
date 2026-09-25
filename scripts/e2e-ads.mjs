@@ -53,7 +53,19 @@ const waitFor = (re, ms) => page.waitForFunction((s) => new RegExp(s).test(docum
  * Every ad preview's pictures on the page: each composed picture fetched for real (cards off to the
  * side load lazily, so the page alone can't tell), and the placeholders still waiting.
  */
-const adPictures = () =>
+const adPictures = () => settled(() => readAdPictures());
+/** Retries a page read that the page's own refresh (every few seconds while pictures are made) cut off. */
+async function settled(read, tries = 4) {
+  for (let i = 0; ; i++) {
+    try {
+      return await read();
+    } catch (e) {
+      if (i >= tries || !/detached Frame|Execution context was destroyed|context.*destroyed/i.test(e.message)) throw e;
+      await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => {});
+    }
+  }
+}
+const readAdPictures = () =>
   page.evaluate(async () => {
     // Every ad preview, in the draft cards and in the grid of created ads alike.
     const figs = [...document.querySelectorAll('figure[aria-label^="How it looks"]')];
@@ -142,12 +154,12 @@ try {
   const pictureSeconds = Math.round((Date.now() - pictureStart) / 1000);
   expect(pics.waiting.length === 0 && pics.pictures > 0 && pics.loaded === pics.pictures && !pics.broken.length,
     `every ad preview shows real pictures (${pics.loaded} shown, ${pics.waiting.length} waiting, ${pics.broken.length} broken) about ${pictureSeconds}s after the words`);
-  const perAd = await page.$$eval("article[data-variation]", (els) =>
+  const perAd = await settled(() => page.$$eval("article[data-variation]", (els) =>
     els.map((a) => {
       const m = /Carousel · (\d+) cards/.exec(a.innerText);
       return { carousel: Boolean(m), cards: m ? Number(m[1]) : 1, pictures: new Set([...a.querySelectorAll('figure img[src*="/api/ads/picture/"]')].map((i) => i.src.split("?")[0])).size };
     }),
-  );
+  ));
   console.log(`  ads: ${perAd.map((a) => (a.carousel ? `carousel of ${a.cards}` : "single")).join(", ")}`);
   expect(perAd.some((a) => a.carousel), "at least one ad is a carousel");
   expect(perAd.filter((a) => a.carousel).every((a) => a.cards >= 4), "every carousel has at least four cards");
@@ -155,13 +167,13 @@ try {
   const t3 = await text();
   expect(/Practice ad/.test(t3), "practice ads say so on the previews");
   // A picture itself: a real JPEG at the platform's size.
-  const probe = await page.evaluate(async () => {
+  const probe = await settled(() => page.evaluate(async () => {
     const img = document.querySelector('article[data-variation] figure img[src*="shape=square"]');
     if (!img) return null;
     const res = await fetch(img.src);
     const b = new Uint8Array(await res.arrayBuffer());
     return { type: res.headers.get("content-type"), cache: res.headers.get("cache-control"), bytes: b.length, jpeg: b[0] === 0xff && b[1] === 0xd8 };
-  });
+  }));
   expect(probe?.jpeg && probe.type === "image/jpeg" && /immutable/.test(probe.cache ?? ""), `a card picture is a JPEG cached for good (${probe ? `${Math.round(probe.bytes / 1024)} KB` : "none"})`);
   await shot("03-pictures-ready");
   const first = await page.$("article[data-variation]");
@@ -230,7 +242,7 @@ try {
       await sleep(10000);
       await page.reload({ waitUntil: "networkidle0" }).catch(() => {});
       // Slides past the first load lazily, so each one is fetched for real.
-      posts = await page.$$eval("article[id^='post-']", (els) =>
+      posts = await settled(() => page.$$eval("article[id^='post-']", (els) =>
         Promise.all(
           els.map(async (a) => {
             const srcs = [...a.querySelectorAll('figure img[src*="/api/social/slide/"]')].map((i) => i.src);
@@ -242,8 +254,8 @@ try {
             };
           }),
         ),
-      );
-      const writing = /Writing \d+ ads for/.test(await text());
+      ));
+      const writing = /Writing \d+ ads for/.test(await settled(() => text()));
       if (!writing && posts.length && posts.every((p) => !p.making && p.loaded >= p.slides)) break;
       if (i % 3 === 0) console.log(`  ${since()}: ${writing ? "writing posts" : `${posts.length} posts, ${posts.filter((p) => p.making).length} making pictures`}`);
     }

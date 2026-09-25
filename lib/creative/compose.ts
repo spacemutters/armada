@@ -114,7 +114,18 @@ async function fitOnSeamless(bytes: Buffer, w: number, h: number, color: string)
   const flat = await sharp(bytes).rotate().flatten({ background: color }).removeAlpha().png().toBuffer();
   const { data: inner, info } = await sharp(flat).resize(w, h, { fit: "inside" }).removeAlpha().png().toBuffer({ resolveWithObject: true });
   if (info.width >= w - 1 && info.height >= h - 1) return sharp(inner).resize(w, h, { fit: "cover" }).png().toBuffer();
-  const base = await sharp(flat).resize(w, h, { fit: "fill" }).blur(40).png().toBuffer();
+  // The gaps continue the photo's own edge (its backdrop), never the product, then soften.
+  const left = Math.floor((w - info.width) / 2);
+  const top = Math.floor((h - info.height) / 2);
+  const base = await sharp(
+    await sharp(inner)
+      .extend({ top, bottom: h - info.height - top, left, right: w - info.width - left, extendWith: "copy" })
+      .png()
+      .toBuffer(),
+  )
+    .blur(24)
+    .png()
+    .toBuffer();
   const tall = info.height < h; // the gaps are above and below
   const size = tall ? info.height : info.width;
   const f = Math.max(1, Math.round(size * 0.08)) / size;
@@ -124,18 +135,25 @@ async function fitOnSeamless(bytes: Buffer, w: number, h: number, color: string)
   );
   const faded = await sharp(inner).ensureAlpha().composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
   return sharp(base)
-    .composite([{ input: faded, left: Math.round((w - info.width) / 2), top: Math.round((h - info.height) / 2), blend: "over" }])
+    .composite([{ input: faded, left, top, blend: "over" }])
     .removeAlpha()
     .png()
     .toBuffer();
 }
 
-/** A product photo (real, or a practice item's picture) on the shop's ground, w x h. The product is never cropped away. */
+/**
+ * A product photo (real, or a practice item's picture) on the shop's ground, w x h. The product is
+ * never cropped away: a photo close to the frame's shape fills it; any other is fitted whole over a
+ * softened stretch of its own backdrop.
+ */
 export async function packshot(photo: LoadedPhoto, w: number, h: number, palette: Palette): Promise<Buffer> {
   if (photo.kind === "cutout") return cutoutOnGround(photo.bytes, w, h, groundFor(palette));
+  const sharp = await getSharp();
+  const meta = await sharp(photo.bytes).rotate().metadata();
+  const [pw, ph] = (meta.orientation ?? 1) >= 5 ? [meta.height ?? 0, meta.width ?? 0] : [meta.width ?? 0, meta.height ?? 0];
+  if (pw && ph && Math.abs(Math.log(pw / ph / (w / h))) < 0.1) return fill(photo.bytes, w, h);
   const edge = await edgeOf(photo.bytes).catch(() => null);
-  if (edge?.plain) return fitOnSeamless(photo.bytes, w, h, edge.color);
-  return fill(photo.bytes, w, h);
+  return fitOnSeamless(photo.bytes, w, h, edge?.color ?? "#ffffff");
 }
 
 /** Where the product panel sits on a staged picture: its size and top-left corner. */
