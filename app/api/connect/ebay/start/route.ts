@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth/session";
 import { createState } from "@/lib/connections/state";
 import { withWorkspace } from "@/lib/db";
 import { clip } from "@/lib/text";
+import { serviceOn, startViaService } from "@/lib/connections/service";
 import { withProblem } from "../../facebook/bridge";
 
 // One press → eBay's own sign-in and approval page. ?purpose=open opens a new store (the sign-in page
@@ -25,9 +26,25 @@ export async function GET(request: NextRequest) {
   if (!session) return go("/welcome");
   if (session.role !== "owner" && session.role !== "manager") return problem("role");
   const cfg = ebayConfig(process.env);
-  if (!cfg) return problem("ebay_off");
-
   const storeName = clip(q.get("name") ?? "", 60);
+  if (!cfg) {
+    // No eBay app of Armada's own: the connection service's approved app instead.
+    if (!(await serviceOn())) return problem("ebay_off");
+    try {
+      const to = await startViaService({
+        workspaceId: session.workspaceId,
+        memberId: session.memberId,
+        provider: "ebay",
+        purpose,
+        returnTo: back,
+        detail: { ...(storeName ? { storeName } : {}), ...(storeId ? { storeId } : {}) },
+      });
+      return NextResponse.redirect(to, 303);
+    } catch {
+      return problem("ebay_busy");
+    }
+  }
+
   const state = await createState(session.workspaceId, session.memberId, "ebay", purpose, {
     returnTo: back,
     ...(storeName ? { storeName } : {}),

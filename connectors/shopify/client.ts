@@ -6,11 +6,17 @@ import { isShopDomain } from "./address";
 import { missingScopes, SHOPIFY_API_VERSION, SHOPIFY_PATHS } from "./config";
 import { shopifyRequest, ShopifyUnreachable } from "./http";
 import { exchangeCode, refreshAccess, shopifyApp, type ShopifySecret } from "./oauth";
+import { forgetServiceAccount, relay } from "@/connectors/pipedream/client";
+import { isViaService, type ViaService } from "@/connectors/pipedream/core";
 
 // The one door to a connected Shopify store: its sealed access in armada.credentials (provider
 // 'shopify', label = the store's permanent address), renewing that access before it runs out, a
 // small GraphQL Admin API client pinned to one version, and what happens when a store connects,
 // disconnects, or removes Armada on Shopify's side.
+//
+// A store can also be connected through the connection service (connectors/pipedream): then the
+// credential holds only which account at the service it is, and every request goes through the
+// service's relay, which adds the store's access. Everything above the transport is the same.
 
 /** Plain reasons a Shopify step stopped. The Connections page turns each code into words. */
 export type ShopifyProblemCode = "off" | "refused" | "scopes" | "unreachable" | "approval" | "elsewhere" | "paused" | "failed" | "missing";
@@ -32,8 +38,13 @@ export interface ShopifyMeta {
   connectedAt?: string;
   connectedBy?: string | null;
   devStore?: boolean;
-  /** Whether Shopify will tell Armada when the store removes it ("ok"), or registering that failed. */
-  watching?: "ok" | "failed";
+  /**
+   * Whether Shopify will tell Armada when the store removes it ("ok"), registering that failed, or
+   * the store is connected through the connection service, whose notices Armada can't check.
+   */
+  watching?: "ok" | "failed" | "service";
+  /** Connected through the connection service rather than Armada's own Shopify app. */
+  viaService?: boolean;
   lastError?: string;
   lastErrorAt?: string;
 }
@@ -42,14 +53,19 @@ const APPROVAL_NEEDED = "Shopify asked for a fresh approval for this store. Conn
 
 // ---------- sealed access ----------
 
-async function readSecret(tx: Tx, shop: string, lock = false): Promise<{ secret: ShopifySecret; status: string } | null> {
+/** What a store's credential holds: Armada's own access, or which account at the connection service. */
+type Stored = ShopifySecret | ViaService;
+/** How a request reaches the store: with an access token, or through the connection service. */
+export type ShopifyAccess = string | ViaService;
+
+async function readSecret(tx: Tx, shop: string, lock = false): Promise<{ secret: Stored; status: string } | null> {
   const rows = lock
     ? await tx<{ secret: Buffer; status: string }[]>`
         select secret, status from armada.credentials where provider = 'shopify' and label = ${shop} for update`
     : await tx<{ secret: Buffer; status: string }[]>`
         select secret, status from armada.credentials where provider = 'shopify' and label = ${shop}`;
   if (!rows[0]) return null;
-  return { secret: open<ShopifySecret>(rows[0].secret), status: rows[0].status };
+  return { secret: open<Stored>(rows[0].secret), status: rows[0].status };
 }
 
 async function markNeedsApproval(workspaceId: string, shop: string, message = APPROVAL_NEEDED) {
@@ -72,21 +88,28 @@ const needsRenewal = (s: ShopifySecret) => Boolean(s.accessExpiresAt) && Date.pa
  * Shopify refused it). Renewal holds a lock on the credential row: Shopify warns that two renewals
  * at once retire each other's result, so a second caller waits and then uses the first one's.
  */
-export async function accessFor(workspaceId: string, shop: string, { force = false } = {}): Promise<string> {
+export async function accessFor(workspaceId: string, shop: string, { force = false } = {}): Promise<ShopifyAccess> {
   const found = await withWorkspace(workspaceId, (tx) => readSecret(tx, shop));
   if (!found || found.status === "disconnected") throw new ShopifyProblem("missing", "This store isn't connected.");
-  if (!force && !needsRenewal(found.secret)) return found.secret.accessToken;
-  if (!found.secret.refreshToken) {
-    if (!force) return found.secret.accessToken;
+  const stored = found.secret;
+  // The connection service keeps the store's access fresh itself; a refusal means approve again.
+  if (isViaService(stored)) {
+    if (!force) return stored;
+    await markNeedsApproval(workspaceId, shop);
+    throw new ShopifyProblem("approval", APPROVAL_NEEDED);
+  }
+  if (!force && !needsRenewal(stored)) return stored.accessToken;
+  if (!stored.refreshToken) {
+    if (!force) return stored.accessToken;
     await markNeedsApproval(workspaceId, shop);
     throw new ShopifyProblem("approval", APPROVAL_NEEDED);
   }
 
   const outcome = await withWorkspace(workspaceId, async (tx) => {
     const locked = await readSecret(tx, shop, true);
-    if (!locked) return { kind: "missing" as const };
+    if (!locked || isViaService(locked.secret)) return { kind: "missing" as const };
     // Someone renewed it while this call waited for the lock.
-    if (locked.secret.accessToken !== found.secret.accessToken && !needsRenewal(locked.secret)) return { kind: "ok" as const, token: locked.secret.accessToken };
+    if (locked.secret.accessToken !== stored.accessToken && !needsRenewal(locked.secret)) return { kind: "ok" as const, token: locked.secret.accessToken };
     const r = await refreshAccess(shop, locked.secret);
     if (r.kind !== "refreshed") return r;
     await tx`
@@ -119,10 +142,32 @@ interface GraphqlBody<T> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function post<T>(shop: string, token: string, query: string, variables?: Record<string, unknown>) {
-  const res = await shopifyRequest(shop, `/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+async function post<T>(shop: string, access: ShopifyAccess, query: string, variables?: Record<string, unknown>) {
+  const path = `/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
+  if (typeof access !== "string") {
+    // Through the connection service: a path, not a full address, because the service fills in the
+    // store's own <store>.myshopify.com from the connected account.
+    let r: Awaited<ReturnType<typeof relay>>;
+    try {
+      r = await relay(access.externalUserId, access.accountId, path, {
+        method: "POST",
+        headers: { accept: "application/json" },
+        body: JSON.stringify({ query, variables }),
+      });
+    } catch (e) {
+      throw new ShopifyUnreachable(shop, e);
+    }
+    let body: GraphqlBody<T> = {};
+    try {
+      body = JSON.parse(r.text) as GraphqlBody<T>;
+    } catch {
+      body = {};
+    }
+    return { status: r.status, retryAfter: Number(r.headers.get("retry-after")) || 0, body };
+  }
+  const res = await shopifyRequest(shop, path, {
     method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json", "X-Shopify-Access-Token": token },
+    headers: { "content-type": "application/json", accept: "application/json", "X-Shopify-Access-Token": access },
     body: JSON.stringify({ query, variables }),
   });
   const body = (await res.json().catch(() => ({}))) as GraphqlBody<T>;
@@ -142,7 +187,7 @@ function throttleWait(body: GraphqlBody<unknown>, attempt: number): number {
  * throttling (by its cost numbers), 429 and 5xx. `onRefused` is asked once for fresh access if
  * Shopify answers 401. Throws ShopifyProblem with a plain message for everything else.
  */
-async function run<T>(shop: string, token: string, query: string, variables: Record<string, unknown> | undefined, onRefused?: () => Promise<string>): Promise<T> {
+async function run<T>(shop: string, token: ShopifyAccess, query: string, variables: Record<string, unknown> | undefined, onRefused?: () => Promise<ShopifyAccess>): Promise<T> {
   let renewed = false;
   for (let attempt = 0; attempt < 4; attempt++) {
     let r: Awaited<ReturnType<typeof post<T>>>;
@@ -258,7 +303,10 @@ interface WebhookResult {
  * shows as disconnected straight away. Registering twice is harmless: Shopify answers that the
  * address is already taken, which counts as done.
  */
-async function watchForRemoval(shop: string, token: string): Promise<"ok" | "failed"> {
+async function watchForRemoval(shop: string, token: ShopifyAccess): Promise<"ok" | "failed" | "service"> {
+  // Shopify signs its notices with the approved app's secret, which is the connection service's,
+  // not Armada's, so Armada couldn't check they're real. Those stores aren't watched this way.
+  if (typeof token !== "string") return "service";
   try {
     const d = await run<WebhookResult>(shop, token, WEBHOOK_MUTATION, {
       topic: "APP_UNINSTALLED",
@@ -272,7 +320,7 @@ async function watchForRemoval(shop: string, token: string): Promise<"ok" | "fai
 }
 
 /** Registers the removal notice again for a connected store (e.g. after Armada's address changes). */
-export async function rewatchForRemoval(workspaceId: string, shop: string): Promise<"ok" | "failed"> {
+export async function rewatchForRemoval(workspaceId: string, shop: string): Promise<"ok" | "failed" | "service"> {
   const token = await accessFor(workspaceId, shop);
   const result = await watchForRemoval(shop, token);
   await withWorkspace(
@@ -371,6 +419,51 @@ export async function completeShopifyConnection(input: { workspaceId: string; me
   return { storeId, name: info.name };
 }
 
+/**
+ * Finishes a connection made through the connection service: reads which store it is through the
+ * service, keeps only which account it is (never a key), and creates or updates its live row.
+ */
+export async function completeShopifyViaService(input: { workspaceId: string; memberId: string | null; account: ViaService }): Promise<{ storeId: string; name: string }> {
+  const { workspaceId, memberId, account } = input;
+  const d = await run<ShopQuery>("service", account, SHOP_QUERY, undefined);
+  const info = toShopInfo(d);
+  const shop = info.myshopifyDomain.toLowerCase();
+  if (!isShopDomain(shop)) throw new ShopifyProblem("refused");
+  if (await connectedElsewhere(workspaceId, shop)) throw new ShopifyProblem("elsewhere");
+
+  const now = new Date().toISOString();
+  return withWorkspace(workspaceId, async (tx) => {
+    const meta: ShopifyMeta = {
+      shop,
+      shopName: info.name,
+      apiVersion: SHOPIFY_API_VERSION,
+      connectedAt: now,
+      connectedBy: memberId,
+      devStore: info.devStore,
+      watching: "service",
+      viaService: true,
+    };
+    await tx`
+      insert into armada.credentials (workspace_id, provider, label, secret, status, meta)
+      values (${workspaceId}, 'shopify', ${shop}, ${seal(account)}, 'connected', ${tx.json(meta as never)})
+      on conflict (workspace_id, provider, label) do update
+        set secret = excluded.secret, status = 'connected', meta = excluded.meta, updated_at = now()`;
+    const storeMeta = { credentialLabel: shop, shopifyShopId: info.id || null, primaryDomain: info.primaryDomain, devStore: info.devStore, connectedAt: now, viaService: true };
+    const [row] = await tx<{ id: string }[]>`
+      insert into armada.stores (workspace_id, platform, mode, name, domain, currency, country, status, meta)
+      values (${workspaceId}, 'shopify', 'live', ${info.name.slice(0, 120)}, ${shop}, ${info.currencyCode || "USD"}, ${info.country || "US"}, 'connected', ${tx.json(storeMeta as never)})
+      on conflict (workspace_id, domain) where platform = 'shopify' and mode = 'live' do update
+        set name = excluded.name, currency = excluded.currency, country = excluded.country, status = 'connected',
+            meta = armada.stores.meta - 'disconnectedAt' - 'disconnectedBy' - 'removedInShopifyAt' - 'stillInShopify' || excluded.meta
+      returning id`;
+    await tx`update armada.credentials set meta = meta || ${tx.json({ storeId: row.id } as never)} where provider = 'shopify' and label = ${shop}`;
+    await tx`
+      insert into armada.audit_log (workspace_id, member_id, action, detail)
+      values (${workspaceId}, ${memberId}, 'shopify.connected', ${tx.json({ shop, storeId: row.id, name: info.name, via: "service" } as never)})`;
+    return { storeId: row.id, name: info.name };
+  });
+}
+
 // ---------- disconnecting ----------
 
 const UNINSTALL_MUTATION = `mutation ArmadaLeave { appUninstall { app { id } userErrors { field message } } }`;
@@ -385,8 +478,15 @@ export async function disconnectShopify(workspaceId: string, memberId: string, s
   let removedInShopify = false;
   try {
     const token = await accessFor(workspaceId, shop);
-    const d = await run<{ appUninstall: { userErrors: { message: string }[] } }>(shop, token, UNINSTALL_MUTATION, undefined);
-    removedInShopify = d.appUninstall.userErrors.length === 0;
+    if (typeof token === "string") {
+      const d = await run<{ appUninstall: { userErrors: { message: string }[] } }>(shop, token, UNINSTALL_MUTATION, undefined);
+      removedInShopify = d.appUninstall.userErrors.length === 0;
+    } else {
+      // The approved app is the connection service's, and the store may use it for other things, so
+      // Armada only deletes its own access there.
+      await forgetServiceAccount(token.accountId).catch(() => false);
+      removedInShopify = false;
+    }
   } catch {
     removedInShopify = false;
   }

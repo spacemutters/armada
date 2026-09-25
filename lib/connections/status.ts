@@ -1,7 +1,9 @@
 import "server-only";
+import { isPdProvider } from "@/connectors/pipedream/core";
 import { withWorkspace } from "@/lib/db";
 import type { Role } from "@/lib/types";
 import { CONNECTORS, type Connector } from "./registry";
+import { serviceOn } from "./service";
 import type { Provider } from "./types";
 
 // Where each connection stands for one workspace, read from armada.credentials (never the sealed
@@ -44,6 +46,8 @@ export interface ProviderStatus {
   provider: Provider;
   connector: Connector;
   available: boolean;
+  /** How Connect works right now: Armada's own approved app, the connection service's, or neither. */
+  via: "own" | "service" | null;
   state: ProviderState;
   /** Everything ever connected that's still listed, newest problems first. */
   accounts: ConnectedAccount[];
@@ -114,7 +118,9 @@ function storeAccount(s: StoreRow, cred: CredentialRow | undefined): ConnectedAc
       ? "This store removed Armada in Shopify."
       : s.meta.deletedByEbay
         ? "eBay closed this account's connection."
-        : s.meta.stillInShopify
+        : s.meta.stillInShopify && s.meta.viaService
+          ? "Disconnected. To remove the connection from the store too: in Shopify, open Settings, then Apps, and remove Pipedream."
+          : s.meta.stillInShopify
           ? "Disconnected. Armada couldn't reach Shopify to take itself off the store, so remove it there too: in Shopify, open Settings, then Apps."
           : "Disconnected. Its products and orders stay in Armada.";
   }
@@ -149,8 +155,11 @@ function credentialAccount(c: CredentialRow, fallbackName: string): ConnectedAcc
 
 const ORDER: Record<AccountStatus, number> = { needs_attention: 0, disconnected: 1, setting_up: 2, connected: 3 };
 
-function summarize(connector: Connector, accounts: ConnectedAccount[]): ProviderStatus {
-  const available = connector.available();
+function summarize(connector: Connector, accounts: ConnectedAccount[], service = false): ProviderStatus {
+  const own = connector.available();
+  // Shopify and eBay also connect through the connection service when Armada has no app of its own there.
+  const via = own ? "own" : service && isPdProvider(connector.provider) ? "service" : null;
+  const available = via !== null;
   const active = accounts.filter((a) => a.status !== "disconnected");
   const connectedCount = active.filter((a) => a.status === "connected" || a.status === "setting_up").length;
   const state: ProviderState = active.some((a) => a.status === "needs_attention")
@@ -161,11 +170,12 @@ function summarize(connector: Connector, accounts: ConnectedAccount[]): Provider
         ? "not_connected"
         : "coming_soon";
   accounts.sort((a, b) => ORDER[a.status] - ORDER[b.status] || (b.since?.getTime() ?? 0) - (a.since?.getTime() ?? 0));
-  return { provider: connector.provider, connector, available, state, accounts, connectedCount };
+  return { provider: connector.provider, connector, available, via, state, accounts, connectedCount };
 }
 
 /** Every connector's status for this workspace, in the registry's order. */
 export async function connectionStatus(workspaceId: string): Promise<ProviderStatus[]> {
+  const service = await serviceOn();
   const { stores, creds } = await withWorkspace(workspaceId, async (tx) => {
     const stores = await tx<StoreRow[]>`
       select id, platform, name, domain, status, meta, created_at
@@ -186,7 +196,7 @@ export async function connectionStatus(workspaceId: string): Promise<ProviderSta
           const label = credentialLabelFor(s);
           return storeAccount(s, label ? creds.find((k) => k.provider === credProvider && k.label === label) : undefined);
         });
-      return summarize(c, accounts);
+      return summarize(c, accounts, service);
     }
     const mine = creds.filter((k) => {
       if (k.provider !== credProvider) return false;
@@ -194,7 +204,7 @@ export async function connectionStatus(workspaceId: string): Promise<ProviderSta
       if (c.provider === "meta_ads") return isMetaAdsCredential(k);
       return true;
     });
-    return summarize(c, mine.map((k) => credentialAccount(k, c.name)));
+    return summarize(c, mine.map((k) => credentialAccount(k, c.name)), service);
   });
 }
 

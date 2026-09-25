@@ -3,7 +3,10 @@
 import { refresh } from "next/cache";
 import type { FormResult } from "@/components/connect/cj-connect";
 import { connectCj, describeCjError, disconnectCj } from "@/connectors/cj/client";
+import { clearPdSettings, savePdSettings } from "@/connectors/pipedream/client";
 import { disconnectShopify } from "@/connectors/shopify/client";
+import { isPlatformAdmin } from "../admin/access";
+import { forgetViaService } from "@/lib/connections/service";
 import { requireSession } from "@/lib/auth/session";
 import { connector } from "@/lib/connections/registry";
 import { canManageConnections, CREDENTIAL_PROVIDER, credentialLabelFor } from "@/lib/connections/status";
@@ -63,6 +66,8 @@ export async function disconnectHere(_prev: FormResult | null, formData: FormDat
       await disconnectShopify(session.workspaceId, session.memberId, store.domain);
     } else {
       const label = credentialLabelFor(store);
+      // Connected through the connection service: let go of the account there too.
+      if (label) await forgetViaService(session.workspaceId, CREDENTIAL_PROVIDER[provider], label);
       await withWorkspace(session.workspaceId, async (tx) => {
         if (label) await tx`delete from armada.credentials where provider = ${CREDENTIAL_PROVIDER[provider]} and label = ${label}`;
         await tx`
@@ -95,4 +100,43 @@ async function audit(workspaceId: string, memberId: string, action: string, deta
       insert into armada.audit_log (workspace_id, member_id, action, detail)
       values (${workspaceId}, ${memberId}, ${action}, ${tx.json(detail as never)})`,
   );
+}
+
+/** Platform admins only: switches on one-click connections by saving the connection service's settings. */
+export async function saveServiceHere(_prev: FormResult | null, formData: FormData): Promise<FormResult> {
+  const session = await requireSession();
+  if (!(await isPlatformAdmin(session.memberId))) return { ok: false, message: "Only Armada's admin can change this." };
+  const environment = formData.get("environment") === "production" ? "production" : "development";
+  const problem = await savePdSettings(
+    {
+      clientId: String(formData.get("clientId") ?? ""),
+      clientSecret: String(formData.get("clientSecret") ?? ""),
+      projectId: String(formData.get("projectId") ?? ""),
+      environment,
+    },
+    session.memberId,
+  );
+  if (problem) return { ok: false, message: problem };
+  await withWorkspace(
+    session.workspaceId,
+    (tx) => tx`
+      insert into armada.audit_log (workspace_id, member_id, action, detail)
+      values (${session.workspaceId}, ${session.memberId}, 'connection_service.saved', ${tx.json({ environment } as never)})`,
+  );
+  refresh();
+  return { ok: true, message: "Switched on. Shopify and eBay now connect in one press." };
+}
+
+export async function clearServiceHere(): Promise<FormResult> {
+  const session = await requireSession();
+  if (!(await isPlatformAdmin(session.memberId))) return { ok: false, message: "Only Armada's admin can change this." };
+  await clearPdSettings();
+  await withWorkspace(
+    session.workspaceId,
+    (tx) => tx`
+      insert into armada.audit_log (workspace_id, member_id, action, detail)
+      values (${session.workspaceId}, ${session.memberId}, 'connection_service.cleared', '{}'::jsonb)`,
+  );
+  refresh();
+  return { ok: true, message: "Switched off. Accounts already connected stop working until it's on again." };
 }

@@ -8,6 +8,7 @@ import { timestampIsFresh, verifyQueryHmac } from "@/connectors/shopify/verify";
 import { getSession } from "@/lib/auth/session";
 import { safeReturnTo } from "@/lib/connections/registry";
 import { createState } from "@/lib/connections/state";
+import { serviceOn, startViaService } from "@/lib/connections/service";
 import { canManageConnections } from "@/lib/connections/status";
 
 // "Connect Shopify": checks the store's address, starts a one-time round trip, and sends the
@@ -33,7 +34,26 @@ function back(request: NextRequest, problem: string, extra: Record<string, strin
 export async function GET(request: NextRequest) {
   const q = new URL(request.url).searchParams;
   const app = shopifyApp();
-  if (!app || !shopifyInfo.available()) return back(request, "off");
+  if (!app || !shopifyInfo.available()) {
+    // No Shopify app of Armada's own: the connection service's approved app instead, where the
+    // seller types their store's address on the service's page and approves on Shopify's.
+    if (!(await serviceOn())) return back(request, "off");
+    const session = await getSession();
+    if (!session) return NextResponse.redirect(new URL("/welcome", request.url), 303);
+    if (!canManageConnections(session.role)) return back(request, "role");
+    try {
+      const to = await startViaService({
+        workspaceId: session.workspaceId,
+        memberId: session.memberId,
+        provider: "shopify",
+        purpose: "connect",
+        returnTo: safeReturnTo(q.get("returnTo")),
+      });
+      return NextResponse.redirect(to, 303);
+    } catch {
+      return back(request, "unreachable");
+    }
+  }
 
   const fromShopify = q.has("hmac");
   if (fromShopify && (!verifyQueryHmac(q, app.clientSecret) || !timestampIsFresh(q.get("timestamp")))) return back(request, "link");

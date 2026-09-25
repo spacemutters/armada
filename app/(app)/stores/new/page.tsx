@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { serviceOn } from "@/lib/connections/service";
 import type { ReactNode } from "react";
 import { isPlatformAdmin } from "../../admin/access";
 import { openPractice } from "./actions";
@@ -63,7 +64,7 @@ export default async function OpenStorePage({ searchParams }: { searchParams: Pr
     return { shops, unfinished };
   });
 
-  const ebayOn = ebayInfo.available();
+  const ebayOn = ebayInfo.available() || (await serviceOn());
   const facebookOn = facebookInfo.available();
   const message = typeof problem === "string" ? PROBLEMS[problem] : undefined;
 

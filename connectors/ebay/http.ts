@@ -13,7 +13,12 @@ import {
 } from "./core";
 
 // The one door to eBay. Every request to eBay leaves through send(): a 20-second limit, no caching,
-// and eBay's error list read back so callers can explain it (core.ts explainEbayProblem).
+// and eBay's error list read back so callers can explain it (core.ts explainEbayProblem). A seller
+// connected through the connection service is reached through its relay instead (ebayRequestVia),
+// which adds their access; the answer is read the same way.
+
+import { relay } from "@/connectors/pipedream/client";
+import type { ViaService } from "@/connectors/pipedream/core";
 
 export class EbayError extends Error {
   status: number;
@@ -75,6 +80,36 @@ export async function ebayRequest<T>(
   });
   if (status >= 200 && status < 300) return (json as T) ?? null;
   throw new EbayError(status, errorsOf(json));
+}
+
+/** The same call as ebayRequest, for a seller connected through the connection service (eBay's live site). */
+export async function ebayRequestVia<T>(
+  via: ViaService,
+  opts: { method?: "GET" | "POST" | "PUT" | "DELETE"; host?: "api" | "apiz"; path: string; query?: Query; body?: unknown; headers?: Record<string, string> },
+): Promise<T | null> {
+  const hosts = ebayHosts("production");
+  const url = new URL((opts.host === "apiz" ? hosts.apiz : hosts.api) + opts.path);
+  for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
+  let r: Awaited<ReturnType<typeof relay>>;
+  try {
+    r = await relay(via.externalUserId, via.accountId, url.toString(), {
+      method: opts.method ?? "GET",
+      headers: { accept: "application/json", ...opts.headers },
+      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+    });
+  } catch {
+    throw new EbayError(503, [], "eBay didn't answer in time.");
+  }
+  let json: unknown = null;
+  if (r.text) {
+    try {
+      json = JSON.parse(r.text);
+    } catch {
+      json = null;
+    }
+  }
+  if (r.status >= 200 && r.status < 300) return (json as T) ?? null;
+  throw new EbayError(r.status, errorsOf(json));
 }
 
 /** Swaps the one-time code from eBay's sign-in page for the seller's access. */

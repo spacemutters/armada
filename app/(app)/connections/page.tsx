@@ -1,6 +1,8 @@
 import { isPlatformAdmin } from "../admin/access";
-import { connectCjHere, disconnectHere } from "./actions";
+import { clearServiceHere, connectCjHere, disconnectHere, saveServiceHere } from "./actions";
 import { ConnectBanner, ConnectorGroup } from "@/components/connect/connector-card";
+import { ServiceSetup } from "@/components/connect/service-setup";
+import { pdStatus } from "@/connectors/pipedream/client";
 import { ButtonLink, PageHeader } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
 import { CONNECTOR_GROUPS, connector } from "@/lib/connections/registry";
@@ -20,6 +22,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
   const session = await requireSession();
   const sp = await searchParams;
   const [statuses, admin] = await Promise.all([connectionStatus(session.workspaceId), isPlatformAdmin(session.memberId)]);
+  const service = admin ? await pdStatus() : null;
   const canManage = canManageConnections(session.role);
   const origin = appOrigin();
 
@@ -63,6 +66,14 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
         />
       ) : problem ? (
         <ConnectBanner tone="problem" title={problem} />
+      ) : null}
+
+      {service ? (
+        <ServiceSetup
+          view={{ on: service.on, from: service.from, projectId: service.projectId, environment: service.environment }}
+          save={saveServiceHere}
+          clear={clearServiceHere}
+        />
       ) : null}
 
       {!canManage ? (

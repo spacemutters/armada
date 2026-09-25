@@ -264,7 +264,8 @@ function Actions({ s, canManage, typedShop, noun, connectCj }: { s: ProviderStat
   }
   if (!canManage) return null;
 
-  if (c.provider === "shopify") {
+  // Through the connection service, its own page asks which Shopify store; Armada's own app asks here.
+  if (c.provider === "shopify" && s.via === "own") {
     return (
       <div className="mt-5">
         <ShopifyConnect defaultShop={typedShop} startCollapsed={s.connectedCount > 0 && !typedShop} />
