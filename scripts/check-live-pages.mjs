@@ -54,7 +54,10 @@ try {
   expect(/Connections/.test(menu) && /Plan and billing/.test(menu), "the menu has Connections and Plan and billing");
   expect(!/\bAdmin\b/.test(menu), "a non-admin doesn't see Admin in the menu");
 
-  await visit("/connections", "connections", /Shopify[\s\S]*eBay[\s\S]*CJ Dropshipping/);
+  await visit("/connections", "connections", /Shopify[\s\S]*eBay[\s\S]*CJ Dropshipping[\s\S]*AliExpress/);
+  // Find products still searches the practice catalog when no supplier is connected.
+  const found = await visit("/products?tab=find&q=lamp", "find-products", /practice catalog/);
+  expect(/sells around/.test(found), "a practice search for lamp shows priced results");
   await visit("/billing", "billing", /Practice[\s\S]*Starter[\s\S]*Growth[\s\S]*Fleet/);
   const adminRes = await page.goto(`${base}/admin`, { waitUntil: "networkidle0" });
   expect(adminRes.status() === 404 || /Nothing here|could not be found/i.test(await text()), "Admin is closed to a non-admin");

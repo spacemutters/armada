@@ -6,7 +6,6 @@
 //   node scripts/preflight.mjs --selftest break each check on purpose and confirm it fails
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 const ROOT = process.cwd();
@@ -16,7 +15,7 @@ const args = new Set(process.argv.slice(2));
 function walk(dir, out = []) {
   if (!fs.existsSync(dir)) return out;
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (["node_modules", ".next", ".git", ".shots"].includes(e.name)) continue;
+    if (["node_modules", ".next", ".git", ".shots"].includes(e.name) || e.name.startsWith(".selftest-")) continue;
     const p = path.join(dir, e.name);
     if (e.isDirectory()) walk(p, out);
     else out.push(p);
@@ -27,7 +26,7 @@ const rel = (root, p) => path.relative(root, p).replace(/\\/g, "/");
 const sourceFiles = (root) => walk(root).filter((p) => /\.(ts|tsx|mjs|js)$/.test(p) && !rel(root, p).startsWith("scripts/"));
 
 // ---------- the checks ----------
-const PLATFORM_HOSTS = /(myshopify\.com\/admin|api\.ebay\.com|api\.sandbox\.ebay\.com|developers\.cjdropshipping\.com\/api|api-sg\.aliexpress\.com|api\.stripe\.com|graph\.facebook\.com|googleads\.googleapis\.com|business-api\.tiktok\.com)/;
+const PLATFORM_HOSTS = /(myshopify\.com\/admin|api\.ebay\.com|api\.sandbox\.ebay\.com|developers\.cjdropshipping\.com\/api|api-sg\.aliexpress\.com|api\.stripe\.com|graph\.facebook\.com|googleads\.googleapis\.com|business-api\.tiktok\.com|open\.tiktokapis\.com)/;
 
 const checks = {
   "one-door": {
@@ -158,7 +157,7 @@ const checks = {
   "plain-words": {
     what: "Main screens use plain words; technical terms live under Settings > Advanced",
     run(root) {
-      const MAIN = ["app/(app)/page.tsx", "app/(app)/stores", "app/(app)/builder", "app/(app)/products", "app/(app)/orders", "app/(app)/ads", "app/(app)/changes", "components/fleet-map.tsx", "components/shop-progress.tsx", "components/app-nav.tsx", "app/welcome", "app/setup", "components/passkey-setup.tsx", "components/passkey-sign-in.tsx"];
+      const MAIN = ["app/(app)/page.tsx", "app/(app)/stores", "app/(app)/builder", "app/(app)/products", "app/(app)/orders", "app/(app)/ads", "app/(app)/changes", "components/fleet-map.tsx", "components/shop-progress.tsx", "components/app-nav.tsx", "app/welcome", "app/setup", "components/passkey-setup.tsx", "components/passkey-sign-in.tsx", "app/(app)/social", "components/social-connect", "components/social"];
       const banned = /\b(API|APIs|OAuth|webhooks?|GraphQL|JSON|endpoints?|schema|SQL|env var|tokens?|CLI|RLS|row-level|UUID|payload|backend)\b/;
       const bad = [];
       for (const m of MAIN) {
@@ -167,7 +166,7 @@ const checks = {
         for (const f of files.filter((x) => fs.existsSync(x) && x.endsWith(".tsx"))) {
           const text = fs.readFileSync(f, "utf8");
           // Only words a person reads: JSX text and quoted sentences with spaces.
-          const visible = [...text.matchAll(/>([^<>{}]+)</g)].map((x) => x[1]).concat([...text.matchAll(/"([^"\n]*\s[^"\n]*)"/g)].map((x) => x[1]).filter((s) => !/^[\w-]+(\s[\w-]+)*$/.test(s) || /[A-Z][a-z]/.test(s)));
+          const visible = [...text.matchAll(/(?<![=\-])>([^<>{}]+)(?=[<{])/g)].map((x) => x[1]).concat([...text.matchAll(/"([^"\n]*\s[^"\n]*)"/g)].map((x) => x[1]).filter((s) => !/^[\w-]+(\s[\w-]+)*$/.test(s) || /[A-Z][a-z]/.test(s)));
           for (const v of visible) {
             if (/className|text-\[|px-|py-|min-h|grid-cols|rounded|flex|border|bg-|hover:|sf-/.test(v)) continue;
             const hit = v.match(banned);
@@ -282,6 +281,34 @@ const checks = {
             break;
           }
         }
+      }
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
+  suites: {
+    what: "Every offline test suite passes (scripts/check-*.mjs: ads, AliExpress, chooser, engines, passwords, Shopify, social, store openers, Stripe…)",
+    run(root) {
+      // Suites that need the live site, a real account or the database run by hand, not here.
+      const LIVE_ONLY = new Set(["check-cj-live.mjs", "check-live-pages.mjs", "check-ebay-deletion.mjs", "check-abtest-math.mjs"]);
+      const REQUIRED = ["check-ads.mjs", "check-aliexpress.mjs", "check-engines.mjs", "check-password.mjs", "check-shopify.mjs", "check-store-openers.mjs", "check-stripe.mjs"];
+      const dir = path.join(root, "scripts");
+      const present = fs.readdirSync(dir).filter((f) => /^check-.*\.mjs$/.test(f));
+      const problems = REQUIRED.filter((f) => !present.includes(f)).map((f) => `scripts/${f} is missing`);
+      for (const f of present.filter((x) => !LIVE_ONLY.has(x)).sort()) {
+        // No settings passed in, so every suite runs its offline part only.
+        const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(DATABASE_|SUPABASE_|STRIPE_|ENCRYPTION_KEY)/.test(k)));
+        const r = spawnSync(process.execPath, ["--no-warnings", path.join(dir, f)], { cwd: root, encoding: "utf8", timeout: 180_000, env });
+        if (r.error) {
+          problems.push(`${f} couldn't run: ${r.error.message}`);
+          continue;
+        }
+        if (r.status === 0) continue;
+        const fails = (r.stdout ?? "").split(/\r?\n/).filter((l) => /^(FAIL|not ok|✗)\b/.test(l.trim()));
+        problems.push(
+          fails.length
+            ? `${f}: ${fails[0].trim().replace(/^(FAIL|not ok|✗)\s*/, "")}${fails.length > 1 ? ` (+${fails.length - 1} more)` : ""}`
+            : `${f} stopped (exit ${r.status}): ${((r.stderr ?? "").trim().split(/\r?\n/).find((l) => /error/i.test(l)) || (r.stderr ?? "").trim().split(/\r?\n/)[0] || "no output").slice(0, 160)}`,
+        );
       }
       return problems.length ? problems.join("; ") : null;
     },
@@ -425,6 +452,11 @@ const PLANTS = {
     // A token call that skips the lane.
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('  await waitForSlot(workspaceId, "aliexpress", GAP_MS);\n  const t = await send("/auth/token/create"', '  const t = await send("/auth/token/create"'));
   },
+  suites: (dir) => {
+    const f = path.join(dir, "connectors", "aliexpress", "parse.ts");
+    // Shipping picked regardless of how long it takes: check-aliexpress.mjs must notice.
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("o.daysMax <= 14", "o.daysMax <= 60"));
+  },
   "sealed-keys": (dir) => {
     const f = path.join(dir, "connectors", "cj", "client.ts");
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("${seal(secret)}", "${JSON.stringify(secret)}"));
@@ -481,7 +513,7 @@ const PLANTS = {
 
 function copyTree(src, dst) {
   for (const e of fs.readdirSync(src, { withFileTypes: true })) {
-    if (["node_modules", ".next", ".git", ".shots"].includes(e.name)) continue;
+    if (["node_modules", ".next", ".git", ".shots"].includes(e.name) || e.name.startsWith(".selftest-")) continue;
     const s = path.join(src, e.name);
     const d = path.join(dst, e.name);
     if (e.isDirectory()) {
@@ -495,7 +527,8 @@ if (args.has("--selftest")) {
   let missed = 0;
   for (const [name, plant] of Object.entries(PLANTS)) {
     const check = checks[name.split("/")[0]];
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "armada-selftest-"));
+    // Inside the project, so the copy's test suites find the project's installed packages.
+    const dir = fs.mkdtempSync(path.join(ROOT, ".selftest-"));
     try {
       copyTree(ROOT, dir);
       const before = check.run(dir);

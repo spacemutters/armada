@@ -2,10 +2,12 @@ import { after } from "next/server";
 import { claimJob, recordHeartbeat } from "@/lib/ai/jobs";
 import { helperIdFrom, isHelper } from "@/lib/ai/helper-auth";
 import { resumeStalledCjBuilds } from "@/lib/shops/pipeline";
+import { publishDuePosts } from "@/lib/social/posts/schedule";
 
 export const maxDuration = 300;
 
-// The helper polls every couple of seconds; stalled CJ builds are looked for at most once a minute.
+// The helper polls every couple of seconds; stalled CJ builds and scheduled posts that are due are
+// looked for at most once a minute, so a post goes out on time even when nobody has the page open.
 let lastSweep = 0;
 
 export async function POST(request: Request) {
@@ -23,6 +25,7 @@ export async function POST(request: Request) {
   if (Date.now() - lastSweep > 60_000) {
     lastSweep = Date.now();
     after(() => resumeStalledCjBuilds().catch((e) => console.error("stalled build sweep failed", e)));
+    after(() => publishDuePosts().catch((e) => console.error("scheduled posts sweep failed", e)));
   }
   if (!job) return new Response(null, { status: 204 });
   return Response.json({ id: job.id, kind: job.kind, input: job.input });

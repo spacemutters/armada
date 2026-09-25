@@ -1,6 +1,6 @@
 "use client";
 
-import { CreditCard, History, House, Megaphone, MoreHorizontal, Package, Plug, Receipt, Settings, ShieldCheck, Store, WandSparkles } from "lucide-react";
+import { CreditCard, GalleryHorizontalEnd, History, House, Megaphone, MoreHorizontal, Package, Plug, Receipt, Settings, ShieldCheck, Store, WandSparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FleetMark } from "./auth-frame";
@@ -19,6 +19,7 @@ const MAIN = [
 ];
 const MORE = [
   { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/social", label: "Social posts", icon: GalleryHorizontalEnd },
   { href: "/changes", label: "Changes", icon: History },
   { href: "/connections", label: "Connections", icon: Plug },
   { href: "/billing", label: "Plan and billing", icon: CreditCard },
