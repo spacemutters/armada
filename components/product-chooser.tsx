@@ -142,14 +142,13 @@ export function ProductChooser({
         })}
       </ul>
 
-      <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 md:bottom-6">
-        <div className="flex flex-col gap-2.5 rounded-2xl border border-line bg-raised/95 px-4 py-3 shadow-[0_10px_30px_-12px_rgb(0_0_0/0.25)] backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="glass sticky bottom-[calc(88px+env(safe-area-inset-bottom))] z-10 flex flex-col gap-2.5 rounded-2xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 md:bottom-6">
           <div className="flex min-w-0 flex-col gap-1.5">
             <div className="flex items-baseline justify-between gap-3 sm:flex-col sm:items-start sm:gap-0" aria-live="polite">
               <span className="tabular text-[15px] font-semibold text-ink">
                 {count} of {need} chosen
               </span>
-              <span className={cx("text-[12px]", count > need ? "text-attention" : "text-muted")}>{status}</span>
+              <span className={cx("text-[12px] text-ink", count > need ? "font-semibold" : "")}>{status}</span>
             </div>
             <div aria-hidden className="flex w-full gap-0.5 sm:w-36">
               {Array.from({ length: need }, (_, i) => (
@@ -162,7 +161,6 @@ export function ProductChooser({
               Build the shop with these {need}
             </PendingButton>
           </form>
-        </div>
       </div>
     </div>
   );

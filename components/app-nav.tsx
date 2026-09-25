@@ -90,7 +90,7 @@ export function AppNav({
         aria-current={active ? "page" : undefined}
         className={cx(
           "flex min-h-9 items-center gap-3 rounded-xl px-3 text-[14px] transition-colors",
-          active ? "font-semibold text-ink" : "text-muted hover:bg-sunken hover:text-ink",
+          active ? "font-semibold text-ink" : "glass-hover text-muted hover:text-ink",
         )}
       >
         <n.icon aria-hidden className="size-[18px] shrink-0" strokeWidth={active ? 2.2 : 1.8} />
@@ -103,7 +103,7 @@ export function AppNav({
   return (
     <>
       {/* Computer: sidebar */}
-      <aside className="sticky top-0 hidden h-dvh w-[232px] shrink-0 flex-col border-r border-line bg-raised px-3 py-4 md:flex">
+      <aside className="glass glass-strong sticky top-3 z-10 my-3 ml-3 hidden h-[calc(100dvh-24px)] w-[232px] shrink-0 flex-col rounded-[22px] px-3 py-4 md:flex">
         <div className="mb-6 flex items-center gap-2.5 px-3">
           <FleetMark />
           <div className="min-w-0">
@@ -112,9 +112,9 @@ export function AppNav({
           </div>
         </div>
         <nav ref={side} aria-label="Main" className={cx(styles.glide, "relative flex flex-col gap-0.5")}>
-          <span data-glide-ind="" aria-hidden className={cx(styles.glideInd, "rounded-xl bg-sunken")} />
+          <span data-glide-ind="" aria-hidden className={cx(styles.glideInd, "glass-select rounded-xl")} />
           {MAIN.map(item)}
-          <div className="my-2 border-t border-line" />
+          <div className="mx-3 my-2 border-t border-line" />
           {more.map(item)}
         </nav>
         <div className="mt-auto flex flex-col gap-0.5">
@@ -124,7 +124,7 @@ export function AppNav({
             aria-current={settingsActive ? "page" : undefined}
             className={cx(
               "flex min-h-9 items-center gap-3 rounded-xl px-3 text-[14px] transition-colors",
-              settingsActive ? "bg-sunken font-semibold text-ink" : "text-muted hover:bg-sunken hover:text-ink",
+              settingsActive ? "glass-select font-semibold text-ink" : "glass-hover text-muted hover:text-ink",
             )}
           >
             <Settings aria-hidden className="size-[18px] shrink-0" strokeWidth={settingsActive ? 2.2 : 1.8} />
@@ -138,7 +138,7 @@ export function AppNav({
       </aside>
 
       {/* Phone: top bar and bottom tabs */}
-      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-raised/95 px-4 py-2 backdrop-blur md:hidden">
+      <header className="glass sticky top-0 z-20 flex items-center justify-between rounded-none border-x-0 border-t-0 px-4 py-2 md:hidden">
         <div className="flex min-w-0 items-center gap-2">
           <FleetMark size={18} />
           <span className="truncate text-[15px] font-semibold">{workspaceName}</span>
@@ -146,23 +146,23 @@ export function AppNav({
         <div className="flex items-center gap-1">
           <Link
             href="/settings#ai"
-            className="flex size-11 items-center justify-center rounded-xl hover:bg-sunken"
+            className="glass-hover glass-press flex size-11 items-center justify-center rounded-xl"
             aria-label={helperOnline ? (helperBusy ? "AI helper working" : "AI helper on") : "AI helper off"}
           >
             <ThinkingOrb state={helperOnline && helperBusy ? "working" : helperOnline ? "idle" : "off"} size={20} decorative />
           </Link>
           <details className="relative">
-            <summary className="flex size-11 cursor-pointer list-none items-center justify-center rounded-xl hover:bg-sunken" aria-label="More">
+            <summary className="glass-hover glass-press flex size-11 cursor-pointer list-none items-center justify-center rounded-xl" aria-label="More">
               <MoreHorizontal aria-hidden className="size-5" />
             </summary>
-            <div className="absolute right-0 mt-1 w-52 rounded-2xl border border-line bg-raised p-2 shadow-lg">
+            <div className="glass absolute right-0 mt-1 w-56 rounded-2xl p-2">
               {[...more, { href: "/settings", label: "Settings", icon: Settings }].map((n) => (
-                <Link key={n.href} href={n.href} className="flex min-h-11 items-center gap-3 rounded-xl px-3 hover:bg-sunken">
+                <Link key={n.href} href={n.href} className="glass-hover flex min-h-11 items-center gap-3 rounded-xl px-3 text-ink">
                   <n.icon aria-hidden className="size-[18px]" />
                   {n.label}
                 </Link>
               ))}
-              <SignOut className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-muted hover:bg-sunken" />
+              <SignOut className="glass-hover flex min-h-11 w-full items-center rounded-xl px-3 text-left text-ink" />
             </div>
           </details>
         </div>
@@ -170,9 +170,9 @@ export function AppNav({
       <nav
         ref={tabs}
         aria-label="Main"
-        className={cx(styles.glide, "fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-line bg-raised/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden")}
+        className={cx(styles.glide, "glass fixed inset-x-3 bottom-[calc(10px+env(safe-area-inset-bottom))] z-20 grid grid-cols-5 rounded-[26px] p-1 md:hidden")}
       >
-        <span data-glide-ind="" aria-hidden className={cx(styles.glideInd, "rounded-full bg-sunken")} />
+        <span data-glide-ind="" aria-hidden className={cx(styles.glideInd, "glass-select rounded-full")} />
         {MAIN.map((n) => {
           const active = isActive(pathname, n.href);
           return (
@@ -181,10 +181,10 @@ export function AppNav({
               href={n.href}
               data-glide-key={n.href}
               aria-current={active ? "page" : undefined}
-              className={cx("flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] transition-colors", active ? "font-semibold text-ink" : "text-muted")}
+              className={cx("glass-press flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] text-ink transition-colors", active ? "font-semibold" : "")}
             >
               <span data-glide-target="" data-glide-on={active ? "" : undefined} className="flex h-7 w-12 items-center justify-center rounded-full">
-                <n.icon aria-hidden className="size-5" strokeWidth={active ? 2.2 : 1.8} />
+                <n.icon aria-hidden className={cx("size-5", active ? "text-accent" : "")} strokeWidth={active ? 2.2 : 1.8} />
               </span>
               {n.short ?? n.label}
             </Link>

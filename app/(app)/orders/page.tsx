@@ -128,8 +128,8 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
             </table>
           </Card>
           {canSend ? (
-            <div className="sticky bottom-20 mt-4 flex items-center justify-end gap-3 rounded-2xl border border-line bg-raised/95 p-3 backdrop-blur md:bottom-6">
-              <span className="mr-auto px-2 text-[13px] text-muted">An order can only ever be sent once. Today&apos;s limit is 250 orders.</span>
+            <div className="glass sticky bottom-[calc(88px+env(safe-area-inset-bottom))] mt-4 flex items-center justify-end gap-3 rounded-2xl p-3 md:bottom-6">
+              <span className="mr-auto px-2 text-[13px] text-ink">An order can only ever be sent once. Today&apos;s limit is 250 orders.</span>
               <PendingButton pendingLabel="Sending to the supplier…" className={buttonClass("primary")}>
                 Send chosen to the supplier
               </PendingButton>

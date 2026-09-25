@@ -33,7 +33,8 @@ function tryFile(base) {
 }
 registerHooks({
   resolve(specifier, context, next) {
-    if (specifier === "server-only") return { url: pathToFileURL(path.join(root, "node_modules", "server-only", "empty.js")).href, shortCircuit: true };
+    // An empty module of its own, so this runs from any copy of the project, installed or not.
+    if (specifier === "server-only") return { url: "data:text/javascript,export%20%7B%7D", shortCircuit: true };
     if (specifier.startsWith("@/")) {
       const p = tryFile(path.join(root, specifier.slice(2)));
       if (p) return { url: pathToFileURL(p).href, shortCircuit: true };

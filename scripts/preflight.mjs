@@ -206,10 +206,63 @@ const checks = {
           }
         }
         if (t["accent-ink"] && t.accent && ratio(t["accent-ink"], t.accent) < 4.5) fails.push(`${mode} button text is ${ratio(t["accent-ink"], t.accent).toFixed(2)}:1`);
+        // Glass: ink must read on floating glass whatever scrolls beneath (pure black and pure white),
+        // and muted must read on the sidebar's glass, which only has the page behind it.
+        const pct = (name) => {
+          const block = mode === "light" ? css.match(/:root\s*{([^}]*)}/)?.[1] : css.match(/prefers-color-scheme:\s*dark\)\s*{\s*:root\s*{([^}]*)}/)?.[1];
+          const m = (block ?? "").match(new RegExp(`--${name}:\\s*([0-9.]+)%`));
+          return m ? Number(m[1]) / 100 : null;
+        };
+        const mix = (hexA, a, hexB) => {
+          const pa = parseInt(hexA.slice(1), 16);
+          const pb = parseInt(hexB.slice(1), 16);
+          const ch = (n, s) => (n >> s) & 255;
+          const c = [16, 8, 0].map((s) => Math.round(ch(pa, s) * a + ch(pb, s) * (1 - a)));
+          return `#${c.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+        };
+        const float = pct("glass-pct");
+        const strong = pct("glass-strong-pct");
+        if (!t["glass-tint"] || float === null || strong === null) fails.push(`${mode} glass tokens are missing`);
+        else {
+          for (const under of ["#000000", "#ffffff"]) {
+            const r = ratio(t.ink, mix(t["glass-tint"], float, under));
+            if (r < 4.5) fails.push(`${mode} ink on floating glass over ${under} is ${r.toFixed(2)}:1`);
+          }
+          for (const fg of ["ink", "muted"]) {
+            for (const under of ["surface", "page-top"]) {
+              if (!t[under]) continue;
+              const r = ratio(t[fg], mix(t["glass-tint"], strong, t[under]));
+              if (r < 4.5) fails.push(`${mode} ${fg} on the sidebar's glass is ${r.toFixed(2)}:1`);
+            }
+          }
+        }
         if (t.attention && t["attention-soft"] && ratio(t.attention, t["attention-soft"]) < 4.5) fails.push(`${mode} attention on its tint is ${ratio(t.attention, t["attention-soft"]).toFixed(2)}:1`);
       }
       if (!Object.keys(light).length || !Object.keys(dark).length) fails.push("couldn't read the color tokens");
       return fails.length ? fails.join("; ") : null;
+    },
+  },
+  "glass-layer": {
+    what: "Glass only floats above content (menus, bars, pop-ups): never on cards, rows or pages, and no muted words on bars content scrolls under",
+    run(root) {
+      const bad = [];
+      for (const f of sourceFiles(root).filter((p) => p.endsWith(".tsx"))) {
+        const text = fs.readFileSync(f, "utf8");
+        for (const m of text.matchAll(/className=(?:"([^"]*)"|\{[^}]*?"([^"]*)")/g)) {
+          const cls = m[1] ?? m[2] ?? "";
+          if (!/(^|\s)glass(\s|$)/.test(cls)) continue;
+          const tag = text.slice(text.lastIndexOf("<", m.index), m.index);
+          // Floating means sticky, fixed or absolutely placed; a Card or Section is content.
+          if (/<(Card|Section)\b/.test(tag) || !/(^|\s)(sticky|fixed|absolute)(\s|$)/.test(cls)) bad.push(`${rel(root, f)}: “${cls.slice(0, 60)}”`);
+          // Words on a bar that content scrolls under stay ink (the sidebar, which has only the page behind it, may use muted).
+          if (!/glass-strong/.test(cls)) {
+            const after = text.slice(m.index, m.index + 600);
+            const close = after.search(/<\/(div|header|nav|aside)>/);
+            if (/text-muted|text-attention/.test(after.slice(0, close < 0 ? 600 : close))) bad.push(`${rel(root, f)}: muted or colored words on floating glass near “${cls.slice(0, 40)}”`);
+          }
+        }
+      }
+      return bad.length ? bad.slice(0, 6).join("; ") : null;
     },
   },
   "ab-fair-count": {
@@ -456,6 +509,13 @@ const PLANTS = {
     const f = path.join(dir, "connectors", "aliexpress", "parse.ts");
     // Shipping picked regardless of how long it takes: check-aliexpress.mjs must notice.
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("o.daysMax <= 14", "o.daysMax <= 60"));
+  },
+  "glass-layer": (dir) => fs.writeFileSync(path.join(dir, "components", "planted.tsx"), `export const X = () => <Card className="glass p-4">A card</Card>;
+`),
+  "contrast/glass": (dir) => {
+    const f = path.join(dir, "app", "globals.css");
+    // Floating glass so thin that ink over a black photo stops reading.
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("--glass-pct: 78%;", "--glass-pct: 30%;"));
   },
   "sealed-keys": (dir) => {
     const f = path.join(dir, "connectors", "cj", "client.ts");

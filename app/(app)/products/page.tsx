@@ -116,7 +116,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
                 </li>
               ))}
             </ul>
-            <div className="sticky bottom-20 mt-6 flex justify-end md:bottom-6">
+            <div className="sticky bottom-[calc(88px+env(safe-area-inset-bottom))] mt-6 flex justify-end md:bottom-6">
               <PendingButton pendingLabel="Adding…" className={buttonClass("primary", "shadow-lg")}>
                 Add chosen to your products
               </PendingButton>
@@ -199,8 +199,8 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
               </tbody>
             </table>
           </Card>
-          <div className="sticky bottom-20 mt-4 flex flex-wrap items-center justify-end gap-2 rounded-2xl border border-line bg-raised/95 p-3 backdrop-blur md:bottom-6">
-            <span className="mr-auto px-2 text-[13px] text-muted">Choose products, then:</span>
+          <div className="glass sticky bottom-[calc(88px+env(safe-area-inset-bottom))] mt-4 flex flex-wrap items-center justify-end gap-2 rounded-2xl p-3 md:bottom-6">
+            <span className="mr-auto px-2 text-[13px] text-ink">Choose products, then:</span>
             <Button type="submit" formAction="/products/list" formMethod="get" variant="secondary">
               List in stores…
             </Button>
