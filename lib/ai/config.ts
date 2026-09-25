@@ -14,8 +14,10 @@ export type AiEngine = NonNullable<AiJobInput["engine"]>;
  * "ads.copy"). An exact kind beats a prefix and a longer prefix beats a shorter one.
  */
 export const AI_ENGINES: Record<string, AiEngine> = {
-  "ads.": "codex", // ad writing
-  "social.": "codex", // social carousel posts
+  // Ad and post writing run on Claude (2026-09-25: the ChatGPT tool on the owner's PC began refusing
+  // every job, and Davis said to use Claude). Pictures stay on ChatGPT: only its image maker draws them.
+  "ads.": "claude", // ad writing
+  "social.": "claude", // social carousel posts
   "images.": "codex", // pictures made with ChatGPT's image maker: shop brand images (lib/shops/images.ts), ad and post pictures (lib/creative)
   default: "claude", // shop building, headline tests and everything else
 };

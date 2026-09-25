@@ -49,9 +49,10 @@ const {
 // ---------- 1. routing ----------
 
 const routes = {
-  "ads.copy": "codex",
-  "ads.headlines.v2": "codex",
-  "social.carousel": "codex",
+  "ads.copy": "claude",
+  "ads.headlines.v2": "claude",
+  "social.carousel": "claude",
+  "images.scene": "codex",
   "shop.concept": "claude",
   "shop.products": "claude",
   "shop.pages": "claude",
@@ -61,8 +62,8 @@ const routes = {
 };
 for (const [kind, want] of Object.entries(routes)) report(engineFor(kind) === want, `engineFor("${kind}") is ${want}`, engineFor(kind));
 report(AI_ENGINES.default === "claude", "anything unlisted runs on claude");
-report(modelFor("ads.copy") === AI_DEFAULT_MODELS.codex, "ad jobs get the codex model", modelFor("ads.copy"));
-report(modelFor("social.carousel") === AI_DEFAULT_MODELS.codex, "social jobs get the codex model", modelFor("social.carousel"));
+report(modelFor("ads.copy") === AI_DEFAULT_MODELS.claude, "ad jobs get the claude model", modelFor("ads.copy"));
+report(modelFor("social.carousel") === AI_DEFAULT_MODELS.claude, "social jobs get the claude model", modelFor("social.carousel"));
 report(modelFor("shop.concept") === "sonnet" && modelFor("ab.variants") === "sonnet", "shop and headline jobs keep sonnet");
 const claudeAlias = /^(sonnet|opus|haiku|claude)/i;
 const crossed = Object.entries(AI_MODELS).filter(([kind, model]) => (engineFor(kind) === "codex") === claudeAlias.test(model));
