@@ -306,6 +306,20 @@ const checks = {
       return fails.length ? fails.join("; ") : null;
     },
   },
+  "actions-not-prefetched": {
+    what: "A press that starts something (/api/…) is never a Link: Link loads it ahead of time, which starts real connections nobody pressed",
+    run(root) {
+      const bad = [];
+      for (const f of sourceFiles(root).filter((p) => p.endsWith(".tsx"))) {
+        const text = fs.readFileSync(f, "utf8");
+        for (const m of text.matchAll(/<Link\b[^>]*\bhref=\{?\s*["'`]\/api\/[^>]*>/g)) bad.push(`${rel(root, f)}: ${m[0].replace(/\s+/g, " ").slice(0, 70)}`);
+      }
+      // Home's Needs you list carries connect presses by variable, so it must pick a plain link for them.
+      const home = path.join(root, "app", "(app)", "page.tsx");
+      if (fs.existsSync(home) && !/n\.href\.startsWith\("\/api\/"\) \?\s*\(\s*<a /.test(fs.readFileSync(home, "utf8"))) bad.push("app/(app)/page.tsx: Needs you links connect presses with Link");
+      return bad.length ? `presses that start something are Links: ${bad.slice(0, 4).join("; ")}` : null;
+    },
+  },
   "key-boxes": {
     what: "Boxes for pasted keys never take a saved password: Chrome ignores autocomplete off there, so they say new-password",
     run(root) {
@@ -679,6 +693,12 @@ const PLANTS = {
     const f = path.join(dir, "connectors", "aliexpress", "parse.ts");
     // Shipping picked regardless of how long it takes: check-aliexpress.mjs must notice.
     fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("o.daysMax <= 14", "o.daysMax <= 60"));
+  },
+  "actions-not-prefetched": (dir) => fs.writeFileSync(path.join(dir, "components", "planted.tsx"), `export const X = () => <Link href="/api/connect/service/printful/start">Finish connecting Printful</Link>;
+`),
+  "actions-not-prefetched/home": (dir) => {
+    const f = path.join(dir, "app", "(app)", "page.tsx");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace('n.href.startsWith("/api/") ?', 'false ?'));
   },
   "key-boxes": (dir) => fs.writeFileSync(path.join(dir, "components", "planted.tsx"), `export const X = () => <input name="apiKey" type="password" autoComplete="off" />;
 `),

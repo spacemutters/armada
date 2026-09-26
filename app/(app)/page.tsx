@@ -59,18 +59,32 @@ function SocialMedia({ shops }: { shops: ShopRow[] }) {
 function NeedsList({ needs }: { needs: { title: string; body: string; href: string }[] }) {
   return (
     <ul className="flex flex-col divide-y divide-line">
-      {needs.map((n, i) => (
-        <li key={i}>
-          <Link href={n.href} className="group flex items-start gap-3 py-3">
+      {needs.map((n, i) => {
+        const inner = (
+          <>
             <span aria-hidden className="mt-1.5 size-2 shrink-0 rotate-45 bg-attention" />
             <span className="min-w-0 flex-1">
               <span className="block font-medium group-hover:underline">{n.title}</span>
               <span className="block text-[13px] text-muted">{n.body}</span>
             </span>
             <ArrowRight aria-hidden className="mt-1 size-4 shrink-0 text-muted" />
-          </Link>
-        </li>
-      ))}
+          </>
+        );
+        return (
+          <li key={i}>
+            {/* A connect press starts a real connection, so it's a plain link: Link would load it ahead of time. */}
+            {n.href.startsWith("/api/") ? (
+              <a href={n.href} className="group flex items-start gap-3 py-3">
+                {inner}
+              </a>
+            ) : (
+              <Link href={n.href} className="group flex items-start gap-3 py-3">
+                {inner}
+              </Link>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
