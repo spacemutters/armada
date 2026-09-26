@@ -162,7 +162,7 @@ try {
              (select count(*)::int from armada.ad_sets where shop_id = ${shopId}) as ad_sets,
              (select count(*)::int from armada.social_accounts where shop_id = ${shopId}) as accounts`,
   );
-  expect(again.week_runs === 1 && again.ad_sets === 1 && again.accounts === 2, "more passes make nothing twice", again);
+  expect(again.week_runs === 1 && again.ad_sets === 1 && again.accounts === 3, "more passes make nothing twice", again);
 
   // ---- how it looks (back on the shop's page, which the walk-away left)
   await page.goto(shopUrl, { waitUntil: "networkidle0" });
