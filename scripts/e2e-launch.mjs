@@ -1,6 +1,6 @@
 // Browser test of Launch on the live site with a practice shop: build one (the AI helper on Davis's
 // computer does the AI work), press Launch, and check each step lands where it should: the shop's
-// own store, checkout waiting on payments, eBay saying practice items can't go on real eBay, practice
+// own store, checkout off for a practice shop, eBay saying practice items can't go on real eBay, practice
 // Facebook and Instagram accounts made by themselves, the first week of posts written and scheduled
 // on them, and the ads made and switched off. Pressing again changes nothing. Screenshots in light,
 // dark and on a phone. Makes a throwaway workspace ("Launch check"); delete it afterwards.
@@ -123,7 +123,8 @@ try {
   }
   expect(v?.status === "done", process.argv.includes("--watch") ? "the whole launch finishes by itself" : "the whole launch finishes by itself with nobody on its page", brief(v));
   expect(stepOf(v, "store")?.state === "done", "the shop's own store is done");
-  expect(stepOf(v, "checkout")?.state === "waiting" && stepOf(v, "checkout").note === "Switches on when payments are connected (Plan and billing).", "checkout waits on payments, in plain words", stepOf(v, "checkout"));
+  expect(stepOf(v, "checkout")?.state === "skipped" && stepOf(v, "checkout").note === "Practice shop: no real payments.", "a practice shop never takes payments, in plain words", stepOf(v, "checkout"));
+  expect(stepOf(v, "pinterest")?.state === "done" && /practice Pinterest account/.test(stepOf(v, "pinterest").note ?? ""), "a practice Pinterest account is made by itself", stepOf(v, "pinterest"));
   const eb = stepOf(v, "ebay");
   expect(eb?.state === "skipped" && /practice items can't go on real eBay/.test(eb.note ?? ""), "eBay explains that practice items can't go on real eBay", eb);
   expect(stepOf(v, "facebook")?.state === "done" && /practice Facebook account/.test(stepOf(v, "facebook").note ?? ""), "a practice Facebook account is made by itself", stepOf(v, "facebook"));
