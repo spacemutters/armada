@@ -72,7 +72,7 @@ export default async function OpenStorePage({ searchParams }: { searchParams: Pr
     <div className="mx-auto max-w-[980px]">
       <PageHeader
         title="Open a new store"
-        subtitle="Only eBay, Meta and Shopify can make a seller account, so each press opens their own sign-up or sign-in page; when you come back, Armada does the rest of the setup."
+        subtitle="Each press opens the platform's own sign-up. Armada does the rest when you're back."
       />
 
       {message ? (

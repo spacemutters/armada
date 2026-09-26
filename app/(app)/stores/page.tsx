@@ -56,7 +56,7 @@ export default async function StoresPage({ searchParams }: PageProps<"/stores">)
       {all.length === 0 ? (
         <EmptyState
           title="No stores yet"
-          body="Open a store on Shopify, eBay or Facebook in one press, or start a practice fleet to try everything without real money."
+          body="Open a store in one press, or start a practice fleet."
           action={
             <form action={startPracticeFleet} className="flex flex-wrap items-center gap-3">
               <ButtonLink href="/stores/new">Open a new store</ButtonLink>

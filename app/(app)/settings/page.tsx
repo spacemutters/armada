@@ -64,8 +64,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         <Section title="AI helper" className="scroll-mt-6">
           <div id="ai" className="flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-xl text-[14px] text-muted">
-              Shops and product copy are written by the AI helper on your computer, using your own Claude login. It can only write text back to
-              Armada: it has no access to your files and can&apos;t run anything.
+              Runs on your computer with your own sign-ins. It can only send text and pictures back to Armada.
             </p>
             <StatusPill tone={helper.online ? "ok" : "off"}>{helper.online ? (helper.busy ? "Working" : "On") : "Off"}</StatusPill>
           </div>
@@ -75,7 +74,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         <Section title="Connections" className="scroll-mt-6">
           <div id="connections" className="flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-xl text-[14px] text-muted">
-              Your stores, your supplier and your ad accounts connect on one page, each with one press.
+              Stores, suppliers and ad accounts, each in one press.
             </p>
             <ButtonLink href="/connections" variant="secondary">
               Open Connections

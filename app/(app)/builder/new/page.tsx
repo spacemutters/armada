@@ -17,7 +17,7 @@ export default async function NewShopPage({ searchParams }: PageProps<"/builder/
     <>
       <PageHeader
         title="Build a shop"
-        subtitle="Describe the idea. The AI names the brand, picks the look, finds and writes twice the products you ask for so you can choose the ones that go in, and writes every page. Prices come from your pricing rules, not the AI."
+        subtitle="Describe the idea. You choose the products; the AI does the rest."
       />
       <Card className="max-w-2xl p-6">
         <form action={createShops} className="flex flex-col gap-6">
@@ -83,11 +83,11 @@ export default async function NewShopPage({ searchParams }: PageProps<"/builder/
               <input type="hidden" name="source" value="practice" />
               <span className="text-[14px] font-medium">Products from</span>
               <p className="rounded-xl bg-sunken px-4 py-3 text-[14px]">
-                The practice catalog: real sample products with made-up costs, so you can see a whole shop before spending anything.{" "}
+                The practice catalog: sample products, made-up costs.{" "}
                 <Link href="/connections" className="text-accent hover:underline">
                   Connect CJ Dropshipping
                 </Link>{" "}
-                to build from real supplier products, costs and shipping times.
+                for real ones.
               </p>
             </div>
           )}

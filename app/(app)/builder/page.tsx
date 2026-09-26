@@ -30,7 +30,7 @@ export default async function BuilderPage() {
     <>
       <PageHeader
         title="Shop builder"
-        subtitle="Whole shops from one idea: brand, look, products, prices and pages. Build one, or ten at once, each with its own name and angle."
+        subtitle="Whole shops from one idea. Build one, or ten at once."
         actions={<ButtonLink href="/builder/new">Build a shop</ButtonLink>}
       />
       {shops.length === 0 ? (

@@ -202,8 +202,7 @@ export default async function ShopPage({ params, searchParams }: PageProps<"/bui
 
       {practiceCount > 0 ? (
         <p className="mb-6 max-w-3xl rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">
-          {practiceCount} of these products are practice items the AI suggested because the practice catalog had no close match. They show as
-          illustrations, not photos. Once your supplier account is connected, the builder uses real supplier products with real photos.
+          {practiceCount} of these are practice items (illustrations, not photos). Connect a supplier for real products.
         </p>
       ) : null}
 
@@ -333,8 +332,7 @@ export default async function ShopPage({ params, searchParams }: PageProps<"/bui
         </Section>
         <Section title="Policies">
           <p className="text-[13px] text-muted">
-            A refund policy and a shipping policy are drafted from the facts above. They are drafts: read them before a real store goes live, and use
-            Shopify&apos;s own generator for the privacy policy and terms.
+            Drafts from the facts above. Read them before selling.
           </p>
           <ul className="mt-3 flex flex-col divide-y divide-line">
             <li className="flex items-center justify-between py-2.5">
@@ -356,8 +354,7 @@ export default async function ShopPage({ params, searchParams }: PageProps<"/bui
       <Card className="mt-4 p-5">
         <h2 className="text-[15px] font-semibold">Publish to Shopify</h2>
         <p className="mt-1 max-w-2xl text-[13px] text-muted">
-          This needs a connected Shopify store, which needs your Shopify partner account first (step 4 in your sign-up list). Until then, the practice
-          store runs everything else exactly as a real one would.
+          Needs a connected Shopify store. The shop&apos;s own store and checkout work without it.
         </p>
         <Button className="mt-3" variant="secondary" disabled>
           Publish to Shopify

@@ -19,9 +19,9 @@ export default async function ChangesPage() {
   );
   return (
     <>
-      <PageHeader title="Changes" subtitle="Every change to more than one store: who asked for it, what it touched, and an Undo on each." />
+      <PageHeader title="Changes" subtitle="Every change across stores, each with Undo." />
       {rows.length === 0 ? (
-        <EmptyState title="No changes yet" body="When you list products in several stores or change prices, each change shows up here first as a preview." />
+        <EmptyState title="No changes yet" body="Listing or repricing across stores shows up here first, as a preview." />
       ) : (
         <Card>
           <ul className="flex flex-col divide-y divide-line">

@@ -68,7 +68,7 @@ export default async function HeadlineTestPage({ params, searchParams }: PagePro
       </Link>
       <PageHeader
         title="Headline test"
-        subtitle="Find out which home-page headline gets more visitors to add something to their bag. The AI writes the new versions; you choose, and the numbers decide."
+        subtitle="Which headline gets more shoppers to add to their bag."
       />
       {problem ? (
         <p role="alert" className="mb-4 rounded-xl bg-sunken px-4 py-3 text-[14px] text-negative">
@@ -92,7 +92,7 @@ export default async function HeadlineTestPage({ params, searchParams }: PagePro
           </p>
           {!helper.online ? (
             <p className="mt-3 rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">
-              The AI helper on your computer is off, so this is waiting. Start it and the versions arrive on their own.
+              The AI helper on your computer is off. Start it and the versions arrive on their own.
             </p>
           ) : null}
           {canEdit ? (

@@ -178,7 +178,7 @@ export default async function SocialPostsPage({ searchParams }: { searchParams: 
                 </p>
                 {!helper.online ? (
                   <p className="mt-3 rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">
-                    The AI helper on your computer is off, so this is waiting. Start it and the posts arrive on their own.
+                    The AI helper on your computer is off. Start it and the posts arrive on their own.
                   </p>
                 ) : null}
               </div>
@@ -334,7 +334,7 @@ function Accounts({ shopId, accounts, canEdit }: { shopId: string; accounts: Awa
 function PickShop({ shops }: { shops: ShopRow[] }) {
   return (
     <>
-      <PageHeader title="Social posts" subtitle="Pick a shop. The AI writes a week of carousel posts from its products, and you choose what goes out and when." />
+      <PageHeader title="Social posts" subtitle="Pick a shop." />
       {shops.length ? (
         <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line bg-raised">
           {shops.map((s) => (

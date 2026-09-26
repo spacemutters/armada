@@ -59,7 +59,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
 
   return (
     <>
-      <PageHeader title="Orders" subtitle="Every order from every store in one inbox. New orders go to the supplier, and tracking numbers flow back to the store." />
+      <PageHeader title="Orders" subtitle="Every order from every store." />
       <SegmentedNav
         label="Orders"
         active={tab.key}

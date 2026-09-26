@@ -169,7 +169,7 @@ export function ShopProgress({ shopId, initial }: { shopId: string; initial: Sta
       </ol>
       {waitingOnHelper ? (
         <p className="rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">
-          The AI helper on your computer is off, so this build is waiting. When it comes back on, the build picks up where it left off.
+          The AI helper on your computer is off. The build picks up when it&apos;s back.
         </p>
       ) : null}
       {state.status === "failed" && state.error ? (

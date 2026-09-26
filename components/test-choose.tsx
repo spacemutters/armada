@@ -103,8 +103,7 @@ export function TestChoose({
 
       <div className="flex flex-col gap-3 border-t border-line pt-6">
         <p className="max-w-2xl text-[14px] text-muted">
-          Half the people who visit the shop will see the new version, and the other half the original. Each person always sees the same one.
-          Armada counts how many in each half add something to their bag. You and your team are never counted.
+          Half your visitors see the new version, half the original. Your team is never counted.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit">Start the test</Button>

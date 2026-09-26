@@ -291,8 +291,7 @@ function StripeAdmin({ connection, paying }: { connection: StripeConnection | nu
             <summary className="flex min-h-11 cursor-pointer list-none items-center text-[14px] font-medium md:min-h-9">Replace the key</summary>
             <div className="mt-3 flex flex-col gap-3">
               <p className="text-[13px] text-muted">
-                Use a key from the same Stripe account, or the fleets paying now stop being heard from. To move from test to live, connect a live key: Armada sets everything up again
-                there.
+                Use a key from the same Stripe account. To go live, connect a live key.
               </p>
               <KeyForm replacing />
             </div>
@@ -305,7 +304,7 @@ function StripeAdmin({ connection, paying }: { connection: StripeConnection | nu
                 {paying > 0
                   ? `${paying.toLocaleString("en-US")} ${paying === 1 ? "fleet pays" : "fleets pay"} through Stripe right now. Stripe keeps charging them, but Armada stops hearing about renewals and cancellations.`
                   : "No fleet pays through Stripe right now."}{" "}
-                Plans and prices stay in Stripe, so connecting again later picks them up.
+                Plans and prices stay in Stripe.
               </p>
               <form action={disconnectStripeAction}>
                 <HoldButton
