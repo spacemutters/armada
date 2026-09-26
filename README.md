@@ -17,7 +17,13 @@ social posts, and a practice fleet that behaves like real stores without real mo
 - **AI**: jobs queue in `armada.ai_jobs`. The helper on Davis's computer (`helper/armada-helper.mjs`)
   claims them and runs the local Claude command-line tool on his own login, with every tool switched off,
   so the AI can only return text. Prompts and schemas live server-side (`lib/shops/prompts.ts`);
-  models are chosen in `lib/ai/config.ts`. Each finished step starts the next (`lib/shops/pipeline.ts`).
+  which tool and model run each job is set in `lib/ai/config.ts` only: writing (shops, ads, posts) runs
+  on Claude, pictures on ChatGPT's image maker (the Codex tool on his ChatGPT login). Ad and post
+  pictures (`BACKGROUND_KINDS`) wait behind every other job, so nothing a person is watching queues
+  behind a batch of pictures. Each finished step starts the next (`lib/shops/pipeline.ts`).
+  If ChatGPT fails with "Incorrect API key provided: sk-svcac…" from chatgpt.com, that is OpenAI's own
+  outage (check status.openai.com), not the sign-in; pictures that failed that way are asked for again
+  15 minutes later when their page is opened.
 - **Sign-in**: passkeys only. One-time setup links (`scripts/make-invite.mjs`) create the first owner;
   Settings makes links for more devices and teammates.
 - **CJ Dropshipping**: connected in Settings with the account's API key, which is exchanged for tokens
@@ -51,8 +57,11 @@ social posts, and a practice fleet that behaves like real stores without real mo
   `connectors/` may call a platform (preflight `one-door`); keys are sealed (`sealed-keys`).
 - **One-click connections through Pipedream Connect** (`connectors/pipedream/`, `lib/connections/service.ts`):
   a platform only shows its "Allow access?" page for an approved app. Pipedream holds approved apps
-  with Shopify and eBay, so when Armada has no app of its own there, Connect goes to Pipedream's page,
-  the seller approves on the platform's page, and `/api/connect/service/<platform>/done` finishes it.
+  for eBay, Pinterest, Facebook Pages, Printful, Printify, TikTok Ads and Google Ads (Shopify's is
+  bring-your-own now, so Shopify needs Armada's own app), so Connect goes to Pipedream's page, the
+  seller approves on the platform's page, and `/api/connect/service/<platform>/done` finishes it. The
+  connect link carries `popups=false`, so all of it happens in one tab instead of a popup that browsers
+  block. Verified live with eBay and Pinterest (2026-09-25).
   Armada keeps only which account it is; every Shopify/eBay call for that store goes through
   Pipedream's relay (Shopify as a relative path, since each store has its own address). Switched on by
   the platform admin on Connections (Project ID, Client ID, Client secret; sealed in
@@ -73,9 +82,11 @@ social posts, and a practice fleet that behaves like real stores without real mo
 - **Brand pictures** (`lib/shops/images.ts`): made by the helper with ChatGPT's image maker (model
   in `lib/ai/config.ts`; only `gpt-5.5` reaches it under the helper's lockdown), cut for desktop,
   phone and link previews, served from `/api/img/<id>`. They never show a product the shop sells.
-- **Ads and social** (`lib/ads`, `lib/social`): AI-written ad sets and carousel posts (ChatGPT,
-  `social.` and `ads.` jobs), practice results and practice accounts; scheduled posts go out from the
-  helper's once-a-minute sweep. Each product page has "Make an ad with AI" (three carousel ads for it).
+- **Ads and social** (`lib/ads`, `lib/social`): AI-written ad sets and carousel posts (`social.` and
+  `ads.` jobs, on Claude), practice results and practice accounts; scheduled posts go out from the
+  helper's once-a-minute sweep. Pinterest connects per shop through Pipedream: Armada finds or makes a
+  board named for the shop and posts pins through the relay (`connectors/social-accounts/pinterest.ts`;
+  carousel pins on business accounts, one picture otherwise). Each product page has "Make an ad with AI" (three carousel ads for it).
   Carousel ads have 4 to 6 cards and carousel posts 4 to 8 slides.
 - **Ad and post pictures** (`lib/creative`, `lib/ads/pictures.ts`, `lib/social/posts/pictures.ts`,
   table `creative_pictures`): made by the helper with ChatGPT's image maker (`images.scene`,
@@ -97,6 +108,17 @@ social posts, and a practice fleet that behaves like real stores without real mo
   view runs the passes itself; the helper's sweep carries on unwatched launches. Checks:
   `check-launch.mjs`, preflight `real-items-only`, `no-auto-signup`. Tested against the eBay stand-in
   (`e2e-launch-ebay.mjs`); `scripts/live-ebay-listing.mjs` is the live check (reads only unless `--publish`).
+- **Checkout on Armada shops** (`lib/shops/checkout*.ts`, `/s/<slug>/checkout`, `/s/<slug>/thanks`):
+  the shopper pays on Stripe's own page into the Stripe account connected on Plan and billing (only for
+  the workspace of whoever connected it). Prices always come from the shop, never the browser; a set
+  in the bag is one line at the set's price. The paid checkout becomes an order on the shop's own
+  store (platform `armada`; test payments land on a separate practice store). Send to supplier then
+  reserves each line (the no-double-orders key) and places the real CJ order to the address Stripe
+  collected (`lib/orders/send.ts`); other live stores say to order by hand rather than pretend. Launch
+  opens a real shop's checkout once payments are connected. Checks: `check-checkout.mjs`.
+- **Supplier search relevance** (`lib/catalog/relevance.ts`): CJ's search is loose, so results are
+  kept when they name the thing searched for (a search's last word), best first, and a search never
+  comes back empty because of it. `scripts/try-cj-relevance.mjs` shows it on real CJ results.
 - **Look**: the app's own tokens in `app/globals.css`, following the system light/dark setting.
   Glass (Apple's Liquid Glass rules) only on what floats above content: the sidebar, the phone's
   bars, sticky action bars and menus; solid when the system asks for less transparency or more
