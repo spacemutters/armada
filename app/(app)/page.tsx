@@ -11,6 +11,8 @@ import { homeSummary } from "@/lib/fleet/queries";
 import { formatMoney, formatMoneyCompact } from "@/lib/money";
 import { listShops } from "@/lib/shops/queries";
 import type { ShopRow } from "@/lib/shops/types";
+import { isPlatformAdmin } from "@/app/(app)/admin/access";
+import { setupNeeds } from "@/lib/connections/setup-needs";
 
 const SOCIAL_SHOWN = 6;
 
@@ -77,8 +79,16 @@ export const metadata = { title: "Home" };
 
 export default async function HomePage() {
   const session = await requireSession();
-  const [summary, helper, shops] = await Promise.all([homeSummary(session.workspaceId), helperStatus(), listShops(session.workspaceId)]);
-  const { yesterday, week, tiles, needs, counts } = summary;
+  const admin = await isPlatformAdmin(session.memberId);
+  const [summary, helper, shops, setup] = await Promise.all([
+    homeSummary(session.workspaceId),
+    helperStatus(),
+    listShops(session.workspaceId),
+    setupNeeds(session.workspaceId, { admin, canConnect: session.role === "owner" || session.role === "manager" }).catch(() => []),
+  ]);
+  const { yesterday, week, tiles, counts } = summary;
+  // Setup still waiting on a person comes first: each is one press.
+  const needs = [...setup, ...summary.needs];
   const firstName = session.name.split(" ")[0];
 
   if (counts.stores === 0) {

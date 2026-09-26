@@ -84,5 +84,11 @@ const client = read("connectors/pipedream/client.ts");
 report(/seal\(s\.clientSecret\)/.test(client), "the service's secret is kept sealed");
 report((client.match(/\bfetch\(/g) ?? []).length === 1, "the service has one door (one place that sends requests)");
 
+// Home lists setup still waiting on a person, each with its one press.
+const setup = fs.readFileSync(path.join(ROOT, "lib/connections/setup-needs.ts"), "utf8");
+report(/connect_started[\s\S]{0,200}interval '3 days'/.test(setup) && /\/api\/connect\/service\/\$\{r\.provider\}\/start/.test(setup), "a connection started but not finished shows on Home with its one press");
+report(/opts\.admin && !\(await stripeConnection\(\)\)/.test(setup), "only the Armada owner is asked to connect payments");
+report(/setupNeeds\(session\.workspaceId/.test(fs.readFileSync(path.join(ROOT, "app/(app)/page.tsx"), "utf8")), "Home puts setup at the top of Needs you");
+
 console.log(failures ? `\n${failures} check(s) failed` : "\nAll connection service checks passed");
 process.exit(failures ? 1 : 0);
