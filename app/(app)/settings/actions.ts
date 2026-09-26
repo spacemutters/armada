@@ -27,6 +27,16 @@ export async function renameWorkspace(formData: FormData) {
   redirect("/settings?saved=1");
 }
 
+/** The email shoppers of this workspace's real shops write to. Empty goes back to the owner's sign-in email. */
+export async function setShopContactEmail(formData: FormData) {
+  const session = await requireSession();
+  if (session.role !== "owner" && session.role !== "manager") redirect("/settings#contact");
+  const raw = String(formData.get("supportEmail") ?? "").trim().toLowerCase().slice(0, 200);
+  if (raw && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(raw)) redirect("/settings?contact=bad#contact");
+  await withWorkspace(session.workspaceId, (tx) => tx`update armada.workspaces set support_email = ${raw || null} where id = ${session.workspaceId}`);
+  redirect("/settings?contact=saved#contact");
+}
+
 export async function makeDeviceLink() {
   const session = await requireSession();
   const token = await asSystem((tx) => createInvite(tx, { memberId: session.memberId, hours: 24 }));

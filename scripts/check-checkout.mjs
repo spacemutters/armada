@@ -174,8 +174,18 @@ const orderPage = read("lib/shops/order-status.ts");
 report(/ORDER_TOKEN\.test\(token\)/.test(orderPage) && /o\.lookup_token = \$\{token\} and s\.platform = 'armada' and s\.shop_id = \$\{shopId\}/.test(orderPage), "a shopper's order page needs its code, and this shop");
 report(!/address|line1|email|phone/i.test(orderPage.replace(/\/\/.*$/gm, "")), "the order page never shows the address or contact details");
 report(/lookup_token\)\s*values[\s\S]{0,200}snap\.orderToken/.test(checkout), "the order keeps its code");
+// ---- a real shop's contact email ----
+const contact = read("lib/shops/contact.ts");
+report(/source === "practice"\) return \{ email: supportEmail\(shop\.blueprint\), real: false \}/.test(contact), "practice shops keep their reserved example address");
+report(/if \(row\?\.supportEmail\)[\s\S]{0,120}ownerEmail/.test(contact), "real shops use the contact email from Settings, else the owner's sign-in email");
+report(/if \(!\(await shopContactEmail\(shop\)\)\.real\) return \{ open: false, why: "contact" \}/.test(checkout), "a real shop takes no payment until shoppers have somewhere real to write");
+for (const f of ["app/s/[slug]/pages/[page]/page.tsx", "app/s/[slug]/policies/[policy]/page.tsx"]) {
+  const src = read(f);
+  report(/shopContactEmail\(data\.shop\)/.test(src) && !/supportEmail\(bp\)/.test(src), `${f.split("/").slice(-3, -1).join("/")} shows the shop's real contact email`);
+}
 const launch = read("lib/launch/checkout.ts");
-report(/if \(!pay\.connected\)[\s\S]{0,400}await openShopCheckout/.test(launch), "Launch opens checkout only once payments are connected");
+report(/if \(!contact\.real\)[\s\S]{0,300}Add a contact email[\s\S]{0,400}await openShopCheckout/.test(launch), "Launch asks for a contact email before opening checkout, and says which one shoppers see");
+report(/if \(!pay\.connected\)[\s\S]{0,1000}await openShopCheckout/.test(launch), "Launch opens checkout only once payments are connected");
 report(fs.existsSync(path.join(root, "supabase/migrations/0024_shop_checkout.sql")) && /'armada'/.test(read("supabase/migrations/0024_shop_checkout.sql")), "the database knows a shop's own store");
 
 console.log(failures ? `\n${failures} check(s) failed` : "\nAll checkout checks passed");

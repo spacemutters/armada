@@ -1,11 +1,12 @@
 import { headers } from "next/headers";
-import { makeDeviceLink, makeTeamInvite, removePasskey, renameWorkspace, setPasswordAction } from "./actions";
+import { setShopContactEmail, makeDeviceLink, makeTeamInvite, removePasskey, renameWorkspace, setPasswordAction } from "./actions";
 import { PasswordInput } from "@/components/password-input";
 import { Button, ButtonLink, Field, inputClass, PageHeader, Section, StatusPill } from "@/components/ui";
 import { helperStatus } from "@/lib/ai/jobs";
 import { requireSession } from "@/lib/auth/session";
 import { withWorkspace } from "@/lib/db";
 import { timeAgo } from "@/lib/text";
+import { workspaceContactEmail } from "@/lib/shops/contact";
 
 export const metadata = { title: "Settings" };
 
@@ -25,7 +26,7 @@ const PASSWORD_MESSAGES: Record<string, string> = {
 export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
   const session = await requireSession();
   const sp = await searchParams;
-  const [helper, data, h] = await Promise.all([
+  const [helper, data, h, contact] = await Promise.all([
     helperStatus(),
     withWorkspace(session.workspaceId, async (tx) => {
       const passkeys = await tx<{ id: string; deviceLabel: string | null; createdAt: Date; lastUsedAt: Date | null }[]>`
@@ -37,7 +38,9 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       return { passkeys, members, me };
     }),
     headers(),
+    workspaceContactEmail(session.workspaceId),
   ]);
+  const canSetContact = session.role === "owner" || session.role === "manager";
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
   const proto = h.get("x-forwarded-proto") ?? "https";
   const link = typeof sp.link === "string" ? `${proto}://${host}/setup/${sp.link}` : null;
@@ -59,6 +62,40 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
             ) : null}
           </form>
           {sp.saved ? <p className="mt-2 text-[13px] text-positive">Saved.</p> : null}
+        </Section>
+
+        <Section title="Shop contact email" className="scroll-mt-6">
+          <form id="contact" action={setShopContactEmail} className="flex flex-wrap items-end gap-3">
+            <label className="min-w-0 flex-1">
+              <span className="text-[13px] text-muted">Shoppers of your real shops write to this</span>
+              <input
+                name="supportEmail"
+                type="email"
+                autoComplete="email"
+                defaultValue={contact.set ? (contact.email ?? "") : ""}
+                placeholder={contact.email ?? "you@yourshop.com"}
+                maxLength={200}
+                className={`${inputClass} mt-1`}
+                disabled={!canSetContact}
+              />
+            </label>
+            {canSetContact ? (
+              <Button type="submit" variant="secondary">
+                Save
+              </Button>
+            ) : null}
+          </form>
+          <p className="mt-2 text-[13px] text-muted">
+            {sp.contact === "bad"
+              ? "That doesn't look like an email address."
+              : sp.contact === "saved"
+                ? "Saved."
+                : contact.set
+                  ? null
+                  : contact.email
+                    ? `Using your sign-in email, ${contact.email}, until you set one.`
+                    : "Real shops take payments once this is set."}
+          </p>
         </Section>
 
         <Section title="AI helper" className="scroll-mt-6">

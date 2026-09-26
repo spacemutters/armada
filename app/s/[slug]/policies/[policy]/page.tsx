@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { loadStorefront, supportEmail } from "@/lib/shops/storefront";
+import { shopContactEmail } from "@/lib/shops/contact";
+import { loadStorefront } from "@/lib/shops/storefront";
 import { Markdown } from "@/lib/markdown";
 
 const TITLES: Record<string, string> = { refund: "Refund policy", shipping: "Shipping policy" };
@@ -21,7 +22,7 @@ export default async function PolicyPage({ params }: PageProps<"/s/[slug]/polici
       <p className="sf-muted mt-5 max-w-[60ch] text-[15px]">
         Drafted from this shop&apos;s delivery and returns facts. The owner reviews it before the shop takes real orders.
       </p>
-      <Markdown text={text} vars={{ support_email: supportEmail(bp) }} className="sf-prose mt-10" />
+      <Markdown text={text} vars={{ support_email: (await shopContactEmail(data.shop)).email }} className="sf-prose mt-10" />
     </article>
   );
 }

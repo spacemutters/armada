@@ -6,6 +6,7 @@ import { stripeConnection, stripeSecrets } from "@/lib/billing/settings";
 import { appOrigin } from "@/lib/connections/types";
 import { asSystem, withWorkspace, type Tx } from "@/lib/db";
 import { feesCents } from "@/lib/pricing";
+import { shopContactEmail } from "./contact";
 import { CHECKOUT_COUNTRIES, planCheckout, readSoldMetadata, soldMetadata, type CheckoutItem } from "./checkout-core";
 import { loadStorefront, storeItems } from "./storefront";
 import type { ShopRow } from "./types";
@@ -15,7 +16,7 @@ import type { ShopRow } from "./types";
 // (platform 'armada'), and the Orders page sends it to the supplier like any other order.
 // Prices always come from the shop, never from the shopper's browser (checkout-core.ts).
 
-export type CheckoutState = { open: true; test: boolean } | { open: false; why: "practice" | "closed" | "payments" };
+export type CheckoutState = { open: true; test: boolean } | { open: false; why: "practice" | "closed" | "payments" | "contact" };
 
 /**
  * The workspace whose shops the connected Stripe account takes payments for: the one of the person
@@ -42,6 +43,8 @@ export async function checkoutState(shop: ShopRow): Promise<CheckoutState> {
   if (!shop.checkoutOpen) return { open: false, why: "closed" };
   const pay = await paymentsFor(shop.workspaceId);
   if (!pay.connected) return { open: false, why: "payments" };
+  // Shoppers need somewhere real to write to before they pay.
+  if (!(await shopContactEmail(shop)).real) return { open: false, why: "contact" };
   return { open: true, test: pay.test };
 }
 
@@ -50,6 +53,7 @@ export const CLOSED_WORDS: Record<Exclude<CheckoutState, { open: true }>["why"],
   practice: "This is a practice shop, so checkout is off.",
   closed: "Checkout opens when the shop launches.",
   payments: "Checkout opens when payments are connected.",
+  contact: "Checkout opens when the shop has a contact email.",
 };
 
 function absoluteImage(url: string | undefined | null): string | null {

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { loadStorefront, supportEmail } from "@/lib/shops/storefront";
+import { shopContactEmail } from "@/lib/shops/contact";
+import { loadStorefront } from "@/lib/shops/storefront";
 import { Markdown } from "@/lib/markdown";
 
 const TITLES: Record<string, string> = {
@@ -23,7 +24,8 @@ export default async function InfoPage({ params }: PageProps<"/s/[slug]/pages/[p
   const bp = data.shop.blueprint;
   const pages = bp.pages;
   if (!pages) notFound();
-  const vars = { support_email: supportEmail(bp) };
+  const contact = await shopContactEmail(data.shop);
+  const vars = { support_email: contact.email };
 
   return (
     <article className="sf-wrap pt-[clamp(2.5rem,6vw,5rem)] pb-[var(--s-section)]">
@@ -33,7 +35,9 @@ export default async function InfoPage({ params }: PageProps<"/s/[slug]/pages/[p
       <div className="mt-12 grid gap-12 lg:grid-cols-[4fr_8fr]">
         <p className="sf-muted text-[15px]">
           {page === "contact"
-            ? `We read every message. Practice shops use a reserved example address, so nothing sent here reaches anyone.`
+            ? contact.real
+              ? "We read every message."
+              : "This is a practice shop, so its address is an example and nothing sent to it reaches anyone."
             : bp.brand?.tagline}
         </p>
         {page === "faq" ? (

@@ -1,5 +1,6 @@
 import "server-only";
 import { openShopCheckout, paymentsFor } from "@/lib/shops/checkout";
+import { shopContactEmail } from "@/lib/shops/contact";
 import type { ShopRow } from "@/lib/shops/types";
 import type { LaunchStep } from "./core";
 
@@ -19,10 +20,19 @@ export async function checkoutStep(workspaceId: string, shop: ShopRow): Promise<
       actions: [{ label: "Connect Stripe", href: "/billing", primary: true }],
     };
   }
+  const contact = await shopContactEmail(shop);
+  if (!contact.real) {
+    return {
+      state: "needs-you",
+      ask: "Add a contact email",
+      note: "Shoppers need an email to write to before they pay.",
+      actions: [{ label: "Add it in Settings", href: "/settings#contact", primary: true }],
+    };
+  }
   await openShopCheckout(workspaceId, shop.id);
   return {
     state: "done",
-    note: pay.test ? "Takes test payments (no real cards charged)." : "Takes payments into your Stripe.",
+    note: `${pay.test ? "Takes test payments (no real cards charged)." : "Takes payments into your Stripe."} Shoppers write to ${contact.email}.`,
     actions: [{ label: "See the bag", href: `/s/${shop.slug}/cart`, external: true }],
   };
 }
