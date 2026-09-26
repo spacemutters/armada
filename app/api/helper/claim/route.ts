@@ -3,6 +3,7 @@ import { claimJob, recordHeartbeat } from "@/lib/ai/jobs";
 import { helperIdFrom, isHelper } from "@/lib/ai/helper-auth";
 import { resumeLiveEbayChanges } from "@/lib/changes/engine";
 import { advanceOpenLaunches } from "@/lib/launch/run";
+import { syncCjOrders } from "@/lib/orders/track";
 import { resumeStalledCjBuilds } from "@/lib/shops/pipeline";
 import { publishDuePosts } from "@/lib/social/posts/schedule";
 
@@ -31,6 +32,8 @@ export async function POST(request: Request) {
     // Launches nobody is watching carry on, and approved eBay listings that stopped part way finish.
     after(() => advanceOpenLaunches().catch((e) => console.error("launch sweep failed", e)));
     after(() => resumeLiveEbayChanges().catch((e) => console.error("eBay listing sweep failed", e)));
+    // Real CJ orders on their way: tracking numbers and shipped/delivered, a few orders a minute.
+    after(() => syncCjOrders().catch((e) => console.error("CJ order sweep failed", e)));
   }
   if (!job) return new Response(null, { status: 204 });
   return Response.json({ id: job.id, kind: job.kind, input: job.input });

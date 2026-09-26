@@ -1,4 +1,5 @@
 import "server-only";
+import { randomBytes } from "node:crypto";
 import { createShopCheckoutSession, retrieveCheckoutSession } from "@/connectors/stripe/client";
 import { describeStripeProblem, readShopCheckout, type ShopCheckoutSnapshot } from "@/connectors/stripe/payloads";
 import { stripeConnection, stripeSecrets } from "@/lib/billing/settings";
@@ -88,6 +89,8 @@ export async function startShopCheckout(slug: string, rawBag: unknown): Promise<
       pay: plan.pay,
       sold: soldMetadata(plan.sold),
       countries: CHECKOUT_COUNTRIES,
+      shopName: data.shop.blueprint.brand?.name || data.shop.niche,
+      orderToken: randomBytes(18).toString("base64url"),
     });
     return { url: s.url };
   } catch (e) {
@@ -121,8 +124,8 @@ export async function recordShopOrder(tx: Tx, snap: ShopCheckoutSnapshot): Promi
   if (!shop) return "no_shop";
   const storeId = await shopStore(tx, shop, snap.livemode);
   const [order] = await tx<{ id: string }[]>`
-    insert into armada.orders (workspace_id, store_id, external_id, placed_at, customer_country, total_cents, fees_cents)
-    values (${shop.workspaceId}, ${storeId}, ${snap.sessionId}, now(), ${snap.country}, ${snap.amountTotal}, ${feesCents(snap.amountTotal, "armada")})
+    insert into armada.orders (workspace_id, store_id, external_id, placed_at, customer_country, total_cents, fees_cents, lookup_token)
+    values (${shop.workspaceId}, ${storeId}, ${snap.sessionId}, now(), ${snap.country}, ${snap.amountTotal}, ${feesCents(snap.amountTotal, "armada")}, ${snap.orderToken})
     on conflict (store_id, external_id) do nothing
     returning id`;
   if (!order) return "duplicate";
@@ -145,7 +148,7 @@ export async function recordShopOrder(tx: Tx, snap: ShopCheckoutSnapshot): Promi
 }
 
 /** For the thank-you page: whether this checkout was paid, for this shop. Records the order too, in case Stripe's notification is late. */
-export async function confirmShopCheckout(shop: ShopRow, sessionId: string): Promise<{ paid: boolean; test: boolean }> {
+export async function confirmShopCheckout(shop: ShopRow, sessionId: string): Promise<{ paid: boolean; test: boolean; orderToken?: string | null }> {
   if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(sessionId)) return { paid: false, test: false };
   const secrets = await stripeSecrets();
   if (!secrets) return { paid: false, test: false };
@@ -153,7 +156,7 @@ export async function confirmShopCheckout(shop: ShopRow, sessionId: string): Pro
     const snap = readShopCheckout(await retrieveCheckoutSession(secrets.secretKey, sessionId));
     if (!snap || snap.shopId !== shop.id || !snap.paid) return { paid: false, test: false };
     await asSystem((tx) => recordShopOrder(tx, snap));
-    return { paid: true, test: !snap.livemode };
+    return { paid: true, test: !snap.livemode, orderToken: snap.orderToken };
   } catch (e) {
     console.error("storefront checkout: couldn't confirm", e instanceof Error ? e.message : e);
     return { paid: false, test: false };

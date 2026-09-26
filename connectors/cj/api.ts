@@ -220,6 +220,16 @@ export async function createOrder(
   });
 }
 
+/** One CJ order as CJ sees it now: its status, and the tracking number once it has shipped. */
+export async function orderDetail(workspaceId: string, orderId: string) {
+  return cj<{ orderId?: string; orderNum?: string; orderStatus?: string; trackNumber?: string | null; logisticName?: string | null }>(
+    workspaceId,
+    "GET",
+    "/shopping/order/getOrderDetail",
+    { query: { orderId } },
+  );
+}
+
 export async function trackInfo(workspaceId: string, trackingNumbers: string[]) {
   return cj<{ trackingNumber: string; trackingStatus: string; logisticName: string; deliveryDay?: string; lastTrackNumber?: string }[]>(
     workspaceId,

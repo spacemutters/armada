@@ -98,7 +98,10 @@ report(!core.planCheckout([], items, []).ok && !core.planCheckout("nonsense", it
   const p = stripe.shopCheckoutParams({
     workspaceId: id(50), shopId: id(51), shopUrl: "https://armada.test/s/abc123", currency: "USD",
     pay: plan.pay, sold: core.soldMetadata(plan.sold), countries: core.CHECKOUT_COUNTRIES,
+    shopName: "Lull Room", orderToken: "Tk_abcdefghijklmnopqrstuv",
   });
+  report(p.payment_intent_data.description === "Lull Room order. Follow it at https://armada.test/s/abc123/order/Tk_abcdefghijklmnopqrstuv", "the receipt carries the link to follow the order", p.payment_intent_data.description);
+  report(p.metadata.order_token === "Tk_abcdefghijklmnopqrstuv", "the order's code rides with the sale");
   report(p.mode === "payment" && JSON.stringify(p.payment_method_types) === '["card"]', "a one-off card payment, so it's paid the moment it completes");
   report(p.line_items[0].price_data.unit_amount === 2400 && p.line_items[0].price_data.currency === "usd", "amounts in cents, in dollars");
   report(JSON.stringify(p.line_items[0].price_data.product_data.images) === '["https://cdn.test/mug.jpg"]' && p.line_items[1].price_data.product_data.images === undefined, "only https pictures are sent to Stripe");
@@ -112,13 +115,14 @@ report(!core.planCheckout([], items, []).ok && !core.planCheckout("nonsense", it
 {
   const session = {
     object: "checkout.session", id: "cs_test_abc", mode: "payment", status: "complete", payment_status: "paid", livemode: false,
-    amount_total: 6000, currency: "usd", metadata: { armada: "shop_order", workspace_id: id(50), shop_id: id(51), l0: `${id(1)}|1|2400` },
+    amount_total: 6000, currency: "usd", metadata: { armada: "shop_order", workspace_id: id(50), shop_id: id(51), order_token: "Tk_abcdefghijklmnopqrstuv", l0: `${id(1)}|1|2400` },
     collected_information: { shipping_details: { name: "Sam Rivera", address: { line1: "1 Main St", line2: null, city: "Lakeland", state: "FL", postal_code: "33801", country: "US" } } },
     customer_details: { email: "sam@example.com", phone: "+18635550100", name: "Sam R", address: { country: "US" } },
   };
   const snap = stripe.readShopCheckout(session);
   report(snap && snap.paid && snap.shopId === id(51) && snap.amountTotal === 6000 && snap.country === "US" && !snap.livemode, "a paid storefront checkout is read back", snap);
   report(stripe.readShopCheckout({ ...session, payment_status: "unpaid" })?.paid === false, "an unpaid one isn't counted as paid");
+  report(snap.orderToken === "Tk_abcdefghijklmnopqrstuv" && stripe.readShopCheckout({ ...session, metadata: { ...session.metadata, order_token: "../x" } }).orderToken === null, "the order's code is read back, and a bad one is refused");
   report(stripe.readShopCheckout({ ...session, mode: "subscription" }) === null && stripe.readShopCheckout({ ...session, metadata: { armada: "billing" } }) === null, "Armada's own plan billing is never read as a sale");
   report(stripe.readShopCheckout({ ...session, metadata: { armada: "shop_order", workspace_id: "x", shop_id: id(51) } }) === null, "a sale without a real workspace is refused");
   const ship = stripe.readShipTo(session);
@@ -136,6 +140,17 @@ report(!core.planCheckout([], items, []).ok && !core.planCheckout("nonsense", it
   report(cj.cjAnswerProblem(null) !== null && cj.cjAnswerProblem({}) !== null, "no answer means not sent");
 }
 
+// ---- after the sale: where a CJ order stands ----
+report(cj.cjOrderState({ orderStatus: "UNSHIPPED" }).state === "placed", "paid at CJ but not shipped is still being packed");
+report(cj.cjOrderState({ orderStatus: "SHIPPED", trackNumber: " YT123 ", logisticName: "CJPacket" }).tracking === "YT123", "a shipped CJ order gives its tracking number and carrier");
+report(cj.cjOrderState({ orderStatus: "UNPAID", trackNumber: "LX9" }).state === "shipped", "a tracking number means it has shipped");
+report(cj.cjOrderState({ orderStatus: "DELIVERED" }).state === "delivered" && cj.cjOrderState({ orderStatus: "CANCELLED" }).state === "cancelled", "delivered and cancelled are read as such");
+report(cj.cjOrderState(null).state === "placed", "no answer changes nothing");
+report(cj.orderStatusFrom(["shipped", "placed"]) === null, "an order is on its way only once everything in it has shipped");
+report(cj.orderStatusFrom(["shipped", "delivered"])?.status === "shipped" && cj.orderStatusFrom(["delivered", "delivered"])?.status === "delivered", "shipped, then delivered once it has all arrived");
+report(cj.orderStatusFrom(["cancelled"])?.status === "problem", "a cancelled CJ order becomes a problem on the Orders page");
+report(cj.trackingUrl("YT 1").startsWith("https://") && cj.trackingUrl("YT 1").endsWith("YT%201"), "the tracking link is a safe address");
+
 // ---- wiring (read as text) ----
 const webhook = read("lib/billing/webhook.ts");
 report(/readShopCheckout\(obj\)[\s\S]{0,400}asSystem\(async \(tx\) => \{\s*await recordShopOrder\(tx, sale\);\s*await tx`insert into armada\.stripe_events/.test(webhook), "a paid sale and its Stripe event are saved together, once");
@@ -151,6 +166,14 @@ report(reserve > 0 && reserve < send.indexOf("await createOrder("), "each line i
 report(/mode !== "practice" && platform !== "armada"[\s\S]{0,200}NOT_AUTOMATIC/.test(send), "other live stores say to order by hand instead of pretending");
 report(!/PS-[\s\S]{0,80}'cj'|"cj" : /.test(send), "a practice number is never passed off as a CJ order");
 report(/giveUp[\s\S]{0,300}delete from armada\.supplier_orders[\s\S]{0,120}external_id is null/.test(send), "a refused CJ order lets go of its reservation, so it can be sent again");
+const track = read("lib/orders/track.ts");
+report(/having max\(updated_at\) < now\(\) - interval '30 minutes'/.test(track), "each CJ order is checked at most every 30 minutes");
+report(/case when \$\{RANK\[s\.state\]\}::int >/.test(track), "a CJ order's status never moves back");
+report(/syncCjOrders\(\)/.test(read("app/api/helper/claim/route.ts")), "the helper's sweep checks CJ orders");
+const orderPage = read("lib/shops/order-status.ts");
+report(/ORDER_TOKEN\.test\(token\)/.test(orderPage) && /o\.lookup_token = \$\{token\} and s\.platform = 'armada' and s\.shop_id = \$\{shopId\}/.test(orderPage), "a shopper's order page needs its code, and this shop");
+report(!/address|line1|email|phone/i.test(orderPage.replace(/\/\/.*$/gm, "")), "the order page never shows the address or contact details");
+report(/lookup_token\)\s*values[\s\S]{0,200}snap\.orderToken/.test(checkout), "the order keeps its code");
 const launch = read("lib/launch/checkout.ts");
 report(/if \(!pay\.connected\)[\s\S]{0,400}await openShopCheckout/.test(launch), "Launch opens checkout only once payments are connected");
 report(fs.existsSync(path.join(root, "supabase/migrations/0024_shop_checkout.sql")) && /'armada'/.test(read("supabase/migrations/0024_shop_checkout.sql")), "the database knows a shop's own store");

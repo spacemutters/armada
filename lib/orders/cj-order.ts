@@ -36,6 +36,39 @@ export function cjOrderInput(orderId: string, ship: ShipTo, items: { vid: string
   };
 }
 
+export type SupplierState = "placed" | "shipped" | "delivered" | "cancelled";
+
+/**
+ * Where a CJ order stands, from CJ's order detail: shipped once it has a tracking number or says so,
+ * delivered or cancelled when CJ says so, otherwise still placed (paid, being packed).
+ */
+export function cjOrderState(d: { orderStatus?: unknown; trackNumber?: unknown; logisticName?: unknown } | null): {
+  state: SupplierState;
+  tracking: string | null;
+  carrier: string | null;
+} {
+  const status = String(d?.orderStatus ?? "").toUpperCase();
+  const tracking = typeof d?.trackNumber === "string" && d.trackNumber.trim() ? d.trackNumber.trim() : null;
+  const carrier = typeof d?.logisticName === "string" && d.logisticName.trim() ? d.logisticName.trim() : null;
+  if (/CANCEL|CLOSED|REFUND/.test(status)) return { state: "cancelled", tracking, carrier };
+  if (/DELIVERED|COMPLETE|FINISH/.test(status)) return { state: "delivered", tracking, carrier };
+  if (/SHIPPED|SHIPPING|TRANSIT/.test(status) && !/UNSHIPPED/.test(status)) return { state: "shipped", tracking, carrier };
+  if (tracking) return { state: "shipped", tracking, carrier };
+  return { state: "placed", tracking: null, carrier };
+}
+
+/** An order's status from its supplier orders, or null when it shouldn't change. */
+export function orderStatusFrom(states: string[]): { status: "shipped" | "delivered" | "problem"; problem?: string } | null {
+  if (!states.length) return null;
+  if (states.every((s) => s === "cancelled")) return { status: "problem", problem: "CJ cancelled this order. Check it in CJ." };
+  if (states.every((s) => s === "delivered")) return { status: "delivered" };
+  if (states.every((s) => s === "shipped" || s === "delivered")) return { status: "shipped" };
+  return null;
+}
+
+/** Where a shopper follows a parcel: a tracker that reads any carrier's number. */
+export const trackingUrl = (tracking: string) => `https://t.17track.net/en#nums=${encodeURIComponent(tracking)}`;
+
 /** What CJ's answer means: null when the order was placed, otherwise why not, in plain words. */
 export function cjAnswerProblem(r: { orderId?: unknown; interceptOrderReasons?: unknown[]; logisticsMiss?: boolean } | null): string | null {
   if (!r || typeof r.orderId !== "string" || !r.orderId) return "CJ didn't confirm the order.";

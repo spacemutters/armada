@@ -384,6 +384,9 @@ export function missingPermission(message: string | null | undefined): { resourc
 
 // ---------- Checkout on Armada's own storefronts ----------
 
+/** A shopper's order-page code: random, URL-safe. */
+export const ORDER_TOKEN = /^[A-Za-z0-9_-]{20,40}$/;
+
 /** Shop sales carry this in their metadata, apart from Armada's own plan billing. */
 export const SHOP_ORDER_METADATA = { armada: "shop_order" } as const;
 
@@ -397,11 +400,15 @@ export interface ShopCheckoutInput {
   /** What was sold, one key per product (lib/shops/checkout-core soldMetadata). */
   sold: Record<string, string>;
   countries: readonly string[];
+  /** The shop's name, for the shopper's receipt. */
+  shopName: string;
+  /** A random code for the shopper's order page (/order/<code>), made before Stripe's page opens. */
+  orderToken: string;
 }
 
 /** One payment on Stripe's own checkout page for a storefront bag. Cards only, so it's paid the moment it completes. */
 export function shopCheckoutParams(input: ShopCheckoutInput): FormParams {
-  const meta = { ...SHOP_ORDER_METADATA, workspace_id: input.workspaceId, shop_id: input.shopId };
+  const meta = { ...SHOP_ORDER_METADATA, workspace_id: input.workspaceId, shop_id: input.shopId, order_token: input.orderToken };
   return {
     mode: "payment",
     line_items: input.pay.map((p) => ({
@@ -420,7 +427,8 @@ export function shopCheckoutParams(input: ShopCheckoutInput): FormParams {
       { shipping_rate_data: { type: "fixed_amount", display_name: "Free shipping", fixed_amount: { amount: 0, currency: input.currency.toLowerCase() } } },
     ],
     metadata: { ...meta, ...input.sold },
-    payment_intent_data: { metadata: meta },
+    // Stripe's receipt carries the description, so the shopper keeps the link to follow their order.
+    payment_intent_data: { metadata: meta, description: `${input.shopName.slice(0, 80)} order. Follow it at ${input.shopUrl}/order/${input.orderToken}` },
     success_url: `${input.shopUrl}/thanks?session={CHECKOUT_SESSION_ID}`,
     cancel_url: `${input.shopUrl}/cart`,
   };
@@ -435,6 +443,8 @@ export interface ShopCheckoutSnapshot {
   amountTotal: number;
   currency: string;
   country: string | null;
+  /** The shopper's order-page code, when it's a valid one. */
+  orderToken: string | null;
   metadata: Record<string, unknown>;
 }
 
@@ -461,6 +471,7 @@ export function readShopCheckout(session: unknown): ShopCheckoutSnapshot | null 
     amountTotal: typeof s.amount_total === "number" ? s.amount_total : 0,
     currency: typeof s.currency === "string" ? s.currency.toUpperCase() : "USD",
     country: typeof country === "string" ? country : null,
+    orderToken: typeof meta.order_token === "string" && ORDER_TOKEN.test(meta.order_token) ? meta.order_token : null,
     metadata: meta,
   };
 }
