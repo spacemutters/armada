@@ -73,10 +73,10 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
               Searching {supplierName}. Shipping is checked when you add a product.
             </>
           ) : sources.length > 1 ? (
-            <>Practice catalog: sample products, made-up costs.</>
+            <>Searching the practice catalog: sample products, made-up costs.</>
           ) : (
             <>
-              Practice catalog: sample products, made-up costs.{" "}
+              This is the practice catalog: sample products, made-up costs.{" "}
               <Link href="/connections" className="text-accent hover:underline">
                 Connect a supplier
               </Link>{" "}

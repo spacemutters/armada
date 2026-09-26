@@ -60,6 +60,13 @@ export function modelFor(kind: string): string {
   return (Object.hasOwn(AI_MODELS, kind) ? AI_MODELS[kind] : null) ?? AI_DEFAULT_MODELS[engineFor(kind)];
 }
 
+/**
+ * Jobs that wait behind everything else. Ad and post pictures come in batches of a dozen or more and
+ * nobody is watching each one, so a shop being built, ads being written or a store icon someone just
+ * chose never queues behind them.
+ */
+export const BACKGROUND_KINDS = ["images.scene", "images.item"];
+
 /** A helper counts as on if it checked in within this many seconds. */
 export const HELPER_ONLINE_SECONDS = 45;
 

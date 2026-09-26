@@ -72,6 +72,10 @@ report(crossed.length === 0 && !claudeAlias.test(AI_DEFAULT_MODELS.codex) && cla
 report(CODEX_DEFAULT_MODEL === AI_DEFAULT_MODELS.codex, "the helper's fallback codex model matches the site's", `${CODEX_DEFAULT_MODEL} vs ${AI_DEFAULT_MODELS.codex}`);
 const jobsSource = fs.readFileSync(path.join(root, "lib", "ai", "jobs.ts"), "utf8");
 report(/engine:\s*engineFor\(job\.kind\)/.test(jobsSource), "enqueueJob stamps the engine from the config");
+// Ad and post pictures come in batches; nothing someone is waiting on queues behind them.
+report(/order by \(kind = any\(\$\{BACKGROUND_KINDS\}\)\), created_at/.test(jobsSource), "the helper takes waiting jobs before background pictures, then oldest first");
+report(config.BACKGROUND_KINDS.includes("images.scene") && config.BACKGROUND_KINDS.includes("images.item") && !config.BACKGROUND_KINDS.some((k) => /^(shop|ads|social|store|images\.(hero|collection|lifestyle))/.test(k)),
+  "only ad and post pictures wait; shop building, writing, icons and brand pictures never do", config.BACKGROUND_KINDS.join(", "));
 report(engineOf({}) === "claude" && engineOf({ engine: "codex" }) === "codex" && engineOf({ engine: "other" }) === "claude",
   "the helper runs jobs without an engine on claude");
 

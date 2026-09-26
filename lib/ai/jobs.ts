@@ -1,7 +1,7 @@
 import "server-only";
 import { asSystem, type Tx } from "@/lib/db";
 import type { AiJob, AiJobInput } from "@/lib/types";
-import { HELPER_ONLINE_SECONDS, JOB_MAX_ATTEMPTS, JOB_STALE_MINUTES, engineFor, modelFor } from "./config";
+import { BACKGROUND_KINDS, HELPER_ONLINE_SECONDS, JOB_MAX_ATTEMPTS, JOB_STALE_MINUTES, engineFor, modelFor } from "./config";
 
 export async function enqueueJob(
   tx: Tx,
@@ -30,7 +30,7 @@ export async function claimJob(helperId: string): Promise<AiJob | null> {
         select id from armada.ai_jobs
         where status = 'queued'
            or (status = 'running' and started_at < now() - make_interval(mins => ${JOB_STALE_MINUTES}))
-        order by created_at
+        order by (kind = any(${BACKGROUND_KINDS})), created_at
         limit 1
         for update skip locked
       )
