@@ -236,7 +236,8 @@ try {
   step(`build a practice shop: “${shopIdea}”`);
   await open(`${base}/builder/new`);
   await page.type('input[name="niche"]', shopIdea);
-  await page.select('select[name="source"]', "practice");
+  // The source choice only appears when there's more than one catalog; with just the practice catalog it's already chosen.
+  if (await page.$('select[name="source"]')) await page.select('select[name="source"]', "practice");
   await page.select('select[name="productCount"]', "8");
   await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0", timeout: 60000 }), page.click('button[type="submit"]')]);
   shopId = new URL(page.url()).pathname.split("/").at(-1);
