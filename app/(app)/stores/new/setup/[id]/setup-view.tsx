@@ -22,7 +22,8 @@ export function SetupView({ initial, canAct }: { initial: SetupState; canAct: bo
   const [trouble, setTrouble] = useState<string | null>(null);
   const [since, setSince] = useState<number | undefined>(undefined);
   const running = useRef(false);
-  const doneAtLoad = useRef(new Set(initial.steps.filter((s) => s.state === "done").map((s) => s.key)));
+  // Steps already done when the page opened don't animate; fixed once, so it's safe to read while drawing.
+  const [doneAtLoad] = useState(() => new Set(initial.steps.filter((s) => s.state === "done").map((s) => s.key)));
   const storeId = initial.storeId;
 
   const run = useCallback(
@@ -55,7 +56,10 @@ export function SetupView({ initial, canAct }: { initial: SetupState; canAct: bo
 
   // Start (or carry on) as soon as the page opens.
   useEffect(() => {
-    if (current(initial.steps)?.state === "waiting") void run();
+    if (current(initial.steps)?.state !== "waiting") return;
+    // A tick later, so the first update happens outside the effect.
+    const t = setTimeout(() => void run(), 0);
+    return () => clearTimeout(t);
   }, [initial.steps, run]);
 
   // Back from eBay or Meta's page: check again by itself.
@@ -128,7 +132,7 @@ export function SetupView({ initial, canAct }: { initial: SetupState; canAct: bo
           return (
             <li key={s.key} className={cx("flex gap-3 py-3", i > 0 && "border-t border-line")}>
               <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center">
-                <StepMark step={s} working={working} index={i} animate={!doneAtLoad.current.has(s.key)} />
+                <StepMark step={s} working={working} index={i} animate={!doneAtLoad.has(s.key)} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
