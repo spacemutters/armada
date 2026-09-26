@@ -17,10 +17,10 @@ import { formatMoney } from "@/lib/money";
 export const metadata = { title: "Ads" };
 
 const RAILS = [
-  { title: "Every ad starts switched off", body: "Ads are made switched off. Nothing spends until a person presses Switch on. A build check fails if any code tries otherwise." },
-  { title: "A cap on every set of ads", body: "Each shop's ads have a daily budget and a total they can never pass. On Facebook and Instagram the total is set inside Meta too, so it holds even if Armada is down." },
-  { title: "One stop button", body: "Stop every ad pauses every ad in every shop at once, and the Ads page says if a platform couldn't be reached." },
-  { title: "People stay in charge", body: "The AI writes; you check, change, rewrite or remove every ad before anything is made. Every switch on, pause and budget change is recorded." },
+  { title: "Every ad starts switched off", body: "Nothing spends until you press Switch on." },
+  { title: "A cap on every set of ads", body: "A daily budget and a total it can never pass." },
+  { title: "One stop button", body: "Stops every ad in every shop at once." },
+  { title: "People stay in charge", body: "You check every ad first. Every change is recorded." },
 ];
 
 const touch = "min-h-11 md:min-h-9";
@@ -68,7 +68,7 @@ export default async function AdsPage({ searchParams }: { searchParams: Promise<
     <>
       <PageHeader
         title="Ads"
-        subtitle="The AI writes ads for each shop from its own products and photos, including carousels. Every ad is made switched off; nothing spends until you switch it on."
+        subtitle="AI-written ads for each shop. Every ad starts switched off."
         actions={
           onCount && canEdit ? (
             <form action={stopEverythingAction.bind(null, "/ads")}>
@@ -92,7 +92,7 @@ export default async function AdsPage({ searchParams }: { searchParams: Promise<
       ) : null}
       {connected ? (
         <p role="status" className="mb-4 rounded-xl bg-sunken px-4 py-3 text-[14px]">
-          Your Meta ad account is connected. New ads for shops in real stores will be made there, switched off.
+          Meta ad account connected. New ads start switched off.
         </p>
       ) : null}
 
@@ -119,7 +119,7 @@ export default async function AdsPage({ searchParams }: { searchParams: Promise<
           <EmptyState
             mark={<ThinkingOrb state="idle" size={32} decorative />}
             title="No finished shops yet"
-            body="Ads are written from a shop's own products and photos, so build a shop first. Once it's ready, one press here writes its ads."
+            body="Build a shop first. Then one press writes its ads."
             action={<ButtonLink href="/builder" className={touch}>Build a shop</ButtonLink>}
           />
         ) : (
@@ -143,7 +143,7 @@ export default async function AdsPage({ searchParams }: { searchParams: Promise<
               <div className="min-w-0 flex-1">
                 <div className="font-medium">Practice</div>
                 <p className="mt-0.5 max-w-2xl text-[13px] text-muted">
-                  Always ready. Make ads, switch them on and watch results come in from made-up shoppers. Nothing is spent, and every practice number is labelled.
+                  Always ready. Nothing is spent; practice numbers are labelled.
                 </p>
               </div>
               <StatusPill tone="ok">Ready</StatusPill>

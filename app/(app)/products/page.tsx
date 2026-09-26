@@ -58,7 +58,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
       <>
         <PageHeader
           title="Products"
-          subtitle="Search the supplier catalog. Every result shows its 1 to 100 score, what it costs you delivered, and a suggested price from your pricing rules."
+          subtitle="Each result shows its score, delivered cost and a suggested price."
         />
         <div className="flex">{tabs}</div>
         {sources.length > 1 ? (
@@ -70,18 +70,17 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
         <p className="mb-4 max-w-3xl text-[13px] text-muted">
           {from !== "practice" ? (
             <>
-              Searching {supplierName}&apos;s real catalog. Shipping is estimated in these results. When you add a product, Armada checks its real
-              shipping cost and time with {from === "cj" ? "CJ" : "AliExpress"}.
+              Searching {supplierName}. Shipping is checked when you add a product.
             </>
           ) : sources.length > 1 ? (
-            <>Searching the practice catalog: real sample products with simulated costs and stock.</>
+            <>Practice catalog: sample products, made-up costs.</>
           ) : (
             <>
-              This is the practice catalog: real sample products with simulated costs and stock.{" "}
+              Practice catalog: sample products, made-up costs.{" "}
               <Link href="/connections" className="text-accent hover:underline">
-                Connect CJ Dropshipping or AliExpress
+                Connect a supplier
               </Link>{" "}
-              to search a real catalog with real costs, stock and delivery times.
+              for real ones.
             </>
           )}
         </p>
@@ -131,13 +130,13 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
   const added = Number(sp.added);
   return (
     <>
-      <PageHeader title="Products" subtitle="One catalog for every store. Choose products, then list them in any number of stores or change their prices everywhere at once." />
+      <PageHeader title="Products" subtitle="One catalog for every store." />
       <div className="flex">{tabs}</div>
       {added > 0 ? <p className="mb-4 rounded-xl bg-accent-soft px-4 py-3 text-[14px]">Added {added} {added === 1 ? "product" : "products"}. Choose them below to list them in stores.</p> : null}
       {products.length === 0 ? (
         <EmptyState
           title="No products yet"
-          body="Find products in the supplier catalog, or build a shop and its products arrive here on their own."
+          body="Find products, or build a shop and they arrive here."
           action={
             <Link href="/products?tab=find" className="text-accent hover:underline">
               Find products

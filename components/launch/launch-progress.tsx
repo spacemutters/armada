@@ -128,7 +128,7 @@ export function LaunchProgress({ initial, relaunch, canLaunch }: { initial: Laun
       </div>
       {!view.helperOnline && view.status === "working" ? (
         <p className="mt-3 rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">
-          The AI helper on your computer is off, so the posts and ads wait. Everything else carries on, and the rest picks up when it comes back on.
+          The AI helper on your computer is off, so posts and ads wait. The rest carries on.
         </p>
       ) : null}
       <ol className="mt-3 flex flex-col">

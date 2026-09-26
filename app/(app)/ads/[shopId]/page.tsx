@@ -157,7 +157,7 @@ export default async function ShopAdsPage({
             ? set.platform === "practice"
               ? (set.practiceReason ?? "Practice ads: nothing is spent and the results are made up.")
               : `On ${PLATFORM_WORDS[set.platform]}${set.external.accountName ? `, in the ad account ${set.external.accountName}` : ""}. Real money, only once you switch them on.`
-            : "One press writes 3 to 5 ads from this shop's own products and photos, including carousels, and ChatGPT makes their pictures. You check them before anything is made."
+            : "One press writes 3 to 5 ads with pictures. You check them first."
         }
         actions={set ? <StatusPill tone={set.platform === "practice" ? "off" : "ok"}>{PLATFORM_WORDS[set.platform]}</StatusPill> : null}
       />
@@ -180,7 +180,7 @@ export default async function ShopAdsPage({
       ) : null}
 
       {!ready ? (
-        <EmptyState title="This shop isn't finished yet" body="Ads are written from a finished shop's products and photos. Come back once it's built." action={<ButtonLink href={`/builder/${shop.id}`}>See the shop</ButtonLink>} />
+        <EmptyState title="This shop isn't finished yet" body="Come back once it's built." action={<ButtonLink href={`/builder/${shop.id}`}>See the shop</ButtonLink>} />
       ) : !set || set.status === "stopped" ? (
         <>
           {set ? <Finished view={view} set={set} canEdit={canEdit} /> : <Start shopId={shop.id} brand={brand} canEdit={canEdit} />}
@@ -233,11 +233,11 @@ export default async function ShopAdsPage({
 
 function Start({ shopId, brand, canEdit }: { shopId: string; brand: string; canEdit: boolean }) {
   const steps: [string, string][] = [
-    ["The AI writes 3 to 5 ads", "Each tries a different idea in the shop's voice: single photos and carousels of four or more cards, using only facts the shop can stand behind."],
-    ["ChatGPT makes the pictures", "Scenes in the shop's look around each product's own photo. A product is never redrawn, so shoppers get what the ad shows."],
-    ["You check every one", "See each ad as it looks in a feed and between videos. Change the words, make a picture again, have the ad written again, or take it out."],
-    ["They're made switched off", "In practice, or on your connected ad account. Nothing spends yet."],
-    ["You switch them on", "With the daily budget and the most they can ever spend in plain money. One press stops them."],
+    ["The AI writes 3 to 5 ads", "Single photos and carousels, using only facts the shop can stand behind."],
+    ["ChatGPT makes the pictures", "Scenes around each product's real photo. Products are never redrawn."],
+    ["You check every one", "Change the words, remake a picture, or take an ad out."],
+    ["They're made switched off", "Nothing spends yet."],
+    ["You switch them on", "With a daily budget and a hard limit. One press stops them."],
   ];
   return (
     <div className="grid items-start gap-8 lg:grid-cols-[5fr_6fr]">
@@ -283,13 +283,11 @@ function Writing({ brand, set, canEdit, helperOnline }: { brand: string; set: Ad
           </p>
         </div>
         <p className="max-w-2xl text-[14px] text-muted">
-          The AI reads the shop&apos;s products, photos, prices and promises, and writes 3 to 5 different ads, including carousels, plus who to show them to and a
-          starting budget. This usually takes a minute or two. Then ChatGPT makes each ad&apos;s pictures, about a minute each; you can read the ads while they
-          arrive.
+          Takes a minute or two. Pictures follow, about a minute each.
         </p>
         {!helperOnline ? (
           <p className="rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">
-            The AI helper on your computer is off, so this is waiting. Start it and the ads arrive on their own.
+            The AI helper on your computer is off. Start it and the ads arrive on their own.
           </p>
         ) : null}
         {canEdit ? (
@@ -366,7 +364,7 @@ function Draft({ view, set, canEdit, pshop, helperOnline }: { view: ShopAdsView;
           </p>
         ) : null}
         {!helperOnline && rewriting ? (
-          <p className="rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">The AI helper on your computer is off, so the ad being written again is waiting.</p>
+          <p className="rounded-xl bg-attention-soft px-4 py-3 text-[13px] text-attention">The AI helper on your computer is off, so this waits.</p>
         ) : null}
         {live.map((v) => (
           <VariationCard
@@ -442,7 +440,7 @@ function Draft({ view, set, canEdit, pshop, helperOnline }: { view: ShopAdsView;
           </div>
           <div className="flex flex-col gap-2 border-t border-line pt-4">
             {set.platform === "practice" ? (
-              <p className="text-[13px] text-muted">These will be practice ads: nothing is spent and the results are made up.</p>
+              <p className="text-[13px] text-muted">Practice ads: nothing is spent.</p>
             ) : null}
             {canEdit ? (
               <form key="launch" action={launchAction.bind(null, shopId, set.id)}>
@@ -609,7 +607,7 @@ function Live({ view, set, canEdit, canSpend, pshop }: { view: ShopAdsView; set:
           dayLine={dayLine}
         />
       ) : practice ? (
-        <PracticeNote label="Once you switch these on, practice results appear here within a minute: made-up shoppers, clearly labelled." lines={PRACTICE_MODEL_LINES} />
+        <PracticeNote label="Practice results appear here within a minute of switching on." lines={PRACTICE_MODEL_LINES} />
       ) : null}
 
       <AdsGrid view={view} pshop={pshop} />

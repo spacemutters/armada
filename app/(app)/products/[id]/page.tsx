@@ -138,9 +138,7 @@ export default async function ProductPage({
               <div className="min-w-0">
                 <h2 className="text-[16px] font-semibold">Make an ad with AI</h2>
                 <p className="mt-1 text-[14px] text-muted">
-                  {POSTS_PER_PRODUCT} carousel ads about this product, each built on a different idea, with slides drawn in the shop&apos;s look, a caption
-                  and hashtags. Only its real facts and photos: no made-up reviews, sales or deadlines. They arrive as drafts on Social posts for you to
-                  check before anything goes out.
+                  {POSTS_PER_PRODUCT} carousel posts about it, from its real facts and photos. They arrive as drafts for you to check.
                 </p>
               </div>
             </div>
@@ -174,14 +172,14 @@ export default async function ProductPage({
               )
             ) : (
               <div className="mt-4 rounded-xl bg-sunken px-4 py-3 text-[14px]">
-                Ads are drawn in a shop&apos;s look and go on its accounts, and this product isn&apos;t in a finished shop yet.{" "}
+                This product isn&apos;t in a finished shop yet.{" "}
                 <Link href="/builder/new" className="text-accent hover:underline">
                   Build a shop
                 </Link>
               </div>
             )}
             {shops.length && !helper.online ? (
-              <p className="mt-3 text-[13px] text-attention">The AI helper on your computer is off right now. The ads get written once it&apos;s on.</p>
+              <p className="mt-3 text-[13px] text-attention">The AI helper on your computer is off. The ads get written once it&apos;s on.</p>
             ) : null}
           </Card>
 
@@ -277,7 +275,7 @@ export default async function ProductPage({
               ))}
             </ul>
           ) : (
-            <p className="text-[14px] text-muted">Not in any store yet. Use List in stores to put it in as many as you like.</p>
+            <p className="text-[14px] text-muted">Not in any store yet.</p>
           )}
         </Section>
       </div>

@@ -22,7 +22,7 @@ function SocialMedia({ shops }: { shops: ShopRow[] }) {
     <Section
       title="Social media"
       className="mt-4"
-      action={<span className="text-[13px] text-muted">Set up each shop&apos;s accounts once, then make posts in one press</span>}
+      action={<span className="text-[13px] text-muted">Set up once, then post in one press</span>}
     >
       <ul className="flex flex-col divide-y divide-line">
         {ready.slice(0, SOCIAL_SHOWN).map((s) => (
@@ -84,7 +84,7 @@ export default async function HomePage() {
   if (counts.stores === 0) {
     return (
       <>
-        <PageHeader title={`Welcome, ${firstName}`} subtitle="Two ways to start. Both work before any real store is connected." />
+        <PageHeader title={`Welcome, ${firstName}`} subtitle="Two ways to start." />
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="flex flex-col gap-4 p-6">
             <div className="flex items-center gap-3">
@@ -92,8 +92,7 @@ export default async function HomePage() {
               <h2 className="text-[18px] font-semibold">Build a shop with AI</h2>
             </div>
             <p className="text-muted">
-              Type an idea. The AI names the brand, picks the look, chooses and writes the products, and writes every page. You watch it happen,
-              then open the finished shop.
+              Type an idea. The AI builds the whole shop while you watch.
             </p>
             <div className="mt-auto">
               <ButtonLink href="/builder/new">Build a shop</ButtonLink>
@@ -102,8 +101,7 @@ export default async function HomePage() {
           <Card className="flex flex-col gap-4 p-6">
             <h2 className="text-[18px] font-semibold">Start a practice fleet</h2>
             <p className="text-muted">
-              Pretend Shopify stores and eBay accounts with a month of believable orders, a stock problem and a late-shipping warning. Use it to try
-              everything safely. Practice stores never touch real money.
+              Pretend stores with a month of orders, to try everything safely. No real money.
             </p>
             <form action={startPracticeFleet} className="mt-auto flex flex-wrap items-center gap-3">
               <label className="text-[14px] text-muted" htmlFor="count">
@@ -176,7 +174,7 @@ export default async function HomePage() {
           {needs.length ? (
             <NeedsList needs={needs} />
           ) : (
-            <p className="text-muted">Nothing needs you. Every store is connected, stocked and shipping on time.</p>
+            <p className="text-muted">Nothing needs you.</p>
           )}
           <div className="mt-4 flex items-center justify-between border-t border-line pt-4 text-[13px]">
             <span className="text-muted">AI helper on your computer</span>

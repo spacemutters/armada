@@ -32,17 +32,18 @@ const HEADLINE = ["Every", "shop", "you", "run,", "on", "one", "screen."];
 
 const TODAY = [
   "The AI shop builder, up to 10 shops at a time",
-  "The product catalog, with a score that shows its working",
-  "Prices from your pricing rules",
-  "Listing products and changing prices across many stores, with a preview, approval and undo",
+  "One-press connections: eBay and Pinterest",
+  "CJ Dropshipping's real catalog and costs",
+  "AI ads and carousel posts, with AI pictures, made switched off",
+  "Product scores and prices from your rules",
+  "Listing and repricing across stores, with preview and undo",
   "One orders inbox",
-  "CJ Dropshipping: the real catalog, real costs, photos and shipping checked per product",
-  "Headline tests on your shops",
-  "A practice fleet that behaves like real stores, without real money",
+  "Headline tests",
+  "A practice fleet, without real money",
   "Passkey sign-in and team roles",
 ];
 
-const COMING = ["Connecting your real Shopify stores", "Connecting your real eBay accounts", "Ads on Meta, Google and TikTok"];
+const COMING = ["Checkout on the shops Armada builds", "Connecting your real Shopify stores", "Instagram posting", "Google ad campaigns"];
 
 export default function HomePage() {
   return (
@@ -68,8 +69,7 @@ export default function HomePage() {
             <div className="mk-hero-grid">
               <div className="mk-hero-copy">
                 <p className="mk-lead">
-                  Armada builds online shops with AI, finds products worth selling, and changes prices across all your stores at once, with a preview
-                  before anything changes and an undo after.
+                  Build shops with AI, find products worth selling, and run every store from one screen.
                 </p>
                 <div className="mk-cta">
                   <Link href="/welcome" className="mk-btn mk-btn-primary mk-btn-lg">
@@ -92,12 +92,8 @@ export default function HomePage() {
           <div className="mk-wrap mk-split">
             <div className="mk-split-copy">
               <SectionHead id="mk-builder-title" eyebrow="Shop builder" title="Describe an idea. Get a whole shop.">
-                <p>
-                  Type one line about what you want to sell. In about 2 to 4 minutes the AI names the brand, picks the colours and fonts, sorts the
-                  range into collections, chooses the products and writes every product page. Then it writes the About, questions, shipping and
-                  contact pages, and drafts the refund and shipping policies for you to read.
-                </p>
-                <p>Build up to 10 shops at once from one idea, each with its own look.</p>
+                <p>Type one line. In a few minutes the AI names the brand, picks the look, chooses the products and writes every page.</p>
+                <p>Build up to 10 shops at once.</p>
               </SectionHead>
             </div>
             <BuilderDemo />
@@ -111,22 +107,16 @@ export default function HomePage() {
           <div className="mk-wrap mk-split mk-split-flip">
             <div className="mk-split-copy">
               <SectionHead id="mk-products-title" eyebrow="Products" title="A score that shows its working.">
-                <p>
-                  Every product gets a score from 1 to 100, built from five parts: margin, demand, competition, shipping and stock. Open a score to
-                  see each part, and whether Armada measured it or estimated it. An estimate is never passed off as a fact.
-                </p>
+                <p>Every product gets a 1 to 100 score from margin, demand, competition, shipping and stock, and shows which parts are estimates.</p>
               </SectionHead>
               <dl className="mk-facts">
                 <div>
                   <dt>A real supplier</dt>
-                  <dd>
-                    Connect CJ Dropshipping to search its real catalog at real costs. Photos and shipping times are checked for each product before it
-                    goes in.
-                  </dd>
+                  <dd>Search CJ Dropshipping&apos;s real catalog at real costs.</dd>
                 </div>
                 <div>
                   <dt>Prices from your rules</dt>
-                  <dd>Landed cost times the markup for the price level you chose, ending in .99. The AI writes the words; it never sets a price.</dd>
+                  <dd>Landed cost times your markup, ending in .99. The AI never sets a price.</dd>
                 </div>
               </dl>
             </div>
@@ -139,9 +129,8 @@ export default function HomePage() {
             <div className="mk-head-row">
               <SectionHead id="mk-tests-title" eyebrow="Headline tests" title="Let your shoppers choose the headline." />
               <p className="mk-head-aside">
-                The AI writes three new versions of a shop&apos;s headline. You choose one, and can edit it. Half the visitors see it and half see the
-                original, each person always the same one. Armada counts who adds something to their bag, says plainly which version wins, and says
-                when it&apos;s too early to tell. You and your team are never counted.
+                The AI writes new headlines. Half your visitors see one, half the original, and Armada says plainly which wins. Your team is never
+                counted.
               </p>
             </div>
             <TestDemo />
@@ -161,10 +150,7 @@ export default function HomePage() {
             <dl className="mk-facts mk-facts-row">
               <div>
                 <dt>A practice fleet</dt>
-                <dd>
-                  Pretend Shopify stores and eBay accounts with a month of believable orders, a stock problem and a late-shipping warning. Try
-                  everything safely: practice stores never touch real money.
-                </dd>
+                <dd>Pretend stores with a month of orders. Try everything without real money.</dd>
               </div>
               <div>
                 <dt>Passkeys, not passwords</dt>
@@ -199,9 +185,7 @@ export default function HomePage() {
                     <li key={t}>{t}</li>
                   ))}
                 </ul>
-                <p className="mk-muted mk-status-note">
-                  Until then, shops the AI builds open as previews, and everything else runs on the practice fleet.
-                </p>
+                <p className="mk-muted mk-status-note">Everything can be tried first on the practice fleet.</p>
               </div>
             </div>
           </div>
