@@ -84,6 +84,11 @@ const client = read("connectors/pipedream/client.ts");
 report(/seal\(s\.clientSecret\)/.test(client), "the service's secret is kept sealed");
 report((client.match(/\bfetch\(/g) ?? []).length === 1, "the service has one door (one place that sends requests)");
 
+// Coming back from the platform: the service may list the new account a moment late (seen live with Printful, 2026-09-26).
+const doneRoute = fs.readFileSync(path.join(ROOT, "app/api/connect/service/[provider]/done/route.ts"), "utf8");
+report(/for \(let i = 0; i < 5 && !account; i\+\+\)[\s\S]{0,200}pickNewAccount/.test(doneRoute), "the new account is looked for a few times before the connection is called failed");
+report(/expires_in: 14400/.test(fs.readFileSync(path.join(ROOT, "connectors/pipedream/client.ts"), "utf8")), "a connect link lasts four hours, so a slow sign-in doesn't expire it");
+
 // Home lists setup still waiting on a person, each with its one press.
 const setup = fs.readFileSync(path.join(ROOT, "lib/connections/setup-needs.ts"), "utf8");
 report(/connect_started[\s\S]{0,200}interval '3 days'/.test(setup) && /\/api\/connect\/service\/\$\{r\.provider\}\/start/.test(setup), "a connection started but not finished shows on Home with its one press");

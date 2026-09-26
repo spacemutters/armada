@@ -161,7 +161,8 @@ export async function connectPageForApp(externalUserId: string, appSlug: string,
     external_user_id: externalUserId,
     success_redirect_uri: `${back}${sep}pd=done`,
     error_redirect_uri: `${back}${sep}pd=failed`,
-    expires_in: 3600,
+    // Four hours (the service's longest): signing in or signing up on the platform can take a while.
+    expires_in: 14400,
   });
   const link = (r.json as { connect_link_url?: string } | null)?.connect_link_url;
   if (r.status !== 200 || !link) throw new PdProblem(r.status, "The connection service couldn't start connecting. Try again in a minute.");

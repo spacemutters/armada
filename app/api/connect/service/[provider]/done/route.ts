@@ -57,7 +57,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const externalUserId = externalUserFor(state.workspaceId);
     // A shop's Pinterest is kept with its social accounts; the rest are credentials.
     const known = provider === "pinterest" ? await serviceAccountIds(state.workspaceId, "pinterest") : await knownServiceAccounts(state.workspaceId, provider);
-    const account = pickNewAccount(await serviceAccounts(externalUserId, provider), provider, known);
+    // The service can send the person back a moment before it lists the new account, so look a few
+    // times (about six seconds in all) before calling it failed.
+    let account = null;
+    for (let i = 0; i < 5 && !account; i++) {
+      if (i) await new Promise((r) => setTimeout(r, 1500));
+      account = pickNewAccount(await serviceAccounts(externalUserId, provider), provider, known);
+    }
     if (!account) {
       await log(`${provider}.connect_failed`, { reason: "no new account at the service" });
       return problem("failed");
