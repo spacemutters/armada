@@ -37,6 +37,8 @@ const shopPath = core.relayPath("proj_X1", "/admin/api/2026-07/graphql.json", "u
 report(Buffer.from(shopPath.split("/proxy/")[1].split("?")[0], "base64url").toString() === "/admin/api/2026-07/graphql.json", "Shopify goes as a path, so the service fills in the store's own address");
 const page = core.connectPageUrl("https://pipedream.com/_static/connect.html?token=ctok_1&connectLink=true", "shopify");
 report(new URL(page).searchParams.get("app") === "shopify" && new URL(page).searchParams.get("token") === "ctok_1", "connect page names the platform and keeps the token");
+report(new URL(page).searchParams.get("popups") === "false", "the platform's page opens in the same tab, not a popup that can be blocked or lost");
+report(/searchParams\.set\("popups", "false"\)/.test(fs.readFileSync(path.join(ROOT, "connectors/pipedream/client.ts"), "utf8")), "every connect link Armada makes asks for the same-tab flow");
 
 // ---- headers ----
 const h = core.relayHeaders({ Authorization: "Bearer x", "X-Shopify-Access-Token": "y", Accept: "application/json", Cookie: "c", "Content-Language": "en-US", "x-pd-proxy-keep": "1" });

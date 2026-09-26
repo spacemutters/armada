@@ -77,6 +77,8 @@ export function relayPath(projectId: string, target: string, externalUserId: str
 export function connectPageUrl(connectLinkUrl: string, provider: PdProvider): string {
   const u = new URL(connectLinkUrl);
   u.searchParams.set("app", PD_APPS[provider]);
+  // Same tab, no popup: the platform's page, then straight back to Armada.
+  u.searchParams.set("popups", "false");
   return u.toString();
 }
 

@@ -167,6 +167,9 @@ export async function connectPageForApp(externalUserId: string, appSlug: string,
   if (r.status !== 200 || !link) throw new PdProblem(r.status, "The connection service couldn't start connecting. Try again in a minute.");
   const u = new URL(link);
   u.searchParams.set("app", appSlug);
+  // The platform's own page opens in the same tab and comes straight back to Armada, instead of a
+  // popup that browsers block or hide behind the window.
+  u.searchParams.set("popups", "false");
   return u.toString();
 }
 
