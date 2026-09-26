@@ -38,12 +38,12 @@ interface Envelope<T> {
 }
 
 export class CjError extends Error {
-  constructor(
-    public code: number,
-    message: string,
-    public requestId?: string,
-  ) {
+  code: number;
+  requestId?: string;
+  constructor(code: number, message: string, requestId?: string) {
     super(message);
+    this.code = code;
+    this.requestId = requestId;
   }
 }
 

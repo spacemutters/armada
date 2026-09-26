@@ -15,6 +15,7 @@ import { mentionsBrand } from "@/lib/brands";
 import { withWorkspace } from "@/lib/db";
 import { UNCONFIRMED_SHIP_CENTS } from "@/lib/pricing";
 import type { CatalogItem } from "@/lib/types";
+import { rankByQuery } from "./relevance";
 
 // Bringing CJ products into a workspace's catalog. A search gives the basics fast; "checking" an
 // item then pulls its full photos and variants and the real shipping price and time to a country.
@@ -79,7 +80,9 @@ export async function importCjSearch(
   for (const phrase of [...new Set(phrases.map((p) => p.trim()).filter(Boolean))].slice(0, opts.maxPhrases ?? 5)) {
     // One phrase failing keeps what the others found; a refused key or used-up allowance stops the rest.
     try {
-      for (const p of await searchProducts(workspaceId, { keyword: phrase, size: opts.perPhrase ?? 20, countryCode: opts.countryCode })) {
+      // CJ's search is loose: keep what carries the searched words, best first (lib/catalog/relevance.ts).
+      const found = await searchProducts(workspaceId, { keyword: phrase, size: opts.perPhrase ?? 20, countryCode: opts.countryCode });
+      for (const p of rankByQuery(phrase, found, (x) => x?.nameEn ?? "")) {
         if (p?.id && p.nameEn && !seen.has(p.id)) seen.set(p.id, p);
       }
     } catch (e) {
